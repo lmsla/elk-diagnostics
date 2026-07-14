@@ -120,6 +120,7 @@
 
 | 狀態 | 項目 | 規格 |
 |---|---|---|
+| ✅ | C 類 analyzer（performance/balance/write_bottleneck/data/management）與規則引擎合併邏輯自動化測試 | 見各 `*_test.go`、`rules/rules_test.go` |
 | ⬜ | 多版本 golden test（錄製 response → 斷言 DiagnosticResult） | ⚠️ 待補 spec |
 | ⬜ | 錯誤與韌性（逾時/重試/部分不可達 → unknown） | ⚠️ 待補 spec |
 | ⬜ | 安全與非功能（唯讀保證、密鑰遮蔽、單一二進位打包 OS/arch） | ⚠️ 待補 spec |
