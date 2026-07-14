@@ -1,0 +1,243 @@
+{
+  "meta": {
+    "tool_version": "0.0.4-mvp",
+    "generated_at": "2026-06-15T15:28:23Z",
+    "cluster": {
+      "name": "docker-cluster",
+      "host": "http://localhost:9208",
+      "es_version": "8.14.3"
+    },
+    "mode": "check"
+  },
+  "overall_status": "warning",
+  "summary": {
+    "pass": 12,
+    "warning": 1,
+    "critical": 0,
+    "skipped": 0,
+    "unknown": 0
+  },
+  "results": [
+    {
+      "id": "cluster_health",
+      "title": "叢集健康 / 未分配 shard",
+      "category": "cluster",
+      "status": "warning",
+      "conclusion": "suspected",
+      "summary": "This cluster has 7 unavailable replica shards.",
+      "findings": [
+        "Searches might be slower than usual. Fewer redundant copies of the data exist on 2 indices [elkdoctor-ilmerr, elkdoctor-unhealthy]."
+      ],
+      "root_causes": [
+        "Elasticsearch isn't allowed to allocate some shards from these indices to any of the nodes in the desired data tier because there are not enough nodes in the [data_warm] tier to allocate each shard copy on a different node.（受影響 index：[elkdoctor-ilmerr]）",
+        "Elasticsearch isn't allowed to allocate some shards from these indices to any of the nodes in the desired data tier because there are not enough nodes in the [data_content] tier to allocate each shard copy on a different node.（受影響 index：[elkdoctor-unhealthy]）"
+      ],
+      "recommendations": [
+        {
+          "cmd": "",
+          "desc": "Increase the number of nodes in this tier or decrease the number of replica shards in the affected indices."
+        }
+      ],
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/red-yellow-cluster-status",
+        "https://ela.st/tier-capacity"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "disk",
+      "title": "磁碟容量 / watermark",
+      "category": "capacity",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "The cluster has enough available disk space.",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/fix-watermark-errors"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "shards_capacity",
+      "title": "Shard 容量上限",
+      "category": "capacity",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "The cluster has enough room to add new shards.",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-shards-capacity-issues"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "snapshot_repository",
+      "title": "Snapshot repository 完整性",
+      "category": "snapshot",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "No snapshot repositories configured.",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-repository"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "slm",
+      "title": "SLM 快照政策",
+      "category": "snapshot",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "No Snapshot Lifecycle Management policies configured",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/repeated-snapshot-failures"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "master_stability",
+      "title": "Master 穩定性",
+      "category": "cluster",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "The cluster has a stable master node",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unstable-cluster"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "data_stream_lifecycle",
+      "title": "Data stream 生命週期 / tier",
+      "category": "data",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "Data streams are executing their lifecycles without issues",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "ilm_slm_status",
+      "title": "ILM 生命週期",
+      "category": "management",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "ILM RUNNING，無 ERROR step",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/start-ilm",
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "rejected_requests",
+      "title": "請求拒絕 (thread pool)",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "search / write thread pool 無拒絕",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/rejected-requests"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "task_backlog",
+      "title": "Thread pool 佇列積壓",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "各 thread pool queue \u003c50",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/task-queue-backlog"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "jvm_memory_pressure",
+      "title": "JVM 記憶體壓力",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "各節點 JVM old pool 壓力 \u003c85%",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/high-jvm-memory-pressure"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "circuit_breaker",
+      "title": "Circuit breaker",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "circuit breaker 無跳閘紀錄",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/circuit-breaker-errors"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "high_cpu",
+      "title": "CPU 使用率",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "各節點 CPU \u003c85%",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/high-cpu-usage"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    }
+  ],
+  "disclaimer": "本工具提供診斷引導，非根因確認。結論基於單次唯讀快照與預設閾值，請結合現場日誌、時間序列監控與業務脈絡綜合判斷。工具僅執行唯讀操作，任何修復指令均需人工確認後手動執行。"
+}

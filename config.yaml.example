@@ -1,0 +1,19 @@
+# 複製為 config.yaml 後填入。連線資訊是唯一必填（見 docs/specs/spec-config.md）。
+# 也可改用 flag（--host/--api-key…）或環境變數（ELK_DOCTOR_*）提供，優先序：flag > env > 本檔 > 預設。
+cluster:
+  hosts:
+    - "https://es-1.example.com:9200"
+    # - "https://es-2.example.com:9200"   # 多個會依序故障轉移
+  auth:
+    type: api_key          # none | basic | api_key | bearer
+    # username: "elastic"  # type=basic
+    # password: "..."      # type=basic
+    api_key: "<id:key 的 base64 或 encoded 字串>"   # type=api_key
+    # token: "..."         # type=bearer
+  tls:
+    ca_cert: "/path/to/ca.crt"     # 自簽 CA（政府/金融常見）；公開 CA 可留空
+    # client_cert: "/path/tls.crt" # mTLS 才需要
+    # client_key: "/path/tls.key"
+    insecure_skip_verify: false    # 設 true 會在報告與 log 強制警告，僅限測試
+  timeout_seconds: 10
+  retries: 2

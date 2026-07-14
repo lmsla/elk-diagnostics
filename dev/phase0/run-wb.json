@@ -1,0 +1,39 @@
+{
+  "meta": {
+    "tool_version": "0.0.4-mvp",
+    "generated_at": "2026-06-15T15:28:11Z",
+    "cluster": {
+      "name": "docker-cluster",
+      "host": "http://localhost:9208",
+      "es_version": "8.14.3"
+    },
+    "mode": "diagnose:write-bottleneck"
+  },
+  "overall_status": "pass",
+  "summary": {
+    "pass": 1,
+    "warning": 0,
+    "critical": 0,
+    "skipped": 0,
+    "unknown": 0
+  },
+  "results": [
+    {
+      "id": "write_bottleneck",
+      "title": "寫入瓶頸（因果鏈）",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "未觀察到 write queue 積壓，此因果鏈無法解釋寫入問題",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/reference/elasticsearch/configuration-reference/thread-pool-settings"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    }
+  ],
+  "disclaimer": "本工具提供診斷引導，非根因確認。結論基於單次唯讀快照與預設閾值，請結合現場日誌、時間序列監控與業務脈絡綜合判斷。工具僅執行唯讀操作，任何修復指令均需人工確認後手動執行。"
+}

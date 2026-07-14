@@ -1,0 +1,22 @@
+::: {587513524e34}{BKZEDwyVRSm3b1dnYpopDw}{8U_3eqH2S_GtMtHFBEr3kA}{587513524e34}{172.18.0.2}{172.18.0.2:9300}{cdfhilmrstw}{9.0.0}{8000099-9009000}{ml.machine_memory=8321429504, transform.config_version=10.0.0, xpack.installed=true, ml.config_version=12.0.0, ml.max_jvm_size=536870912, ml.allocated_processors_double=12.0, ml.allocated_processors=12}
+   Hot threads at 2026-06-14T02:58:28.119Z, interval=500ms, busiestThreads=3, ignoreIdleThreads=true:
+   
+    0.1% [cpu=0.1%, other=0.0%] (375.6micros out of 500ms) cpu usage by thread 'elasticsearch[587513524e34][inference_utility][T#1]'
+     10/10 snapshots sharing following 16 elements
+       java.base@24/java.lang.Thread.sleepNanos0(Native Method)
+       java.base@24/java.lang.Thread.sleepNanos(Thread.java:482)
+       java.base@24/java.lang.Thread.sleep(Thread.java:550)
+       java.base@24/java.util.concurrent.TimeUnit.sleep(TimeUnit.java:446)
+       org.elasticsearch.inference@9.0.0/org.elasticsearch.xpack.inference.external.http.sender.RequestExecutorService.lambda$static$0(RequestExecutorService.java:68)
+       org.elasticsearch.inference@9.0.0/org.elasticsearch.xpack.inference.external.http.sender.RequestExecutorService$$Lambda/0x0000000054c70c78.sleep(Unknown Source)
+       org.elasticsearch.inference@9.0.0/org.elasticsearch.xpack.inference.external.http.sender.RequestExecutorService.handleTasks(RequestExecutorService.java:265)
+       org.elasticsearch.inference@9.0.0/org.elasticsearch.xpack.inference.external.http.sender.RequestExecutorService.start(RequestExecutorService.java:217)
+       org.elasticsearch.inference@9.0.0/org.elasticsearch.xpack.inference.external.http.sender.AmazonBedrockRequestExecutorService.start(AmazonBedrockRequestExecutorService.java:19)
+       org.elasticsearch.inference@9.0.0/org.elasticsearch.xpack.inference.external.amazonbedrock.AmazonBedrockRequestSender.lambda$start$0(AmazonBedrockRequestSender.java:101)
+       org.elasticsearch.inference@9.0.0/org.elasticsearch.xpack.inference.external.amazonbedrock.AmazonBedrockRequestSender$$Lambda/0x0000000054c790f8.run(Unknown Source)
+       app/org.elasticsearch.server@9.0.0/org.elasticsearch.common.util.concurrent.ThreadContext$ContextPreservingRunnable.run(ThreadContext.java:977)
+       java.base@24/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1095)
+       java.base@24/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:619)
+       java.base@24/java.lang.Thread.runWith(Thread.java:1460)
+       java.base@24/java.lang.Thread.run(Thread.java:1447)
+
