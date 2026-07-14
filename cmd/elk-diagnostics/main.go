@@ -205,6 +205,29 @@ func runCheck(args []string) int {
 		results = append(results, analyzer.SlowLog(sl))
 	}
 
+	// --- B 類加深（見 spec-health-report.md；A 類已由 FromHealthReport 產出）---
+	if ce, e := client.ClusterAllocationEnable(); e == nil {
+		results = append(results, analyzer.DataAllocationBlocked(ce)) // #19
+	}
+	results = append(results, analyzer.IndexAllocationBlocked(indexAllocationEnables(client, hr))) // #20
+	if exp, found, e := client.AllocationExplain(); e == nil {
+		results = append(results, analyzer.AllocationGuidance(exp, found)) // #37
+	}
+	if mig, e := client.IlmMigrating(); e == nil {
+		results = append(results, analyzer.IlmTierMigration(mig)) // #25
+	}
+	if totalNodes, e := client.ClusterNodeCounts(); e == nil {
+		if masterEligible, e2 := client.MasterEligibleCount(); e2 == nil {
+			results = append(results, analyzer.MasterStabilityContext(totalNodes, masterEligible)) // #30
+		}
+	}
+	if tiers, e := client.DataTierNodeCounts(); e == nil {
+		results = append(results, analyzer.DataTierAvailability(tiers)) // #24
+	}
+	if ops, e := client.RestoreProgress(); e == nil {
+		results = append(results, analyzer.RestoreStatus(ops)) // #36
+	}
+
 	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: client.Version()}
 	return emit(buildReport(meta, results, "check"), *output, *outFile)
 }
@@ -248,6 +271,24 @@ func runDiagnose(args []string) int {
 }
 
 // ---- 共用 ----
+
+const maxIndexAllocationScan = 20 // 對照 spec 原定上限，避免受影響 index 過多時逐一查爆量請求
+
+// indexAllocationEnables 對 shards_availability 診斷點名的受影響 index（上限 20 個），
+// 逐一查 index.routing.allocation.enable 生效值，供 #20 使用。
+func indexAllocationEnables(client *collector.Client, hr *collector.HealthReport) map[string]string {
+	affected := analyzer.AffectedIndices(hr, "shards_availability")
+	if len(affected) > maxIndexAllocationScan {
+		affected = affected[:maxIndexAllocationScan]
+	}
+	enables := make(map[string]string, len(affected))
+	for _, idx := range affected {
+		if v, err := client.IndexAllocationEnable(idx); err == nil {
+			enables[idx] = v
+		}
+	}
+	return enables
+}
 
 func addOutFile(fs *flag.FlagSet) *string {
 	var v string

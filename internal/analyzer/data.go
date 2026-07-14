@@ -12,7 +12,33 @@ const (
 	docMapping    = "https://www.elastic.co/docs/troubleshoot/elasticsearch/mapping-explosion"
 	docIngest     = "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshoot-ingest-pipelines"
 	docCorruption = "https://www.elastic.co/docs/troubleshoot/elasticsearch/corruption-troubleshooting"
+	docAddTier    = "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier"
 )
+
+// DataTierAvailability #24：各標準 data tier 是否有對應節點。資訊性質——缺 tier
+// 節點不必然是問題（許多叢集刻意不建置 warm/cold/frozen），是否構成 preferred tier
+// 缺節點需對照 data_stream_lifecycle indicator 的診斷訊息（A 類已由 healthreport.go
+// 產出）交叉確認，此處只提供結構性事實。
+func DataTierAvailability(counts map[string]int) diagnostic.Result {
+	res := diagnostic.Result{ID: "data_tier_availability", Title: "Data tier 節點分布", Category: "data", Source: "raw_api", Docs: []string{docAddTier}}
+	var present, missing []string
+	for _, tier := range []string{"data_content", "data_hot", "data_warm", "data_cold", "data_frozen"} {
+		if counts[tier] > 0 {
+			present = append(present, fmt.Sprintf("%s=%d", tier, counts[tier]))
+		} else {
+			missing = append(missing, tier)
+		}
+	}
+	res.Status, res.Conclusion = diagnostic.StatusPass, diagnostic.ConclusionNormal
+	if len(missing) == 0 {
+		res.Summary = "所有標準 data tier 皆有對應節點"
+		return res
+	}
+	res.Summary = fmt.Sprintf("叢集無 %v tier 的節點（資訊性；若 ILM/DSL 政策未使用這些 tier 屬正常）", missing)
+	res.Findings = []string{fmt.Sprintf("有節點的 tier：%v", present), fmt.Sprintf("無節點的 tier：%v", missing)}
+	res.RequiresExtra, res.ExtraReason = true, "缺 tier 節點是否構成問題，取決於 ILM/data stream lifecycle 政策是否指定該 tier；請對照 data_stream_lifecycle indicator 的診斷訊息（若有）確認是否為根因"
+	return res
+}
 
 // MappingExplosion #11：mapping 欄位數逼近/超過 total_fields.limit。
 func MappingExplosion(counts []collector.IndexFieldCount, t rules.Thresholds) diagnostic.Result {

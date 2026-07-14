@@ -47,6 +47,26 @@ func ILM(mode string, errs []collector.IlmError) diagnostic.Result {
 	return res
 }
 
+// IlmTierMigration #25：目前處於 tier 遷移中的受管理 index 候選名單。
+// 遷移中不等於卡住，只是提供觀察對象；確認卡住需搭配重複執行比對。
+func IlmTierMigration(migrating []collector.IlmMigration) diagnostic.Result {
+	res := diagnostic.Result{
+		ID: "ilm_tier_migration", Title: "ILM Tier 遷移狀態", Category: "management", Source: "raw_api",
+		Docs: []string{"https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors"},
+	}
+	if len(migrating) == 0 {
+		return pass(res, "無 index 處於 tier 遷移中")
+	}
+	res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
+	res.Summary = fmt.Sprintf("%d 個 index 目前處於 tier 遷移（action=migrate）", len(migrating))
+	for _, m := range migrating {
+		res.Findings = append(res.Findings, fmt.Sprintf("%s：phase=%s step=%s", m.Index, m.Phase, m.Step))
+	}
+	res.RequiresExtra, res.ExtraReason = true, "遷移中不代表卡住；需間隔一段時間重查，同一批 index 若停在相同 step 未推進才算異常"
+	res.Recommendations = []diagnostic.Recommendation{{Cmd: "GET <index>/_ilm/explain", Desc: "間隔重查比對 step 是否推進；未推進則查節點 log 或目標 tier 節點是否足夠"}}
+	return res
+}
+
 const (
 	docWatcher    = "https://www.elastic.co/docs/troubleshoot/elasticsearch/watcher-troubleshooting"
 	docTransform  = "https://www.elastic.co/docs/troubleshoot/elasticsearch/transform-troubleshooting"

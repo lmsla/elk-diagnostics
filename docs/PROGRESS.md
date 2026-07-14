@@ -80,13 +80,15 @@
 | ✅ | 17 | Hot spotting | C | spec-performance | performance |（真機驗證；單節點正確跳過）
 | ✅ | 18 | Unbalanced cluster | C | spec-performance | cluster |（真機驗證；單節點正確跳過）
 | ✅ | 32 | Data corruption 偵測 | C | spec-data | data |（真機驗證；red 徵兆 + 導向查 log）
-| ⬜ | 19 | Data allocation blocked | B | spec-health-report | cluster |
-| ⬜ | 20 | Index allocation blocked | B | spec-health-report | cluster |
-| ⬜ | 24 | Preferred data tier missing | B | spec-health-report | management |
-| ⬜ | 25 | Incomplete migration to tiers | B | spec-health-report | management |
-| ⬜ | 30 | Unstable cluster | B | spec-health-report | cluster |
-| ⬜ | 36 | Restore from snapshot 狀態 | B | spec-health-report | snapshot |
-| ⬜ | 37 | Cluster allocation 引導 | B | spec-health-report | cluster |
+| 🟡 | 19 | Data allocation blocked | B | spec-health-report | analyzer/allocation.go |（單元測試通過；真機非阻塞情境待驗）
+| 🟡 | 20 | Index allocation blocked | B | spec-health-report | analyzer/allocation.go |（單元測試通過；真機非阻塞情境待驗）
+| 🟡 | 24 | Preferred data tier missing | B | spec-health-report | analyzer/data.go |（單元測試通過；設計為資訊性，不臆測缺 tier＝異常）
+| 🟡 | 25 | Incomplete migration to tiers | B | spec-health-report | analyzer/management.go |（單元測試通過；單次快照只能列候選，卡住判定需重複觀測）
+| 🟡 | 30 | Unstable cluster | B | spec-health-report | analyzer/cluster.go |（單元測試通過；用 master-eligible 節點數/奇偶佐證，非直接偵測選舉事件）
+| 🟡 | 36 | Restore from snapshot 狀態 | B | spec-health-report | analyzer/snapshot.go |（單元測試通過；改用 recovery API 而非 spec 原列的 _snapshot/_status，見 spec-health-report.md 修正說明）
+| 🟡 | 37 | Cluster allocation 引導 | B | spec-health-report | analyzer/allocation.go |（單元測試通過；真機 fixture 驗證 decider 解析正確；僅代表性抽查 1 個 shard，非規格原定的上限 20 逐一查）
+
+> B 類 7 條皆用 httptest/synthetic 資料 + 既有真機 fixture 完成單元測試（collector 解析 + analyzer 判定），但尚未接上真實 8.14.3/9.0.0 叢集做端到端真機驗證（沙箱無可連線叢集）；下次有真機時應比照 MVP 補驗。
 
 ### v0.4
 
@@ -133,7 +135,8 @@
 | Phase 0 | 多版本驗證 health_report 顆粒度 | ✅ 核心已驗（disk/capacity/slm/repo 待造壓補測） |
 | MVP | 地基 + A 類 + #6 + JSON 報告 | ✅ 完成（真機 8.14.3） |
 | v0.2 | #7,8,9,12,11,13 + 離線 HTML 報告 | ✅ 完成（真機） |
-| v0.3 | #16,17,18,32 | ✅ 完成（真機）；B 類 7 條加深待做 |
+| v0.3 | #16,17,18,32 | ✅ 完成（真機） |
 | v0.4 | #27,28,31,33,34,35 | ✅ 完成（真機） |
+| B 類加深 | #19,20,24,25,30,36,37 | 🟡 單元測試完成，待真機端到端驗證 |
 | 缺口診斷 | check 24 條 + diagnose write-bottleneck | ✅ 全數真機驗證 |
-| 待辦 | cobra、其餘症狀樹、B 類加深、造壓驗證、韌性/打包、自動化測試 | ⬜ 未開始 |
+| 待辦 | cobra、其餘症狀樹、B 類真機驗證、造壓驗證、韌性/打包 | ⬜ 未開始 |

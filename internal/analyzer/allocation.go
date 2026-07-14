@@ -1,0 +1,81 @@
+// allocation.go：shards_availability 的 B 類加深（#19/#20/#37，見 spec-health-report.md）。
+// A 類（cluster_health，涵蓋 #1/#2/#21）已由 healthreport.go 的通用 driver table 產出；
+// 這裡只在該 indicator 非 green 時，額外查 allocation.enable 設定與 decider 級根因。
+package analyzer
+
+import (
+	"fmt"
+
+	"elk-diagnostics/internal/collector"
+	"elk-diagnostics/internal/diagnostic"
+)
+
+const (
+	docUnassigned   = "https://www.elastic.co/docs/troubleshoot/elasticsearch/diagnose-unassigned-shards"
+	docAllocExplain = "https://www.elastic.co/docs/troubleshoot/elasticsearch/cluster-allocation-api-examples"
+)
+
+// DataAllocationBlocked #19：cluster.routing.allocation.enable 非 "all" 時，
+// 叢集層級封鎖了部分/全部 shard 分配，是最常被忽略的根因（常見於維護後忘記復原）。
+func DataAllocationBlocked(clusterEnable string) diagnostic.Result {
+	res := diagnostic.Result{ID: "data_allocation_blocked", Title: "叢集層級 shard 分配封鎖", Category: "cluster", Source: "raw_api", Docs: []string{docUnassigned}}
+	if clusterEnable == "" || clusterEnable == "all" {
+		return pass(res, "cluster.routing.allocation.enable = all，無叢集層級封鎖")
+	}
+	res.Status, res.Conclusion = diagnostic.StatusCritical, diagnostic.ConclusionConfirmed
+	res.Summary = fmt.Sprintf("cluster.routing.allocation.enable = %q，叢集層級的 shard 分配被限制或封鎖", clusterEnable)
+	res.RootCauses = []string{"常見於維護操作（如節點下線）後忘記將設定復原為 all"}
+	res.Recommendations = []diagnostic.Recommendation{{
+		Cmd:  `PUT _cluster/settings {"persistent":{"cluster.routing.allocation.enable":"all"}}`,
+		Desc: "確認非維護中後復原為 all；若為刻意限制（如 primaries-only 遷移中）則此為預期狀態",
+	}}
+	return res
+}
+
+// IndexAllocationBlocked #20：受影響 index 的 index.routing.allocation.enable 非 "all"。
+// enables 為 index → 生效值；只需傳入 shards_availability 診斷點名的受影響 index。
+func IndexAllocationBlocked(enables map[string]string) diagnostic.Result {
+	res := diagnostic.Result{ID: "index_allocation_blocked", Title: "Index 層級 shard 分配封鎖", Category: "cluster", Source: "raw_api", Docs: []string{docUnassigned}}
+	var blocked []string
+	for idx, v := range enables {
+		if v != "" && v != "all" {
+			blocked = append(blocked, fmt.Sprintf("%s：index.routing.allocation.enable=%q", idx, v))
+		}
+	}
+	if len(blocked) == 0 {
+		if len(enables) == 0 {
+			return pass(res, "無受影響 index 需檢查（shards_availability 目前正常）")
+		}
+		return pass(res, fmt.Sprintf("已檢查 %d 個受影響 index，index.routing.allocation.enable 皆為 all", len(enables)))
+	}
+	res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionConfirmed
+	res.Summary = fmt.Sprintf("%d 個 index 的層級分配設定被限制或封鎖", len(blocked))
+	res.Findings = blocked
+	res.Recommendations = []diagnostic.Recommendation{{
+		Cmd:  `PUT <index>/_settings {"index.routing.allocation.enable":"all"}`,
+		Desc: "確認非刻意限制後復原為 all",
+	}}
+	return res
+}
+
+// AllocationGuidance #37：GET _cluster/allocation/explain 的代表性 decider 說明。
+// found=false 表無未分配 shard 可解釋（叢集當下無此問題，非錯誤）。
+func AllocationGuidance(exp *collector.AllocationExplanation, found bool) diagnostic.Result {
+	res := diagnostic.Result{ID: "allocation_guidance", Title: "Shard 分配根因（decider 級）", Category: "cluster", Source: "raw_api", Docs: []string{docAllocExplain}}
+	if !found || exp == nil {
+		return pass(res, "無未分配 shard 可供 allocation/explain 解釋")
+	}
+	if len(exp.Deciders) == 0 {
+		res = pass(res, fmt.Sprintf("%s shard %d（primary=%v）：無 decider 封鎖，可能為暫時性 rebalancing", exp.Index, exp.Shard, exp.Primary))
+		res.RequiresExtra, res.ExtraReason = true, "僅代表性抽查一個未分配 shard，非窮舉；其餘 shard 可能有不同根因"
+		return res
+	}
+	res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
+	res.Summary = fmt.Sprintf("%s shard %d（primary=%v）：%d 個 decider 拒絕分配", exp.Index, exp.Shard, exp.Primary, len(exp.Deciders))
+	for _, d := range exp.Deciders {
+		res.Findings = append(res.Findings, fmt.Sprintf("%s（%s）：%s", d.Decider, d.Decision, d.Explanation))
+	}
+	res.RequiresExtra, res.ExtraReason = true, "僅代表性抽查一個未分配 shard，非窮舉（規格原定上限 20 逐一查）；其餘 shard 可能有不同根因，必要時對特定 index/shard 重複呼叫 allocation/explain"
+	res.Recommendations = []diagnostic.Recommendation{{Cmd: "POST _cluster/reroute?retry_failed", Desc: "排除 decider 指出的問題後，可嘗試重新觸發分配"}}
+	return res
+}

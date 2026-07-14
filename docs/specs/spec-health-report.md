@@ -81,7 +81,7 @@ GET /_health_report
 
 - **目標**：snapshot repository 是否損壞/不可用；restore 狀態查詢。
 - **判定**：indicator 非 green ＝repository 損壞/未知/無效（❌/⚠️）。
-- **fallback / 加深**：`GET _snapshot/_status`、`GET _snapshot`（#36 唯讀查詢 restore 進度，**不執行 restore**）。
+- **fallback / 加深**：`GET _snapshot/_status`、`GET _snapshot`。#36 唯讀查詢 restore 進度（**不執行 restore**）——實作時發現 `_snapshot/_status` 查的是**建立快照**的進度，還原進度須改查 recovery API `GET _recovery?active_only=true`（篩 `type=SNAPSHOT` 的 shard），已據此修正。
 - **建議**：依損壞類型（corrupted/unknown/invalid）對應處置；多由多叢集寫同一 repository 造成。
 - **官方文件**：https://www.elastic.co/docs/troubleshoot/elasticsearch/add-repository ／ https://www.elastic.co/docs/troubleshoot/elasticsearch/restore-from-snapshot
 - `tested_versions`: []

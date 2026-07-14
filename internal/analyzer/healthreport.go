@@ -116,6 +116,26 @@ func mapIndicator(hr *collector.HealthReport, s indicatorSpec) diagnostic.Result
 	return res
 }
 
+// AffectedIndices 彙整指定 indicator 的 diagnosis 中所有受影響 index（去重、依出現順序）。
+// #20 用：找出需要逐一查 index.routing.allocation.enable 的候選 index。
+func AffectedIndices(hr *collector.HealthReport, indicator string) []string {
+	ind, ok := hr.Indicators[indicator]
+	if !ok {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, d := range ind.Diagnosis {
+		for _, idx := range d.AffectedResources.Indices {
+			if !seen[idx] {
+				seen[idx] = true
+				out = append(out, idx)
+			}
+		}
+	}
+	return out
+}
+
 func symptomOr(ind collector.HRIndicator, def string) string {
 	if ind.Symptom != "" {
 		return ind.Symptom
