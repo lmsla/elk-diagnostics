@@ -1,6 +1,7 @@
 # 編譯產物
 elk-doctor
 elk-doctor-*
+dist/
 
 # macOS
 .DS_Store
