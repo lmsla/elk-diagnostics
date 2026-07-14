@@ -5,20 +5,18 @@ import (
 
 	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
+	"elk-diagnostics/rules"
 )
 
 const (
 	docMapping    = "https://www.elastic.co/docs/troubleshoot/elasticsearch/mapping-explosion"
 	docIngest     = "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshoot-ingest-pipelines"
 	docCorruption = "https://www.elastic.co/docs/troubleshoot/elasticsearch/corruption-troubleshooting"
-
-	mappingLimit    = 1000 // index.mapping.total_fields.limit 預設值
-	mappingWarnFrac = 80   // 達上限 80% 預警
-	ingestFailWarn  = 10   // pipeline failed 百分比預警門檻（官方 heuristic）
 )
 
 // MappingExplosion #11：mapping 欄位數逼近/超過 total_fields.limit。
-func MappingExplosion(counts []collector.IndexFieldCount) diagnostic.Result {
+func MappingExplosion(counts []collector.IndexFieldCount, t rules.Thresholds) diagnostic.Result {
+	mappingLimit, mappingWarnFrac := t.Data.MappingLimitDefault, t.Data.MappingWarnFrac
 	res := diagnostic.Result{ID: "mapping_explosion", Title: "Mapping 欄位膨脹", Category: "data", Source: "raw_api", Docs: []string{docMapping}}
 	warnAt := mappingLimit * mappingWarnFrac / 100
 	var crit, warn []string
@@ -48,7 +46,8 @@ func MappingExplosion(counts []collector.IndexFieldCount) diagnostic.Result {
 }
 
 // IngestPipelineErrors #13：ingest pipeline failed 比例過高。
-func IngestPipelineErrors(pipes []collector.IngestPipeline) diagnostic.Result {
+func IngestPipelineErrors(pipes []collector.IngestPipeline, t rules.Thresholds) diagnostic.Result {
+	ingestFailWarn := t.Data.IngestFailWarnPct
 	res := diagnostic.Result{ID: "ingest_pipeline_errors", Title: "Ingest pipeline 失敗", Category: "data", Source: "raw_api", Docs: []string{docIngest}}
 	var hits []string
 	for _, p := range pipes {

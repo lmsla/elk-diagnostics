@@ -15,25 +15,25 @@ ELK 系統快速診斷 CLI 工具。單一二進位、零依賴、可離線執�
 | 項目 | 狀態 |
 |---|---|
 | 規格（11 份，輸入→診斷→報告→平台） | ✅ 完成 |
-| Phase 0 前置驗證（取真實 `_health_report` 驗顆粒度） | ⬜ 動工前必做 |
-| 程式實作 | ⬜ 未開始（`.go` / `go.mod` / `config.yaml` / `rules/default.yaml` 為空 placeholder） |
+| Phase 0 前置驗證（取真實 `_health_report` 驗顆粒度） | ✅ 核心已驗（部分項目待造壓補測，見 PROGRESS） |
+| 程式實作（MVP + v0.2 + v0.3 + v0.4 診斷、規則引擎） | 🟡 進行中，詳見 PROGRESS（cobra 化、B 類加深、自動化測試仍待補） |
 
 ## 目錄結構
 
 ```
-ES-diagnostics/
-├── cmd/                       # root / check / diagnose / report
+elk-diagnostics/
+├── cmd/elk-diagnostics/        # CLI 進入點（check / diagnose / version）
 ├── internal/
-│   ├── collector/
-│   │   ├── client.go          # raw API 連線 + 版本偵測 + fallback
-│   │   └── health_report.go   # _health_report 解析（採集基座）
-│   ├── analyzer/              # cluster / capacity / data / management /
-│   │                          # performance / snapshot / write_bottleneck
-│   ├── reporter/              # json.go / html.go（HTML 離線可渲染）
-│   └── rules/                 # 規則引擎
-├── rules/default.yaml         # //go:embed 內嵌閾值
-├── config.yaml                # 連線設定（唯一必填類）
-├── docs/specs/                # 規格（實作依據）
+│   ├── collector/              # raw API 連線 + 版本偵測 + _health_report 解析
+│   ├── analyzer/                # cluster / capacity / data / management /
+│   │                            # performance / snapshot / write_bottleneck
+│   ├── config/                  # 連線設定載入（flag > env > config.yaml > 預設）
+│   ├── diagnostic/              # DiagnosticResult 契約
+│   └── reporter/                # json.go / html.go（HTML 離線可渲染）
+├── rules/                       # 規則引擎：default.yaml（//go:embed）+ rules.go
+│                                 # 僅外部化 C 類連續型指標的閾值，見 spec-rules
+├── config.yaml                  # 連線設定（唯一必填類）
+├── docs/specs/                  # 規格（實作依據）
 └── README.md
 ```
 

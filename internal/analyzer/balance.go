@@ -6,17 +6,17 @@ import (
 
 	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
+	"elk-diagnostics/rules"
 )
 
 const (
 	docHotspot    = "https://www.elastic.co/docs/troubleshoot/elasticsearch/hotspotting"
 	docUnbalanced = "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unbalanced-cluster"
-
-	hotspotSpread = 30 // 某節點某指標與中位數的差距門檻
 )
 
 // HotSpotting #17：某節點 cpu/heap/disk 顯著高於同儕（需 ≥2 節點）。
-func HotSpotting(nodes []collector.NodeCPU) diagnostic.Result {
+func HotSpotting(nodes []collector.NodeCPU, t rules.Thresholds) diagnostic.Result {
+	hotspotSpread := t.Balance.HotspotSpreadPct
 	res := diagnostic.Result{ID: "hot_spotting", Title: "Hot spotting（資源分布不均）", Category: "performance", Source: "raw_api", Docs: []string{docHotspot}}
 	if len(nodes) < 2 {
 		return pass(res, "單節點或節點數不足，無從比較資源分布")

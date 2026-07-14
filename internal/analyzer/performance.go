@@ -5,9 +5,9 @@ import (
 
 	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
+	"elk-diagnostics/rules"
 )
 
-// 閾值暫於程式內定義；後續規則引擎（spec-rules）會外部化為 default.yaml。
 const (
 	docRejected    = "https://www.elastic.co/docs/troubleshoot/elasticsearch/rejected-requests"
 	docJVM         = "https://www.elastic.co/docs/troubleshoot/elasticsearch/high-jvm-memory-pressure"
@@ -15,11 +15,6 @@ const (
 	docCPU         = "https://www.elastic.co/docs/troubleshoot/elasticsearch/high-cpu-usage"
 	docTaskBacklog = "https://www.elastic.co/docs/troubleshoot/elasticsearch/task-queue-backlog"
 	docSlowlog     = "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-searches"
-
-	jvmWarnPct   = 85 // 官方：持續 >85% 應紓解
-	jvmCritPct   = 95 // parent circuit breaker 預設跳閘點
-	cpuWarnPct   = 85 // 官方：>95% 持續才算問題；85 取較保守的快照預警
-	queueBacklog = 50 // thread pool queue 積壓預警（瞬時值）
 )
 
 var watchPools = map[string]bool{"search": true, "write": true}
@@ -45,7 +40,8 @@ func RejectedRequests(rows []collector.ThreadPoolRow) diagnostic.Result {
 }
 
 // JVMPressure #7：以 old pool used/max 計算記憶體壓力（比瞬時 heap% 準）。
-func JVMPressure(nodes []collector.NodeJVM) diagnostic.Result {
+func JVMPressure(nodes []collector.NodeJVM, t rules.Thresholds) diagnostic.Result {
+	jvmWarnPct, jvmCritPct := t.Performance.JVMWarnPct, t.Performance.JVMCritPct
 	res := diagnostic.Result{ID: "jvm_memory_pressure", Title: "JVM 記憶體壓力", Category: "performance", Source: "raw_api", Docs: []string{docJVM}}
 	var crit, warn []string
 	for _, n := range nodes {
@@ -93,7 +89,8 @@ func CircuitBreaker(nodes []collector.NodeBreaker) diagnostic.Result {
 }
 
 // HighCPU #9：cat nodes 的 cpu（瞬時值），高 CPU 建議以 hot_threads 定位。
-func HighCPU(nodes []collector.NodeCPU) diagnostic.Result {
+func HighCPU(nodes []collector.NodeCPU, t rules.Thresholds) diagnostic.Result {
+	cpuWarnPct := t.Performance.CPUWarnPct
 	res := diagnostic.Result{ID: "high_cpu", Title: "CPU 使用率", Category: "performance", Source: "raw_api", Docs: []string{docCPU}}
 	var hits []string
 	for _, n := range nodes {
@@ -113,7 +110,8 @@ func HighCPU(nodes []collector.NodeCPU) diagnostic.Result {
 }
 
 // TaskBacklog #12：thread pool queue 積壓（瞬時值）。
-func TaskBacklog(rows []collector.ThreadPoolRow) diagnostic.Result {
+func TaskBacklog(rows []collector.ThreadPoolRow, t rules.Thresholds) diagnostic.Result {
+	queueBacklog := t.Performance.QueueBacklog
 	res := diagnostic.Result{ID: "task_backlog", Title: "Thread pool 佇列積壓", Category: "performance", Source: "raw_api", Docs: []string{docTaskBacklog}}
 	var hits []string
 	for _, r := range rows {

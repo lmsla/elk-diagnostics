@@ -25,7 +25,7 @@
 | ✅ | 連線 client（認證 basic/api_key/bearer + TLS/CA/mTLS + 多 host 故障轉移；唯讀） | spec-config | collector/client.go |（真機編譯+執行通過）
 | ✅ | 版本偵測 + cluster_name（GET /）；<8.4 fallback 分支待補 | spec-cli §4 | collector/client.go |
 | ✅ | `DiagnosticResult` 型別（統一結果契約 + 收斂 + 結束碼） | spec-report §1 | internal/diagnostic |
-| ⬜ | 規則引擎：default.yaml embed + 條件 DSL 求值 + 覆寫合併 | spec-rules | rules/default.yaml, internal/rules |
+| ✅ | 規則引擎：default.yaml embed + flat 閾值 + 覆寫合併（僅 C 類連續型指標，範圍縮小見 spec-rules §1） | spec-rules | rules/default.yaml, rules/rules.go |（go build 驗證：預設值/覆寫合併/覆寫檔失效不 crash 三種路徑皆通過）
 | ✅ | `_health_report` 解析基座（真機驗證；容忍未知 indicator） | spec-health-report | collector/health_report.go |
 | ✅ | reporter：JSON（序列化 + 收斂；真機驗證） | spec-report §2,4 | reporter/json.go |
 | ✅ | reporter：離線 HTML（內嵌 CSS、零 CDN、<details> 折疊、可列印） | spec-report §5 | reporter/html.go |（真機產檔驗證：9 卡、0 外部資源）
@@ -136,4 +136,4 @@
 | v0.3 | #16,17,18,32 | ✅ 完成（真機）；B 類 7 條加深待做 |
 | v0.4 | #27,28,31,33,34,35 | ✅ 完成（真機） |
 | 缺口診斷 | check 24 條 + diagnose write-bottleneck | ✅ 全數真機驗證 |
-| 待辦 | 規則引擎、cobra、其餘症狀樹、B 類加深、造壓驗證、韌性/打包 | ⬜ 未開始 |
+| 待辦 | cobra、其餘症狀樹、B 類加深、造壓驗證、韌性/打包、自動化測試 | ⬜ 未開始 |

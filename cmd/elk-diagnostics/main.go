@@ -14,6 +14,7 @@ import (
 	"elk-diagnostics/internal/config"
 	"elk-diagnostics/internal/diagnostic"
 	"elk-diagnostics/internal/reporter"
+	"elk-diagnostics/rules"
 )
 
 const toolVersion = "0.0.4-mvp"
@@ -44,7 +45,7 @@ func usage() {
   elk-diagnostics diagnose --symptom <name> [連線flag] [--output json|html] [-o file]
   elk-diagnostics version
 
-連線flag：--config / --host / --username --password / --api-key / --ca-cert / --insecure / --timeout
+連線flag：--config / --host / --username --password / --api-key / --ca-cert / --insecure / --timeout / --rules
 連線資訊優先序：flag > 環境變數(ELK_DIAGNOSTICS_*) > config.yaml > 預設
 支援症狀：write-bottleneck`)
 }
@@ -52,22 +53,32 @@ func usage() {
 // ---- 連線設定（check 與 diagnose 共用）----
 
 type connFlags struct {
-	cfgPath, hostsCSV, username, password, apiKey, caCert *string
-	insecure                                             *bool
-	timeout                                              *int
+	cfgPath, hostsCSV, username, password, apiKey, caCert, rulesPath *string
+	insecure                                                         *bool
+	timeout                                                          *int
 }
 
 func addConnFlags(fs *flag.FlagSet) *connFlags {
 	return &connFlags{
-		cfgPath:  fs.String("config", "config.yaml", "設定檔路徑"),
-		hostsCSV: fs.String("host", "", "ES base URL（多個以逗號分隔，依序故障轉移）"),
-		username: fs.String("username", "", "basic auth 帳號"),
-		password: fs.String("password", "", "basic auth 密碼"),
-		apiKey:   fs.String("api-key", "", "API key 認證"),
-		caCert:   fs.String("ca-cert", "", "自簽 CA 憑證路徑"),
-		insecure: fs.Bool("insecure", false, "略過 TLS 憑證驗證（不建議）"),
-		timeout:  fs.Int("timeout", 0, "單請求逾時秒數（覆寫設定）"),
+		cfgPath:   fs.String("config", "config.yaml", "設定檔路徑"),
+		hostsCSV:  fs.String("host", "", "ES base URL（多個以逗號分隔，依序故障轉移）"),
+		username:  fs.String("username", "", "basic auth 帳號"),
+		password:  fs.String("password", "", "basic auth 密碼"),
+		apiKey:    fs.String("api-key", "", "API key 認證"),
+		caCert:    fs.String("ca-cert", "", "自簽 CA 憑證路徑"),
+		insecure:  fs.Bool("insecure", false, "略過 TLS 憑證驗證（不建議）"),
+		timeout:   fs.Int("timeout", 0, "單請求逾時秒數（覆寫設定）"),
+		rulesPath: fs.String("rules", "", "覆寫 C 類診斷閾值的 YAML（僅覆寫檔案中出現的欄位；A/B 類不受影響）"),
 	}
+}
+
+// loadThresholds 讀內建閾值，--rules 有指定時嘗試合併覆寫；失敗僅警告，不中斷執行。
+func loadThresholds(cf *connFlags) rules.Thresholds {
+	t, warnings := rules.Load(*cf.rulesPath)
+	for _, w := range warnings {
+		fmt.Fprintln(os.Stderr, "⚠", w)
+	}
+	return t
 }
 
 // buildClient 回傳 (client, primaryHost, errExitCode)；errExitCode 非 0 表失敗。
@@ -139,6 +150,7 @@ func runCheck(args []string) int {
 	if code != 0 {
 		return code
 	}
+	t := loadThresholds(cf)
 	hr, err := client.HealthReport()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "採集失敗:", err)
@@ -151,25 +163,25 @@ func runCheck(args []string) int {
 		results = append(results, analyzer.ILM(mode, errs))
 	}
 	if rows, e := client.ThreadPool(); e == nil {
-		results = append(results, analyzer.RejectedRequests(rows), analyzer.TaskBacklog(rows))
+		results = append(results, analyzer.RejectedRequests(rows), analyzer.TaskBacklog(rows, t))
 	}
 	if nodes, e := client.NodesJVMOldPool(); e == nil {
-		results = append(results, analyzer.JVMPressure(nodes))
+		results = append(results, analyzer.JVMPressure(nodes, t))
 	}
 	if brks, e := client.NodesBreakers(); e == nil {
 		results = append(results, analyzer.CircuitBreaker(brks))
 	}
 	if cpus, e := client.CatNodesCPU(); e == nil {
-		results = append(results, analyzer.HighCPU(cpus), analyzer.HotSpotting(cpus))
+		results = append(results, analyzer.HighCPU(cpus, t), analyzer.HotSpotting(cpus, t))
 	}
 	if alloc, e := client.CatAllocation(); e == nil {
 		results = append(results, analyzer.Unbalanced(alloc))
 	}
 	if counts, e := client.MappingFieldCounts(); e == nil {
-		results = append(results, analyzer.MappingExplosion(counts))
+		results = append(results, analyzer.MappingExplosion(counts, t))
 	}
 	if pipes, e := client.IngestPipelineStats(); e == nil {
-		results = append(results, analyzer.IngestPipelineErrors(pipes))
+		results = append(results, analyzer.IngestPipelineErrors(pipes, t))
 	}
 	if idx, e := client.CatIndicesHealth(); e == nil {
 		results = append(results, analyzer.DataCorruption(idx))
@@ -216,6 +228,7 @@ func runDiagnose(args []string) int {
 	if code != 0 {
 		return code
 	}
+	t := loadThresholds(cf)
 	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: client.Version()}
 
 	switch *symptom {
@@ -226,7 +239,7 @@ func runDiagnose(args []string) int {
 			fmt.Fprintln(os.Stderr, "採集失敗")
 			return 11
 		}
-		res := []diagnostic.Result{analyzer.WriteBottleneck(cpus, pools)}
+		res := []diagnostic.Result{analyzer.WriteBottleneck(cpus, pools, t)}
 		return emit(buildReport(meta, res, "diagnose:write-bottleneck"), *output, *outFile)
 	default:
 		fmt.Fprintln(os.Stderr, "不支援的症狀:", *symptom, "（目前支援：write-bottleneck）")

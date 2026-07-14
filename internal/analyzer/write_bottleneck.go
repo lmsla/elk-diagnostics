@@ -5,21 +5,16 @@ import (
 
 	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
+	"elk-diagnostics/rules"
 )
 
 const docThreadPool = "https://www.elastic.co/docs/reference/elasticsearch/configuration-reference/thread-pool-settings"
 
-// write-bottleneck 因果鏈閾值（暫於程式內；後續規則引擎外部化）。
-const (
-	wbCPULow     = 50 // CPU 偏低：排除單純算力不足
-	wbWriteQueue = 1  // write queue 有積壓
-	wbProcLow    = 2  // allocated_processors 偏低（常見於 K8s 未正確設 CPU limit）
-)
-
 // WriteBottleneck 對映 spec #16，專屬 diagnose --symptom write-bottleneck。
 // 因果鏈：CPU 低 + write queue 積壓 + allocated_processors 偏低 → write pool 過小所致。
 // 三者皆成立才判定 confirmed；部分成立為 suspected；無 write 積壓則此鏈無法解釋。
-func WriteBottleneck(cpus []collector.NodeCPU, pools []collector.WritePoolRow) diagnostic.Result {
+func WriteBottleneck(cpus []collector.NodeCPU, pools []collector.WritePoolRow, t rules.Thresholds) diagnostic.Result {
+	wbCPULow, wbWriteQueue, wbProcLow := t.WriteBottleneck.CPULowPct, t.WriteBottleneck.WriteQueueMin, t.WriteBottleneck.AllocatedProcessorsLow
 	res := diagnostic.Result{
 		ID:       "write_bottleneck",
 		Title:    "寫入瓶頸（因果鏈）",

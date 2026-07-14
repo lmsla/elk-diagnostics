@@ -1,0 +1,26 @@
+# C 類診斷（_health_report 無對應 indicator、需自行採集判定連續型指標）用的可調閾值。
+#
+# A/B 類診斷（見 docs/specs/spec-health-report.md）直接轉述 _health_report 自身的
+# status/diagnosis——ES 已經替這些指標下過判斷，不是「數值 vs 閾值」的問題，
+# 因此不經過這份設定檔，也不受 --rules 覆寫影響。
+#
+# 用 --rules custom.yaml 可覆寫下列任一欄位；未提供的欄位沿用此檔預設值。
+
+performance:
+  jvm_warn_pct: 85       # 官方：持續 >85% 應紓解
+  jvm_crit_pct: 95       # parent circuit breaker 預設跳閘點
+  cpu_warn_pct: 85       # 官方：>95% 持續才算問題；85 取較保守的快照預警
+  queue_backlog: 50      # thread pool queue 積壓預警（瞬時值）
+
+data:
+  mapping_limit_default: 1000  # index.mapping.total_fields.limit 預設值（未讀取實際設定時的假設值）
+  mapping_warn_frac: 80        # 達上限百分比預警
+  ingest_fail_warn_pct: 10     # pipeline failed 百分比預警門檻（官方 heuristic）
+
+balance:
+  hotspot_spread_pct: 30       # 節點指標與中位數差距門檻
+
+write_bottleneck:
+  cpu_low_pct: 50               # CPU 偏低：排除單純算力不足
+  write_queue_min: 1            # write queue 有積壓
+  allocated_processors_low: 2   # allocated_processors 偏低門檻（常見於 K8s 未正確設 CPU limit）
