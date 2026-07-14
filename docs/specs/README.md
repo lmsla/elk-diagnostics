@@ -1,11 +1,11 @@
-# elk-doctor 診斷規格（specs）
+# elk-diagnostics 診斷規格（specs）
 
 **這是實作的唯一依據。打開本目錄、讀完即可動工。**
 
 ## 這是什麼
 
-elk-doctor：連上 ES、跑一輪唯讀診斷、輸出一份中文健康報告的單一二進位 CLI。
-兩種用法：`elk-doctor check`（全面巡檢）、`elk-doctor diagnose --symptom <x>`（症狀排查）。
+elk-diagnostics：連上 ES、跑一輪唯讀診斷、輸出一份中文健康報告的單一二進位 CLI。
+兩種用法：`elk-diagnostics check`（全面巡檢）、`elk-diagnostics diagnose --symptom <x>`（症狀排查）。
 
 ## 架構演進（一句話）
 

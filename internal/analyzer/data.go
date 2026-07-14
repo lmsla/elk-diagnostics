@@ -3,8 +3,8 @@ package analyzer
 import (
 	"fmt"
 
-	"elk-doctor/internal/collector"
-	"elk-doctor/internal/diagnostic"
+	"elk-diagnostics/internal/collector"
+	"elk-diagnostics/internal/diagnostic"
 )
 
 const (

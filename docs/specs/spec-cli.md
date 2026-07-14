@@ -6,9 +6,9 @@
 
 | 指令 | 用途 |
 |---|---|
-| `elk-doctor check` | 全面巡檢，跑所有適用診斷，產出整份報告 |
-| `elk-doctor diagnose --symptom <x>` | 症狀排查，跑該症狀診斷樹（見 spec-diagnose-symptoms） |
-| `elk-doctor version` | 印工具版本 |
+| `elk-diagnostics check` | 全面巡檢，跑所有適用診斷，產出整份報告 |
+| `elk-diagnostics diagnose --symptom <x>` | 症狀排查，跑該症狀診斷樹（見 spec-diagnose-symptoms） |
+| `elk-diagnostics version` | 印工具版本 |
 
 > `report` 不獨立成指令；輸出格式由 `--output` 控制（原骨架的 report.go 可作為 reporter 呼叫點或併入）。
 
@@ -55,9 +55,9 @@
 ## 5. 範例
 
 ```bash
-elk-doctor check --output html -o report.html --config prod.yaml
-elk-doctor check --host https://es:9200 --api-key "$KEY"          # 輸出 JSON 到 stdout
-elk-doctor diagnose --symptom write-bottleneck --interval 5
+elk-diagnostics check --output html -o report.html --config prod.yaml
+elk-diagnostics check --host https://es:9200 --api-key "$KEY"          # 輸出 JSON 到 stdout
+elk-diagnostics diagnose --symptom write-bottleneck --interval 5
 echo $?    # 2 = 有 critical
 ```
 

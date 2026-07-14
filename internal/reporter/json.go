@@ -5,7 +5,7 @@ package reporter
 import (
 	"encoding/json"
 
-	"elk-doctor/internal/diagnostic"
+	"elk-diagnostics/internal/diagnostic"
 )
 
 // JSON 產出對外穩定契約（spec-report §4）。

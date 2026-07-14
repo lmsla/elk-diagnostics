@@ -1,4 +1,4 @@
-module elk-doctor
+module elk-diagnostics
 
 go 1.21
 

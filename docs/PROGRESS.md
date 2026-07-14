@@ -1,4 +1,4 @@
-# elk-doctor 實作進度表
+# elk-diagnostics 實作進度表
 
 實作的勾稽清單。每完成一項，更新狀態並在 PR/commit 引用對應規格檔。
 **狀態**：⬜ 未開始｜🟡 進行中｜✅ 完成｜⏭️ 略過（不適用）
@@ -20,7 +20,7 @@
 
 | 狀態 | 項目 | 規格 | 位置 |
 |---|---|---|---|
-| 🟡 | `go mod init` + 切片 CLI（stdlib flag；cobra 待換） | spec-cli | go.mod, cmd/elk-doctor/main.go |
+| 🟡 | `go mod init` + 切片 CLI（stdlib flag；cobra 待換） | spec-cli | go.mod, cmd/elk-diagnostics/main.go |
 | ✅ | 設定載入（config.yaml + env + flag 優先序、預設、驗證） | spec-config | internal/config |（真機驗證：flag 路徑出報告）
 | ✅ | 連線 client（認證 basic/api_key/bearer + TLS/CA/mTLS + 多 host 故障轉移；唯讀） | spec-config | collector/client.go |（真機編譯+執行通過）
 | ✅ | 版本偵測 + cluster_name（GET /）；<8.4 fallback 分支待補 | spec-cli §4 | collector/client.go |

@@ -3,8 +3,8 @@ package analyzer
 import (
 	"fmt"
 
-	"elk-doctor/internal/collector"
-	"elk-doctor/internal/diagnostic"
+	"elk-diagnostics/internal/collector"
+	"elk-diagnostics/internal/diagnostic"
 )
 
 // ILM 對映 spec #5。health_report 的 ilm indicator 會延遲（Phase 0 實測），故以

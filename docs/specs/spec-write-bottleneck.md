@@ -1,6 +1,6 @@
 # spec-write-bottleneck — 寫入瓶頸因果鏈（#16，C 類）
 
-**實作位置**：`write_bottleneck.go`。專屬 `elk-doctor diagnose --symptom write-bottleneck`。
+**實作位置**：`write_bottleneck.go`。專屬 `elk-diagnostics diagnose --symptom write-bottleneck`。
 源自實際客戶案例（ES on K8s 寫入效能事件）。此項是**因果鏈驗證**，非單點告警。
 
 ## 目標

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"html/template"
 
-	"elk-doctor/internal/diagnostic"
+	"elk-diagnostics/internal/diagnostic"
 )
 
 // HTML 產出離線可渲染報告（spec-report §5）：單一檔、CSS 全內嵌、零外部 CDN、
@@ -91,7 +91,7 @@ const htmlTmpl = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>elk-doctor 診斷報告</title>
+<title>elk-diagnostics 診斷報告</title>
 <style>
   :root{--pass:#2e7d32;--warning:#ed6c02;--critical:#c62828;--skipped:#757575;--unknown:#455a64;}
   *{box-sizing:border-box}
@@ -125,7 +125,7 @@ const htmlTmpl = `<!DOCTYPE html>
 <body>
 <div class="wrap">
 <header>
-  <h1>elk-doctor 診斷報告</h1>
+  <h1>elk-diagnostics 診斷報告</h1>
   <div class="meta">
     <span>叢集：{{.R.Meta.Cluster.Name}}</span>
     <span>{{.R.Meta.Cluster.Host}}</span>

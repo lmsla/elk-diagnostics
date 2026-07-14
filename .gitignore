@@ -1,7 +1,7 @@
-# 編譯產物
-elk-doctor
-elk-doctor-*
-dist/
+# 編譯產物（僅排除 repo 根目錄下的輸出檔，不影響 cmd/ 原始碼目錄）
+/elk-diagnostics
+/elk-diagnostics-*
+/dist/
 
 # macOS
 .DS_Store

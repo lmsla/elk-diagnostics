@@ -65,30 +65,30 @@ func Load(path string) (Config, error) {
 
 // ApplyEnv 以環境變數覆寫（僅當變數非空）。
 func (c *Config) ApplyEnv() {
-	if v := os.Getenv("ELK_DOCTOR_HOSTS"); v != "" {
+	if v := os.Getenv("ELK_DIAGNOSTICS_HOSTS"); v != "" {
 		c.Cluster.Hosts = splitCSV(v)
 	}
-	if v := os.Getenv("ELK_DOCTOR_AUTH_TYPE"); v != "" {
+	if v := os.Getenv("ELK_DIAGNOSTICS_AUTH_TYPE"); v != "" {
 		c.Cluster.Auth.Type = v
 	}
-	if v := os.Getenv("ELK_DOCTOR_USERNAME"); v != "" {
+	if v := os.Getenv("ELK_DIAGNOSTICS_USERNAME"); v != "" {
 		c.Cluster.Auth.Username = v
 		if c.Cluster.Auth.Type == "" || c.Cluster.Auth.Type == "none" {
 			c.Cluster.Auth.Type = "basic"
 		}
 	}
-	if v := os.Getenv("ELK_DOCTOR_PASSWORD"); v != "" {
+	if v := os.Getenv("ELK_DIAGNOSTICS_PASSWORD"); v != "" {
 		c.Cluster.Auth.Password = v
 	}
-	if v := os.Getenv("ELK_DOCTOR_API_KEY"); v != "" {
+	if v := os.Getenv("ELK_DIAGNOSTICS_API_KEY"); v != "" {
 		c.Cluster.Auth.APIKey = v
 		c.Cluster.Auth.Type = "api_key"
 	}
-	if v := os.Getenv("ELK_DOCTOR_TOKEN"); v != "" {
+	if v := os.Getenv("ELK_DIAGNOSTICS_TOKEN"); v != "" {
 		c.Cluster.Auth.Token = v
 		c.Cluster.Auth.Type = "bearer"
 	}
-	if v := os.Getenv("ELK_DOCTOR_CA_CERT"); v != "" {
+	if v := os.Getenv("ELK_DIAGNOSTICS_CA_CERT"); v != "" {
 		c.Cluster.TLS.CACert = v
 	}
 }
@@ -136,7 +136,7 @@ func (c *Config) ApplyFlags(f FlagOverrides) {
 // Validate：連線資訊為唯一必填。
 func (c Config) Validate() error {
 	if len(c.Cluster.Hosts) == 0 {
-		return fmt.Errorf("缺少連線資訊：請以 config.yaml 的 cluster.hosts、--host、或 ELK_DOCTOR_HOSTS 擇一提供")
+		return fmt.Errorf("缺少連線資訊：請以 config.yaml 的 cluster.hosts、--host、或 ELK_DIAGNOSTICS_HOSTS 擇一提供")
 	}
 	return nil
 }

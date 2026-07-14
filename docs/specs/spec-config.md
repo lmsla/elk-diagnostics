@@ -38,12 +38,12 @@ cluster:
 
 | 變數 | 對映 |
 |---|---|
-| `ELK_DOCTOR_HOSTS` | `cluster.hosts`（逗號分隔） |
-| `ELK_DOCTOR_AUTH_TYPE` | `cluster.auth.type` |
-| `ELK_DOCTOR_USERNAME` / `_PASSWORD` | basic |
-| `ELK_DOCTOR_API_KEY` | api_key |
-| `ELK_DOCTOR_TOKEN` | bearer |
-| `ELK_DOCTOR_CA_CERT` | tls.ca_cert |
+| `ELK_DIAGNOSTICS_HOSTS` | `cluster.hosts`（逗號分隔） |
+| `ELK_DIAGNOSTICS_AUTH_TYPE` | `cluster.auth.type` |
+| `ELK_DIAGNOSTICS_USERNAME` / `_PASSWORD` | basic |
+| `ELK_DIAGNOSTICS_API_KEY` | api_key |
+| `ELK_DIAGNOSTICS_TOKEN` | bearer |
+| `ELK_DIAGNOSTICS_CA_CERT` | tls.ca_cert |
 
 對應 flag：`--config`、`--host`（可重複）、`--username/--password`、`--api-key`、`--ca-cert`、`--insecure`、`--timeout`。
 

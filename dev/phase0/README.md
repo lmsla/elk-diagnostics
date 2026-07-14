@@ -55,7 +55,7 @@ fixture 會存到 `dev/phase0/fixtures/<label>/`，capture 結束會印出 healt
 
 ## Kibana 視覺化對照
 
-docker-compose 內含對應版本的 Kibana，用來與 elk-doctor 的判斷交叉核對。
+docker-compose 內含對應版本的 Kibana，用來與 elk-diagnostics 的判斷交叉核對。
 
 | ES | Kibana |
 |---|---|
@@ -69,7 +69,7 @@ docker compose up -d es8 kibana8   # 只起 es8 + 對應 Kibana（省資源）
 
 對照用法：
 
-- **Dev Tools → Console**：手打 `GET _health_report`、`GET _cluster/health`、`GET _cat/thread_pool` 等，對照 elk-doctor 的 JSON 結果是否一致。
+- **Dev Tools → Console**：手打 `GET _health_report`、`GET _cluster/health`、`GET _cat/thread_pool` 等，對照 elk-diagnostics 的 JSON 結果是否一致。
 - **Stack Management → Index Management / Data Streams**：對照 shards / mapping / ILM 判斷。
 - **Stack Monitoring**（若啟用）：看 JVM / CPU / thread pool 趨勢，對照 performance 群診斷。
 

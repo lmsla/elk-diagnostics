@@ -3,8 +3,8 @@ package analyzer
 import (
 	"fmt"
 
-	"elk-doctor/internal/collector"
-	"elk-doctor/internal/diagnostic"
+	"elk-diagnostics/internal/collector"
+	"elk-diagnostics/internal/diagnostic"
 )
 
 // 閾值暫於程式內定義；後續規則引擎（spec-rules）會外部化為 default.yaml。

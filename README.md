@@ -1,4 +1,4 @@
-# elk-doctor
+# elk-diagnostics
 
 ELK 系統快速診斷 CLI 工具。單一二進位、零依賴、可離線執行，涵蓋日常巡檢與故障排查兩種情境。
 
@@ -36,6 +36,12 @@ ES-diagnostics/
 ├── docs/specs/                # 規格（實作依據）
 └── README.md
 ```
+
+## 未來方向
+
+目前僅涵蓋 Elasticsearch。Logstash、Kibana 診斷是可能的擴展方向，但尚未排入開發日程——
+兩者都沒有類似 `_health_report` 的整合式健檢端點，屬於需要另起 collector/analyzer 的獨立工作量，
+會視實際案子需求評估是否啟動。
 
 ## 鐵律
 

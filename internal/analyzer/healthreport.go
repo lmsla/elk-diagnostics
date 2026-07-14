@@ -9,8 +9,8 @@ package analyzer
 import (
 	"fmt"
 
-	"elk-doctor/internal/collector"
-	"elk-doctor/internal/diagnostic"
+	"elk-diagnostics/internal/collector"
+	"elk-diagnostics/internal/diagnostic"
 )
 
 const docRedYellow = "https://www.elastic.co/docs/troubleshoot/elasticsearch/red-yellow-cluster-status"
