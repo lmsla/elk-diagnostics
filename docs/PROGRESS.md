@@ -20,7 +20,7 @@
 
 | 狀態 | 項目 | 規格 | 位置 |
 |---|---|---|---|
-| 🟡 | `go mod init` + 切片 CLI（stdlib flag；cobra 待換） | spec-cli | go.mod, cmd/elk-diagnostics/main.go |
+| ✅ | `go mod init` + 切片 CLI（cobra；main.go/root.go/check.go/diagnose.go/version.go） | spec-cli | go.mod, cmd/elk-diagnostics/ |
 | ✅ | 設定載入（config.yaml + env + flag 優先序、預設、驗證） | spec-config | internal/config |（真機驗證：flag 路徑出報告）
 | ✅ | 連線 client（認證 basic/api_key/bearer + TLS/CA/mTLS + 多 host 故障轉移；唯讀） | spec-config | collector/client.go |（真機編譯+執行通過）
 | ✅ | 版本偵測 + cluster_name（GET /）；<8.4 fallback 分支待補 | spec-cli §4 | collector/client.go |
@@ -141,4 +141,5 @@
 | B 類加深 | #19,20,24,25,30,36,37 | 🟡 單元測試完成，待真機端到端驗證 |
 | 缺口診斷 | check 24 條 + diagnose write-bottleneck | ✅ 全數真機驗證 |
 | 症狀樹擴充 | red-cluster、high-heap、ingest-lag、ilm-stuck | 🟡 已實作＋build/vet/test 過，待真機端到端驗證 |
-| 待辦 | cobra、B 類真機驗證、症狀樹真機驗證、造壓驗證、韌性/打包 | ⬜ 未開始 |
+| CLI 框架遷移 | stdlib flag → cobra（子指令 -h、--host 可重複、-o/--output-file shorthand） | ✅ 完成（exit code 契約以手動起本機二進位驗證：check --from-file、diagnose 缺 symptom=10、連線失敗=11） |
+| 待辦 | B 類真機驗證、症狀樹真機驗證、造壓驗證、韌性/打包 | ⬜ 未開始 |
