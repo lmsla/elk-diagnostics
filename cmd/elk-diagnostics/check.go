@@ -248,7 +248,11 @@ func unknownFrom(zero diagnostic.Result, err error) diagnostic.Result {
 	return zero
 }
 
-const maxIndexAllocationScan = 20 // 對照 spec 原定上限，避免受影響 index 過多時逐一查爆量請求
+const (
+	maxIndexAllocationScan = 20 // 對照 spec 原定上限，避免受影響 index 過多時逐一查爆量請求
+	// maxIndexAllocationScanStr 供 apis 清單引用，與上者同源避免文件與實作對不上。
+	maxIndexAllocationScanStr = "20"
+)
 
 // indexAllocationEnables 對 shards_availability 診斷點名的受影響 index（上限 20 個），
 // 逐一查 index.routing.allocation.enable 生效值，供 #20 使用。

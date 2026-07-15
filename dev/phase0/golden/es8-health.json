@@ -452,7 +452,7 @@
       "category": "cluster",
       "status": "pass",
       "conclusion": "normal",
-      "summary": " shard 0（primary=false）：無 decider 封鎖，可能為暫時性 rebalancing",
+      "summary": "無未分配 shard 可供 allocation/explain 解釋",
       "findings": null,
       "root_causes": null,
       "recommendations": null,
@@ -460,8 +460,7 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/cluster-allocation-api-examples"
       ],
       "source": "raw_api",
-      "requires_extra": true,
-      "extra_reason": "僅代表性抽查一個未分配 shard，非窮舉；其餘 shard 可能有不同根因"
+      "requires_extra": false
     },
     {
       "id": "ilm_tier_migration",

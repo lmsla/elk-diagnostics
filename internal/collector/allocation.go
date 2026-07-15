@@ -106,6 +106,13 @@ func (c *Client) AllocationExplain() (*AllocationExplanation, bool, error) {
 		}
 		return nil, false, err
 	}
+	// 即使狀態碼是 2xx 也要再確認一次：bundle 若未帶 _status.txt（例如直接拿 fixture
+	// 目錄當 bundle），這個 400 的錯誤 body 會被當成 200 交進來，硬解會得到一個空的
+	// AllocationExplanation 並誤報「無 decider 封鎖」。成功回應沒有 error 欄位，故此
+	// 檢查對連線模式無副作用。
+	if isNoUnassignedShardError(b) {
+		return nil, false, nil
+	}
 	return parseAllocationExplain(b)
 }
 

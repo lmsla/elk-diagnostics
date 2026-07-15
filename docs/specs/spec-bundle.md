@@ -24,12 +24,29 @@
 ```
 客戶環境                                  自己的機器
 ─────────                                ─────────
-採集腳本（純 curl，逐行可讀）
+collect.sh（純 curl，逐行可讀）
      │
      └──→  bundle/*.json  ────────────→  elk-diagnostics check --from-bundle
                                                  │
                                                  └──→ 報告（與連線模式完全相同）
 ```
+
+交付流程與對應指令：
+
+| 步驟 | 在哪 | 指令 |
+|---|---|---|
+| 1. 提交 API 清單給客戶資安審查 | — | [`docs/api-inventory.md`](../api-inventory.md)，或 `elk-diagnostics apis --output markdown` |
+| 2. 交付採集腳本 | — | repo 根目錄的 [`collect.sh`](../../collect.sh)，或 `elk-diagnostics collect-script > collect.sh` |
+| 3. 採集（客戶可自行審閱腳本後執行） | 客戶環境 | `./collect.sh -h https://es:9200 -u elastic` |
+| 4. 帶回 bundle、離線分析 | 自己的機器 | `elk-diagnostics check --from-bundle <目錄>` |
+
+`apis` 與 `collect-script` 皆由 `collector.Endpoints` 產生，不手寫維護——**一份與實作對不上的 API 清單交給客戶資安審查，比沒有還糟**。
+
+兩份交付物皆 checked in（`collect.sh` 於 repo 根目錄、`docs/api-inventory.md` 於 docs），方便直接 review／diff／交付，沿用 golden 檔的模式：**產生檔 checked in，另以測試擋過期**。端點表或範本變動後須執行 `make generate`，否則 `TestCollectScript_CheckedInCopyIsFresh` / `TestAPIInventory_CheckedInCopyIsFresh` 會失敗。
+
+checked in 而非只留在 `dist/`（gitignore）的理由：新增端點時，diff 會直接顯示「對客戶叢集的 API 呼叫面變了」——那是該進 code review 的訊號，不該只在打包時一閃而過。
+
+`make dist` 會把兩者連同二進位檔一併收進 `dist/`，各附 SHA256。
 
 **客戶從頭到尾沒有執行過本工具的二進位檔。** 導入審查的對象從「未知執行檔」降級為「一份文字檔」。
 
@@ -49,16 +66,34 @@
 
 ## 4. Bundle 格式
 
-一個目錄，內含依 `collector.Endpoints` 命名的 JSON 檔，每個檔案是對應端點的**原始回應**（不加工、不重排）：
+一個目錄，內含依 `collector.Endpoints` 命名的 JSON 檔，每個檔案是對應端點的**原始回應**（不加工、不重排），外加一份狀態清單：
 
 ```
 bundle/
+├── _status.txt               # 每行 "<檔名> <HTTP 狀態碼>"
+├── _errors.log               # curl 層級的錯誤（連線失敗等）
 ├── version.json              # GET /
 ├── health_report.json        # GET /_health_report
 ├── cluster_settings.json     # GET /_cluster/settings?include_defaults=true&flat_settings=true
 ├── ...
 └── cat_thread_pool_write.json
 ```
+
+### 4.1 `_status.txt` 為何是必要的
+
+採集腳本**不使用 `curl -f`**，一律保留 body 並記下真實狀態碼。少了這份清單，就無法區分「正常回應」與「ES 的錯誤訊息」，而兩者都是 JSON：
+
+- **語意化的 4xx 必須保留**：叢集健康時 `allocation/explain` 回 **400**，那個錯誤 body 正是「沒有未分配 shard」的答案。若腳本用 `-f` 丟棄它，#37 會在每個健康叢集上變成 unknown。
+- **真正的 4xx 不能被當成資料**：若 `_watcher/stats` 因權限不足回 **403**，錯誤 body 被當成 200 解析後會得到零值 → 診斷回報「Watcher 運作中」。**實測確認過此假綠燈**：
+
+  | | `_watcher/stats` 回 403 時 |
+  |---|---|
+  | 有 `_status.txt` | `unknown`「資料抓取失敗，無法判定」✅ |
+  | 無 `_status.txt` | `pass`「Watcher 運作中」❌ 假綠燈 |
+
+有了狀態碼，bundle 模式的 `get()` 對 4xx/5xx 的處理與連線模式完全相同，兩者行為一致。
+
+`_status.txt` 不存在時一律視為 200，以相容於直接拿 `dev/phase0/fixtures/<cluster>/` 當 bundle 的用法；`AllocationExplain` 因此額外自行辨識錯誤 body（見 collector 內註解）。
 
 端點 → 檔名的對照由 `collector.Endpoints` 單一定義，同時供 bundle 讀取、golden test 回放、與後續的採集腳本產生使用。`dev/phase0/fixtures/<cluster>/` 即是此格式，故既有 fixture 可直接當 bundle 使用。
 

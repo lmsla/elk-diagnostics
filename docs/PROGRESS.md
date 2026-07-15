@@ -151,7 +151,7 @@
 | 多版本 golden test | es8/es9 × healthy/unhealthy 4 組 | 🟡 完成，覆蓋率受限於 Phase 0 錄製範圍（已誠實記錄） |
 | 安全與非功能 | 唯讀保證、密鑰遮蔽測試、multi-arch 打包 | ✅ 完成 |
 | 採集/判斷分離 | 端點表單一事實來源 + `--from-bundle` 離線分析 | ✅ 完成，見 [spec-bundle.md](./specs/spec-bundle.md)。真機驗證：bundle 與連線模式 31 條診斷判定逐條一致。**動機是交付面**——客戶不必為健檢導入未知二進位檔，只需跑一份看得懂的 curl 腳本 |
-| 客戶交付透明層 | 採集腳本 `collect.sh` + API 清單（由端點表產生） | ⬜ 未開始，端點表已就緒（`collector.Endpoints` 已含 Purpose 欄位） |
+| 客戶交付透明層 | 採集腳本 `collect.sh` + API 清單（由端點表產生） | ✅ 完成。`apis`（text/markdown，供資安審查）與 `collect-script`（POSIX sh，純 curl）兩個子指令，皆由 `collector.Endpoints` 產生。`collect.sh`（repo 根目錄）與 `docs/api-inventory.md` 皆 checked in（`make generate` 更新，測試擋過期，故新增端點時 API 呼叫面的變動會出現在 diff），`make dist` 一併產出交付包（二進位＋collect.sh＋api-inventory.md，各附 SHA256）。真機驗證：用 dash 跑產出的腳本採集 es8，離線分析結果與直連逐條一致。腳本經 sh/dash/bash `-n` 語法檢查，並鎖住唯讀、認證不上命令列、必記 HTTP 狀態碼 |
 | bundle 遮罩 | `--redact`：index/node/host 名稱 | ⬜ 未開始，見 spec-bundle §5.2 |
 | 2026-07-15 真機驗證 | 本機 Docker es8=8.14.3/es9=9.0.0 對 check 全量 + 5 條症狀樹 | ✅ 完成；意外抓到並修正 #11/#32 系統 index 誤報 bug（見 §2） |
 | 2026-07-15 造壓驗證 | disk/shards_capacity/repository_integrity/ILM/allocation 封鎖異常情境 | ✅ 完成；抓到並修正 2 個真 bug（#19/#20/#31/#33 的 filter_path+flat_settings 解析、#11/#32 的 data stream 誤排除），見 §4 |

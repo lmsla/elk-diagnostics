@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -87,6 +88,7 @@ func New(opts Options) (*Client, error) {
 // bundle 缺檔一律回錯誤（不是回空值），讓對應診斷落到 unknown 而非 pass：
 // 查不到就說查不到，這是 spec-resilience §1/§3 的既有規則。
 func NewFromBundle(dir string) (*Client, error) {
+	statuses := readBundleStatuses(dir)
 	c := &Client{
 		base:    "(bundle) " + dir,
 		retries: 0, // 讀本地檔案沒有暫時性失敗，重試無意義
@@ -104,6 +106,10 @@ func NewFromBundle(dir string) (*Client, error) {
 			}
 			return nil, 0, err
 		}
+		// 回放採集當下的真實狀態碼，讓 get() 對 4xx/5xx 的處理與連線模式完全一致。
+		if status, ok := statuses[file]; ok {
+			return b, status, nil
+		}
 		return b, http.StatusOK, nil
 	}
 
@@ -113,6 +119,41 @@ func NewFromBundle(dir string) (*Client, error) {
 	}
 	c.name, c.version = name, ver
 	return c, nil
+}
+
+// BundleStatusFile 記錄採集當下每個端點的 HTTP 狀態碼，由採集腳本產生。
+const BundleStatusFile = "_status.txt"
+
+// readBundleStatuses 讀 bundle 的狀態清單（每行 "<檔名> <狀態碼>"）。
+//
+// 沒有這份清單就無法區分「這個檔是正常回應」與「這個檔是 ES 的錯誤訊息」：
+//   - allocation/explain 在健康叢集回 400，而那個錯誤 body 正是「無未分配 shard」的答案
+//   - 反過來，若某端點因權限不足回 403，錯誤 body 被當成 200 解析後會得到零值，
+//     讓診斷回報「一切正常」——正是 VERIFICATION.md §1 那類假綠燈
+//
+// 檔案不存在時回 nil，呼叫端一律視為 200（相容於直接拿 fixture 目錄當 bundle 的用法）。
+func readBundleStatuses(dir string) map[string]int {
+	b, err := os.ReadFile(filepath.Join(dir, BundleStatusFile))
+	if err != nil {
+		return nil
+	}
+	out := map[string]int{}
+	for _, line := range strings.Split(string(b), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			continue
+		}
+		code, err := strconv.Atoi(fields[1])
+		if err != nil {
+			continue
+		}
+		out[fields[0]] = code
+	}
+	return out
 }
 
 // FileOf 回傳端點對應的 bundle 檔名，供錯誤訊息與文件使用；未知端點回原 path。

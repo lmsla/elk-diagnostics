@@ -89,6 +89,61 @@ func TestNewFromBundle(t *testing.T) {
 		}
 	})
 
+	// 這是 _status.txt 存在的唯一理由，實測確認過：若不記錄狀態碼，403 的錯誤 body
+	// 會被當成 200 解析成零值，讓診斷回報「Watcher 運作中」——正是本專案一路在
+	// 消滅的假綠燈（見 VERIFICATION.md §1）。
+	t.Run("_status.txt 讓 4xx 回放成錯誤而非資料", func(t *testing.T) {
+		dir := writeBundle(t, map[string]string{
+			"version.json":       versionBody,
+			"watcher_stats.json": `{"error":{"reason":"unauthorized"},"status":403}`,
+			BundleStatusFile:     "version.json 200\nwatcher_stats.json 403\n",
+		})
+		c, err := NewFromBundle(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c.WatcherManuallyStopped(); err == nil {
+			t.Fatal("want error（403 的錯誤 body 不可被當成正常資料解析）")
+		}
+	})
+
+	t.Run("_status.txt 讓語意化的 4xx 仍能判讀", func(t *testing.T) {
+		// 叢集健康時 allocation/explain 回 400，那個 body 就是「無未分配 shard」的答案。
+		dir := writeBundle(t, map[string]string{
+			"version.json":            versionBody,
+			"allocation_explain.json": `{"error":{"reason":"unable to find any unassigned shards to explain"}}`,
+			BundleStatusFile:          "version.json 200\nallocation_explain.json 400\n",
+		})
+		c, err := NewFromBundle(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		exp, found, err := c.AllocationExplain()
+		if err != nil {
+			t.Fatalf("不該回錯誤（400 在此是語意而非失敗）: %v", err)
+		}
+		if found || exp != nil {
+			t.Error("應判定為「無未分配 shard 可解釋」")
+		}
+	})
+
+	t.Run("無 _status.txt 時 allocation/explain 仍能判讀", func(t *testing.T) {
+		// 直接拿 fixture 目錄當 bundle 的情境：沒有狀態檔，一律視為 200，
+		// 故 AllocationExplain 需自行辨識錯誤 body。
+		dir := writeBundle(t, map[string]string{
+			"version.json":            versionBody,
+			"allocation_explain.json": `{"error":{"reason":"unable to find any unassigned shards to explain"}}`,
+		})
+		c, err := NewFromBundle(dir)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, found, err := c.AllocationExplain()
+		if err != nil || found {
+			t.Errorf("應判定為「無未分配 shard」，got found=%v err=%v", found, err)
+		}
+	})
+
 	t.Run("bundle 模式全程不連線", func(t *testing.T) {
 		dir := writeBundle(t, map[string]string{
 			"version.json":        versionBody,
