@@ -4,6 +4,10 @@
 **狀態**：⬜ 未開始｜🟡 進行中｜✅ 完成｜⏭️ 略過（不適用）
 **規格**：實作依據，見 [`specs/`](./specs/)。所有診斷項一律產出 `DiagnosticResult`（spec-report §1）。
 
+> ⚠️ **本文的 ✅ 只代表「已實作、跑得起來」，不代表「已證明會抓到問題」。**
+> 兩者是不同的事——2026-07-15 真機驗證找出 4 條結構上永遠回報綠燈的診斷，它們在本文長期標著 ✅。
+> **正確性追蹤請看 [`VERIFICATION.md`](./VERIFICATION.md)**，該文只認「刻意造壓並確認正確報出異常」為驗證通過。
+
 ---
 
 ## 0. 開工關卡（Phase 0，MVP 前必過）
@@ -80,8 +84,8 @@
 | ✅ | 17 | Hot spotting | C | spec-performance | performance |（真機驗證；單節點正確跳過）
 | ✅ | 18 | Unbalanced cluster | C | spec-performance | cluster |（真機驗證；單節點正確跳過）
 | ✅ | 32 | Data corruption 偵測 | C | spec-data | data |（真機驗證；red 徵兆 + 導向查 log。2026-07-15 隨 #11 同批修正：`_cat/indices` 也排除系統 index，避免系統 index 短暫 red 被誤判客戶資料毀損）
-| ✅ | 19 | Data allocation blocked | B | spec-health-report | analyzer/allocation.go |（單元測試通過；2026-07-15 真機驗證：8.14.3/9.0.0 皆正確判定 pass）
-| ✅ | 20 | Index allocation blocked | B | spec-health-report | analyzer/allocation.go |（單元測試通過；2026-07-15 真機驗證：8.14.3/9.0.0 皆正確判定 pass）
+| ✅ | 19 | Data allocation blocked | B | spec-health-report | analyzer/allocation.go |（**2026-07-15 造壓驗證抓到真 bug**：`filter_path`+`flat_settings` 語意衝突，本條長期不論實際設定為何都只回報「無封鎖」——先前記錄的「真機驗證正確判定 pass」正是這個 bug，不是正確判定。已修正並以 `allocation.enable=none` 造壓確認會正確報 critical，見 [VERIFICATION.md](./VERIFICATION.md) §3.1）
+| ✅ | 20 | Index allocation blocked | B | spec-health-report | analyzer/allocation.go |（同 #19 的 bug 與修正；**但 blocked 分支尚未造壓驗證**，僅驗過 pass 分支，見 [VERIFICATION.md](./VERIFICATION.md) §3.2 Group A）
 | ✅ | 24 | Preferred data tier missing | B | spec-health-report | analyzer/data.go |（單元測試通過；設計為資訊性，不臆測缺 tier＝異常；2026-07-15 真機驗證：單節點叢集正確判定所有 tier 皆有節點）
 | ✅ | 25 | Incomplete migration to tiers | B | spec-health-report | analyzer/management.go |（單元測試通過；單次快照只能列候選，卡住判定需重複觀測；2026-07-15 真機驗證：正確判定無遷移中 index）
 | ✅ | 30 | Unstable cluster | B | spec-health-report | analyzer/cluster.go |（單元測試通過；用 master-eligible 節點數/奇偶佐證，非直接偵測選舉事件；2026-07-15 真機驗證：單節點叢集正確判定「僅 1 個 master-eligible，單點故障」為 warning）
