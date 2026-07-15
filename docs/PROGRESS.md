@@ -121,7 +121,7 @@
 | 狀態 | 項目 | 規格 |
 |---|---|---|
 | ✅ | C 類 analyzer（performance/balance/write_bottleneck/data/management）與規則引擎合併邏輯自動化測試 | 見各 `*_test.go`、`rules/rules_test.go` |
-| ⬜ | 多版本 golden test（錄製 response → 斷言 DiagnosticResult） | ⚠️ 待補 spec |
+| 🟡 | 多版本 golden test（錄製 response → 斷言 DiagnosticResult） | `cmd/elk-diagnostics/golden_test.go`＋`dev/phase0/golden/`；對 es8-health/es8-unhealthy/es9-healthy/es9-unhealthy 4 組 Phase 0 錄製檔各跑一次完整 `check`，比對整份報告。覆蓋率受限於 Phase 0 當時錄製的端點（allocation-enable/index-settings/mapping/recovery/write-thread-pool/monitoring-setting/slowlog-setting/ilm-explain 等較新端點未錄製，對應診斷在測試中如同真機缺權限被 check 容錯跳過），已在檔頭註解與 PROGRESS 誠實記錄，非缺陷。已用刻意注入的欄位改名驗證測試真的會抓到回歸。`-update` 旗標更新 golden 檔。 |
 | ⬜ | 錯誤與韌性（逾時/重試/部分不可達 → unknown） | ⚠️ 待補 spec |
 | ⬜ | 安全與非功能（唯讀保證、密鑰遮蔽、單一二進位打包 OS/arch） | ⚠️ 待補 spec |
 | ⬜ | 每項實作前先讀官方文件、填 `tested_versions`（鐵律，逐項執行） | specs README |

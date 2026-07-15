@@ -1,0 +1,418 @@
+{
+  "meta": {
+    "tool_version": "0.0.4-mvp",
+    "generated_at": "",
+    "cluster": {
+      "name": "docker-cluster",
+      "host": "",
+      "es_version": "8.14.3"
+    },
+    "mode": "check"
+  },
+  "overall_status": "warning",
+  "summary": {
+    "pass": 23,
+    "warning": 1,
+    "critical": 0,
+    "skipped": 0,
+    "unknown": 0
+  },
+  "results": [
+    {
+      "id": "cluster_health",
+      "title": "叢集健康 / 未分配 shard",
+      "category": "cluster",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "This cluster has all shards available.",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/red-yellow-cluster-status"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "disk",
+      "title": "磁碟容量 / watermark",
+      "category": "capacity",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "The cluster has enough available disk space.",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/fix-watermark-errors"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "shards_capacity",
+      "title": "Shard 容量上限",
+      "category": "capacity",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "The cluster has enough room to add new shards.",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-shards-capacity-issues"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "snapshot_repository",
+      "title": "Snapshot repository 完整性",
+      "category": "snapshot",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "No snapshot repositories configured.",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-repository"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "slm",
+      "title": "SLM 快照政策",
+      "category": "snapshot",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "No Snapshot Lifecycle Management policies configured",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/repeated-snapshot-failures"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "master_stability",
+      "title": "Master 穩定性",
+      "category": "cluster",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "The cluster has a stable master node",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unstable-cluster"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "data_stream_lifecycle",
+      "title": "Data stream 生命週期 / tier",
+      "category": "data",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "No data stream lifecycle health data available yet. Health information will be reported after the first run.",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier"
+      ],
+      "source": "health_report",
+      "requires_extra": false
+    },
+    {
+      "id": "ilm_slm_status",
+      "title": "ILM 生命週期",
+      "category": "management",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "ILM RUNNING，無 ERROR step",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/start-ilm",
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "rejected_requests",
+      "title": "請求拒絕 (thread pool)",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "search / write thread pool 無拒絕",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/rejected-requests"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "task_backlog",
+      "title": "Thread pool 佇列積壓",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "各 thread pool queue \u003c50",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/task-queue-backlog"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "jvm_memory_pressure",
+      "title": "JVM 記憶體壓力",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "各節點 JVM old pool 壓力 \u003c85%",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/high-jvm-memory-pressure"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "circuit_breaker",
+      "title": "Circuit breaker",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "circuit breaker 無跳閘紀錄",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/circuit-breaker-errors"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "high_cpu",
+      "title": "CPU 使用率",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "各節點 CPU \u003c85%",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/high-cpu-usage"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "hot_spotting",
+      "title": "Hot spotting（資源分布不均）",
+      "category": "performance",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "單節點或節點數不足，無從比較資源分布",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/hotspotting"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "ingest_pipeline_errors",
+      "title": "Ingest pipeline 失敗",
+      "category": "data",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "各 ingest pipeline 失敗率正常",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshoot-ingest-pipelines"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "data_corruption",
+      "title": "資料毀損徵兆",
+      "category": "data",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "無 index 處於 red 狀態",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/corruption-troubleshooting"
+      ],
+      "source": "raw_api",
+      "requires_extra": true,
+      "extra_reason": "工具僅能偵測狀態異常徵兆；checksum/translog 級 corruption 需由 ES 內部於 merge/recovery/snapshot 時偵測，請留意節點 log 的 CorruptIndexException 等例外"
+    },
+    {
+      "id": "watcher",
+      "title": "Watcher",
+      "category": "management",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "Watcher 運作中",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/watcher-troubleshooting"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "transforms",
+      "title": "Transforms",
+      "category": "management",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "未使用 transform（不適用）",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/transform-troubleshooting"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "remote_clusters",
+      "title": "Remote clusters",
+      "category": "management",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "未設定 remote cluster（不適用）",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/remote-clusters"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "upgrade_deprecations",
+      "title": "升版 deprecation",
+      "category": "management",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "無 deprecation 警告",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-upgrades"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "index_allocation_blocked",
+      "title": "Index 層級 shard 分配封鎖",
+      "category": "cluster",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "無受影響 index 需檢查（shards_availability 目前正常）",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/diagnose-unassigned-shards"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "allocation_guidance",
+      "title": "Shard 分配根因（decider 級）",
+      "category": "cluster",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": " shard 0（primary=false）：無 decider 封鎖，可能為暫時性 rebalancing",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/cluster-allocation-api-examples"
+      ],
+      "source": "raw_api",
+      "requires_extra": true,
+      "extra_reason": "僅代表性抽查一個未分配 shard，非窮舉；其餘 shard 可能有不同根因"
+    },
+    {
+      "id": "master_stability_context",
+      "title": "Master 穩定性結構檢查",
+      "category": "cluster",
+      "status": "warning",
+      "conclusion": "suspected",
+      "summary": "僅 1 個 master-eligible 節點（共 1 個節點），此節點故障將導致無法選舉，屬單點故障",
+      "findings": null,
+      "root_causes": [
+        "master-eligible 節點數建議為奇數且 ≥3，避免單點故障與 split-brain"
+      ],
+      "recommendations": [
+        {
+          "cmd": "",
+          "desc": "調整 master-eligible 節點數為奇數且 ≥3（小型叢集可加 dedicated master 或 voting-only 節點）"
+        }
+      ],
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unstable-cluster"
+      ],
+      "source": "raw_api",
+      "requires_extra": true,
+      "extra_reason": "節點拓樸為結構性風險而非當下故障；是否曾實際發生選舉問題需查 master_is_stable indicator 與節點 log"
+    },
+    {
+      "id": "data_tier_availability",
+      "title": "Data tier 節點分布",
+      "category": "data",
+      "status": "pass",
+      "conclusion": "normal",
+      "summary": "所有標準 data tier 皆有對應節點",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    }
+  ],
+  "disclaimer": "本工具提供診斷引導，非根因確認。結論基於單次唯讀快照與預設閾值，請結合現場日誌、時間序列監控與業務脈絡綜合判斷。工具僅執行唯讀操作，任何修復指令均需人工確認後手動執行。"
+}
