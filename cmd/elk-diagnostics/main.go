@@ -47,7 +47,7 @@ func usage() {
 
 連線flag：--config / --host / --username --password / --api-key / --ca-cert / --insecure / --timeout / --rules
 連線資訊優先序：flag > 環境變數(ELK_DIAGNOSTICS_*) > config.yaml > 預設
-支援症狀：write-bottleneck`)
+支援症狀：red-cluster / write-bottleneck / high-heap / ingest-lag / ilm-stuck`)
 }
 
 // ---- 連線設定（check 與 diagnose 共用）----
@@ -237,13 +237,13 @@ func runCheck(args []string) int {
 func runDiagnose(args []string) int {
 	fs := flag.NewFlagSet("diagnose", flag.ExitOnError)
 	cf := addConnFlags(fs)
-	symptom := fs.String("symptom", "", "症狀：write-bottleneck")
+	symptom := fs.String("symptom", "", "症狀：red-cluster / write-bottleneck / high-heap / ingest-lag / ilm-stuck")
 	output := fs.String("output", "json", "輸出格式：json | html")
 	outFile := addOutFile(fs)
 	_ = fs.Parse(args)
 
 	if *symptom == "" {
-		fmt.Fprintln(os.Stderr, "需提供 --symptom（目前支援：write-bottleneck）")
+		fmt.Fprintln(os.Stderr, "需提供 --symptom（目前支援：red-cluster / write-bottleneck / high-heap / ingest-lag / ilm-stuck）")
 		return 10
 	}
 
@@ -255,6 +255,25 @@ func runDiagnose(args []string) int {
 	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: client.Version()}
 
 	switch *symptom {
+	case "red-cluster":
+		hr, err := client.HealthReport()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "採集失敗:", err)
+			return 11
+		}
+		var res []diagnostic.Result
+		if r, ok := analyzer.HealthReportIndicator(hr, "cluster_health"); ok { // #1/#2
+			res = append(res, r)
+		}
+		if ce, e := client.ClusterAllocationEnable(); e == nil {
+			res = append(res, analyzer.DataAllocationBlocked(ce)) // #19
+		}
+		res = append(res, analyzer.IndexAllocationBlocked(indexAllocationEnables(client, hr))) // #20
+		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok {                           // #3
+			res = append(res, r)
+		}
+		return emit(buildReport(meta, res, "diagnose:red-cluster"), *output, *outFile)
+
 	case "write-bottleneck":
 		cpus, e1 := client.CatNodesCPU()
 		pools, e2 := client.WritePool()
@@ -264,8 +283,64 @@ func runDiagnose(args []string) int {
 		}
 		res := []diagnostic.Result{analyzer.WriteBottleneck(cpus, pools, t)}
 		return emit(buildReport(meta, res, "diagnose:write-bottleneck"), *output, *outFile)
+
+	case "high-heap":
+		var res []diagnostic.Result
+		if nodes, e := client.NodesJVMOldPool(); e == nil {
+			res = append(res, analyzer.JVMPressure(nodes, t)) // #7
+		}
+		if brks, e := client.NodesBreakers(); e == nil {
+			res = append(res, analyzer.CircuitBreaker(brks)) // #8
+		}
+		if rows, e := client.ThreadPool(); e == nil {
+			res = append(res, analyzer.RejectedRequests(rows)) // #6
+		}
+		if len(res) == 0 {
+			fmt.Fprintln(os.Stderr, "採集失敗")
+			return 11
+		}
+		return emit(buildReport(meta, res, "diagnose:high-heap"), *output, *outFile)
+
+	case "ingest-lag":
+		hr, err := client.HealthReport()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "採集失敗:", err)
+			return 11
+		}
+		var res []diagnostic.Result
+		if pipes, e := client.IngestPipelineStats(); e == nil {
+			res = append(res, analyzer.IngestPipelineErrors(pipes, t)) // #13
+		}
+		if rows, e := client.ThreadPool(); e == nil {
+			res = append(res, analyzer.TaskBacklog(rows, t))   // #12
+			res = append(res, analyzer.RejectedRequests(rows)) // #6（write）
+		}
+		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok { // #3
+			res = append(res, r)
+		}
+		return emit(buildReport(meta, res, "diagnose:ingest-lag"), *output, *outFile)
+
+	case "ilm-stuck":
+		hr, err := client.HealthReport()
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "採集失敗:", err)
+			return 11
+		}
+		var res []diagnostic.Result
+		if mode, e := client.IlmStatus(); e == nil {
+			errs, _ := client.IlmExplain()
+			res = append(res, analyzer.ILM(mode, errs)) // #5
+		}
+		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok { // #3
+			res = append(res, r)
+		}
+		if r, ok := analyzer.HealthReportIndicator(hr, "shards_capacity"); ok { // #10
+			res = append(res, r)
+		}
+		return emit(buildReport(meta, res, "diagnose:ilm-stuck"), *output, *outFile)
+
 	default:
-		fmt.Fprintln(os.Stderr, "不支援的症狀:", *symptom, "（目前支援：write-bottleneck）")
+		fmt.Fprintln(os.Stderr, "不支援的症狀:", *symptom, "（目前支援：red-cluster / write-bottleneck / high-heap / ingest-lag / ilm-stuck）")
 		return 10
 	}
 }

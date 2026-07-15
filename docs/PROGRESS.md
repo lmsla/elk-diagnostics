@@ -107,11 +107,11 @@
 
 | 狀態 | symptom | 規格 |
 |---|---|---|
-| ⬜ | `red-cluster` | spec-diagnose-symptoms |
+| 🟡 | `red-cluster` | spec-diagnose-symptoms |（#1/#2 cluster_health → #19/#20 allocation blocked → #3 disk；重組既有 analyzer，真機端到端待驗）
 | ✅ | `write-bottleneck` | spec-diagnose-symptoms + spec-write-bottleneck |（真機驗證；diagnose 指令 + 因果鏈）
-| ⬜ | `high-heap` | spec-diagnose-symptoms |
-| ⬜ | `ingest-lag` | spec-diagnose-symptoms |
-| ⬜ | `ilm-stuck` | spec-diagnose-symptoms |
+| 🟡 | `high-heap` | spec-diagnose-symptoms |（#7 jvm_pressure → #8 circuit_breaker → #6 rejected；真機端到端待驗）
+| 🟡 | `ingest-lag` | spec-diagnose-symptoms |（#13 ingest_pipeline → #12 task_backlog → #6 rejected(write) → #3 disk；真機端到端待驗）
+| 🟡 | `ilm-stuck` | spec-diagnose-symptoms |（#5 ilm → #3 disk → #10 shards_capacity；真機端到端待驗）
 | ⬜ | check 反向觸發提示 | spec-diagnose-symptoms §3 |
 
 ---
@@ -140,4 +140,5 @@
 | v0.4 | #27,28,31,33,34,35 | ✅ 完成（真機） |
 | B 類加深 | #19,20,24,25,30,36,37 | 🟡 單元測試完成，待真機端到端驗證 |
 | 缺口診斷 | check 24 條 + diagnose write-bottleneck | ✅ 全數真機驗證 |
-| 待辦 | cobra、其餘症狀樹、B 類真機驗證、造壓驗證、韌性/打包 | ⬜ 未開始 |
+| 症狀樹擴充 | red-cluster、high-heap、ingest-lag、ilm-stuck | 🟡 已實作＋build/vet/test 過，待真機端到端驗證 |
+| 待辦 | cobra、B 類真機驗證、症狀樹真機驗證、造壓驗證、韌性/打包 | ⬜ 未開始 |

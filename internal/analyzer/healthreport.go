@@ -116,6 +116,17 @@ func mapIndicator(hr *collector.HealthReport, s indicatorSpec) diagnostic.Result
 	return res
 }
 
+// HealthReportIndicator 取單一 indicator 的判定結果（依 id，如 "cluster_health"、"disk"）。
+// 供症狀診斷樹依因果順序挑選特定環節，不重跑 FromHealthReport 全量（見 spec-diagnose-symptoms）。
+func HealthReportIndicator(hr *collector.HealthReport, id string) (diagnostic.Result, bool) {
+	for _, s := range healthReportIndicators {
+		if s.id == id {
+			return mapIndicator(hr, s), true
+		}
+	}
+	return diagnostic.Result{}, false
+}
+
 // AffectedIndices 彙整指定 indicator 的 diagnosis 中所有受影響 index（去重、依出現順序）。
 // #20 用：找出需要逐一查 index.routing.allocation.enable 的候選 index。
 func AffectedIndices(hr *collector.HealthReport, indicator string) []string {
