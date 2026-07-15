@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"testing"
 
 	"elk-diagnostics/internal/collector"
@@ -11,6 +12,45 @@ import (
 func testThresholds() rules.Thresholds {
 	t, _ := rules.Load("")
 	return t
+}
+
+func TestUnknownFrom(t *testing.T) {
+	zero := diagnostic.Result{
+		ID: "mapping_explosion", Title: "Mapping 欄位膨脹", Category: "data", Source: "raw_api",
+		Docs:            []string{"https://example.com/doc"},
+		Status:          diagnostic.StatusPass,
+		Conclusion:      diagnostic.ConclusionNormal,
+		Summary:         "各 index 欄位數均低於上限",
+		RootCauses:      []string{"不應保留"},
+		Recommendations: []diagnostic.Recommendation{{Desc: "不應保留"}},
+		RequiresExtra:   true,
+		ExtraReason:     "不應保留",
+	}
+	err := errors.New("ES 回應 404: /_mapping")
+
+	got := unknownFrom(zero, err)
+
+	if got.ID != "mapping_explosion" || got.Title != zero.Title || got.Category != zero.Category {
+		t.Errorf("id/title/category 應保留自 zero，got %+v", got)
+	}
+	if len(got.Docs) != 1 || got.Docs[0] != zero.Docs[0] {
+		t.Errorf("Docs 應保留自 zero，got %v", got.Docs)
+	}
+	if got.Status != diagnostic.StatusUnknown {
+		t.Errorf("Status = %q, want unknown", got.Status)
+	}
+	if got.Conclusion != diagnostic.ConclusionNormal {
+		t.Errorf("Conclusion = %q, want normal", got.Conclusion)
+	}
+	if len(got.Findings) != 1 || got.Findings[0] != err.Error() {
+		t.Errorf("Findings 應含錯誤訊息，got %v", got.Findings)
+	}
+	if got.RootCauses != nil || got.Recommendations != nil {
+		t.Error("失敗時不該保留來自 zero-call 的假設性根因/建議")
+	}
+	if got.RequiresExtra {
+		t.Error("失敗時不該保留 zero-call 遺留的 RequiresExtra")
+	}
 }
 
 func TestSuggestSymptoms(t *testing.T) {

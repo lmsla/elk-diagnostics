@@ -94,6 +94,7 @@ func buildClient(cf *connFlags) (*collector.Client, string, int) {
 		ClientKey:  cfg.Cluster.TLS.ClientKey,
 		Insecure:   cfg.Cluster.TLS.InsecureSkipVerify,
 		Timeout:    time.Duration(cfg.Cluster.TimeoutSeconds) * time.Second,
+		Retries:    cfg.Cluster.Retries,
 	})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "連線失敗:", err)

@@ -15,7 +15,7 @@
     "warning": 1,
     "critical": 0,
     "skipped": 0,
-    "unknown": 0
+    "unknown": 7
   },
   "results": [
     {
@@ -244,6 +244,42 @@
       "requires_extra": false
     },
     {
+      "id": "unbalanced_cluster",
+      "title": "叢集 shard 分布不均",
+      "category": "cluster",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_cat/allocation?format=json\u0026h=node,shards,shards.undesired,disk.percent"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unbalanced-cluster"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "mapping_explosion",
+      "title": "Mapping 欄位膨脹",
+      "category": "data",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_mapping"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/mapping-explosion"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
       "id": "ingest_pipeline_errors",
       "title": "Ingest pipeline 失敗",
       "category": "data",
@@ -341,6 +377,60 @@
       "requires_extra": false
     },
     {
+      "id": "monitoring",
+      "title": "Stack monitoring 收集",
+      "category": "management",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_cluster/settings?include_defaults=true\u0026flat_settings=true\u0026filter_path=**.xpack.monitoring.collection.enabled"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/monitoring-troubleshooting"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "search_slow_log",
+      "title": "Search slow log",
+      "category": "performance",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_settings?flat_settings=true\u0026filter_path=**.index.search.slowlog.threshold*"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-searches"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "data_allocation_blocked",
+      "title": "叢集層級 shard 分配封鎖",
+      "category": "cluster",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_cluster/settings?include_defaults=true\u0026flat_settings=true\u0026filter_path=**.cluster.routing.allocation.enable"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/diagnose-unassigned-shards"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
       "id": "index_allocation_blocked",
       "title": "Index 層級 shard 分配封鎖",
       "category": "cluster",
@@ -372,6 +462,24 @@
       "source": "raw_api",
       "requires_extra": true,
       "extra_reason": "僅代表性抽查一個未分配 shard，非窮舉；其餘 shard 可能有不同根因"
+    },
+    {
+      "id": "ilm_tier_migration",
+      "title": "ILM Tier 遷移狀態",
+      "category": "management",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_all/_ilm/explain?only_managed=true"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
     },
     {
       "id": "master_stability_context",
@@ -409,6 +517,24 @@
       "recommendations": null,
       "docs": [
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "restore_status",
+      "title": "Snapshot 還原狀態",
+      "category": "snapshot",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_recovery?active_only=true"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/restore-from-snapshot"
       ],
       "source": "raw_api",
       "requires_extra": false

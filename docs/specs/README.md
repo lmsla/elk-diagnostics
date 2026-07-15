@@ -109,6 +109,7 @@ elk-diagnostics：連上 ES、跑一輪唯讀診斷、輸出一份中文健康�
 | [spec-rules.md](./spec-rules.md) | 規則引擎（default.yaml schema、條件 DSL、變數命名空間、覆寫合併） | rules/default.yaml + internal/rules |
 | [spec-cli.md](./spec-cli.md) | 指令、flag、**結束碼**、版本偵測與 fallback | cmd/ |
 | [spec-diagnose-symptoms.md](./spec-diagnose-symptoms.md) | 症狀診斷樹（red-cluster / write-bottleneck / high-heap / ingest-lag / ilm-stuck）、反向觸發 | cmd/diagnose.go |
+| [spec-resilience.md](./spec-resilience.md) | 錯誤與韌性：逾時/重試、部分不可達→unknown、host 故障轉移範圍 | collector/client.go + cmd/check.go, diagnose.go |
 
 | 階段 | 內容 |
 |---|---|

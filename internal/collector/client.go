@@ -27,6 +27,7 @@ type Options struct {
 	ClientKey  string
 	Insecure   bool
 	Timeout    time.Duration
+	Retries    int // 單一請求的暫時性失敗（網路錯誤/5xx）額外重試次數，見 spec-resilience §2
 }
 
 type Client struct {
@@ -36,7 +37,11 @@ type Client struct {
 	base       string // 故障轉移後選定的 host
 	name       string
 	version    string
+	retries    int
 }
+
+// retryDelay 是重試間的固定延遲（測試可覆寫以避免實際等待）。
+var retryDelay = 150 * time.Millisecond
 
 // New 建立 client：組 TLS、認證標頭，並對 hosts 故障轉移取得版本資訊。
 func New(opts Options) (*Client, error) {
@@ -48,9 +53,13 @@ func New(opts Options) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	if opts.Retries < 0 {
+		opts.Retries = 0
+	}
 	c := &Client{
 		hosts:      opts.Hosts,
 		authHeader: authHeader,
+		retries:    opts.Retries,
 		hc: &http.Client{
 			Timeout:   opts.Timeout,
 			Transport: &http.Transport{TLSClientConfig: tlsCfg},
@@ -118,27 +127,50 @@ func (c *Client) connect() error {
 	return fmt.Errorf("所有 host 連線失敗: %w", lastErr)
 }
 
+// get 對暫時性失敗（網路層錯誤、5xx）重試最多 c.retries 次；4xx 視為永久失敗，
+// 不重試、直接連同 body 一併回傳（部分 ES 端點用 4xx 表達語意化的非錯誤狀態，
+// 如 AllocationExplain 的「無未分配 shard」，呼叫端需要讀到 body 才能判斷），
+// 見 spec-resilience §2。
 func (c *Client) get(path string) ([]byte, error) {
+	var lastBody []byte
+	var lastErr error
+	for attempt := 0; attempt <= c.retries; attempt++ {
+		body, status, err := c.doGet(path)
+		if err == nil && status < 400 {
+			return body, nil
+		}
+		if err == nil && status < 500 {
+			return body, fmt.Errorf("ES 回應 %d: %s", status, path)
+		}
+		lastBody, lastErr = body, err
+		if lastErr == nil {
+			lastErr = fmt.Errorf("ES 回應 %d: %s", status, path)
+		}
+		if attempt < c.retries {
+			time.Sleep(retryDelay)
+		}
+	}
+	return lastBody, lastErr
+}
+
+func (c *Client) doGet(path string) (body []byte, status int, err error) {
 	req, err := http.NewRequest(http.MethodGet, c.base+path, nil)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	if c.authHeader != "" {
 		req.Header.Set("Authorization", c.authHeader)
 	}
 	resp, err := c.hc.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err = io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	if resp.StatusCode >= 400 {
-		return body, fmt.Errorf("ES 回應 %d: %s", resp.StatusCode, path)
-	}
-	return body, nil
+	return body, resp.StatusCode, nil
 }
 
 func (c *Client) info() (name, version string, err error) {
