@@ -123,7 +123,7 @@
 | ✅ | C 類 analyzer（performance/balance/write_bottleneck/data/management）與規則引擎合併邏輯自動化測試 | 見各 `*_test.go`、`rules/rules_test.go` |
 | 🟡 | 多版本 golden test（錄製 response → 斷言 DiagnosticResult） | `cmd/elk-diagnostics/golden_test.go`＋`dev/phase0/golden/`；對 es8-health/es8-unhealthy/es9-healthy/es9-unhealthy 4 組 Phase 0 錄製檔各跑一次完整 `check`，比對整份報告。覆蓋率受限於 Phase 0 當時錄製的端點（allocation-enable/index-settings/mapping/recovery/write-thread-pool/monitoring-setting/slowlog-setting/ilm-explain 等較新端點未錄製，對應診斷在測試中如同真機缺權限被 check 容錯跳過），已在檔頭註解與 PROGRESS 誠實記錄，非缺陷。已用刻意注入的欄位改名驗證測試真的會抓到回歸。`-update` 旗標更新 golden 檔。 |
 | ✅ | 錯誤與韌性（逾時/重試/部分不可達 → unknown） | [spec-resilience.md](./specs/spec-resilience.md)；`collector/client.go`（重試：暫時性錯誤/5xx 重試、4xx 不重試，`config.yaml` 的 `cluster.retries` 首次真正接上）、`check.go`/`diagnose.go`（個別 raw API 失敗一律轉 `unknown` 結果，不再靜默消失，見 `unknownFrom`）。golden test 已隨此變更更新（原本消失的 7 項失敗現正確顯示為 unknown）；collector 層新增 4 個重試行為單元測試（含「4xx 不重試」「5xx 重試後仍失敗」情境）。host 故障轉移刻意不擴大到個別請求層級，理由見 spec §4。 |
-| ⬜ | 安全與非功能（唯讀保證、密鑰遮蔽、單一二進位打包 OS/arch） | ⚠️ 待補 spec |
+| ✅ | 安全與非功能（唯讀保證、密鑰遮蔽、單一二進位打包 OS/arch） | `cmd/elk-diagnostics/security_test.go`：`TestCheckIsReadOnly`（鎖住 collector 只送 GET，防未來誤加寫入方法）、`TestCheckDoesNotLeakSecretsOnSuccess`/`OnConnectFailure`（鎖住密碼明文與 Basic auth base64 編碼不出現在報告輸出或 stderr，已用刻意注入的洩漏驗證測試真的會抓到）。`Makefile` `dist` 目標擴充為 `linux/amd64` + `linux/arm64`（涵蓋 AWS Graviton 等 ARM 機型），各自產出 SHA256 checksum，已實測交叉編譯成功。 |
 | ⬜ | 每項實作前先讀官方文件、填 `tested_versions`（鐵律，逐項執行） | specs README |
 
 ---
@@ -142,4 +142,7 @@
 | 缺口診斷 | check 24 條 + diagnose write-bottleneck | ✅ 全數真機驗證 |
 | 症狀樹擴充 | red-cluster、high-heap、ingest-lag、ilm-stuck | 🟡 已實作＋build/vet/test 過，待真機端到端驗證 |
 | CLI 框架遷移 | stdlib flag → cobra（子指令 -h、--host 可重複、-o/--output-file shorthand） | ✅ 完成（exit code 契約以手動起本機二進位驗證：check --from-file、diagnose 缺 symptom=10、連線失敗=11） |
-| 待辦 | B 類真機驗證、症狀樹真機驗證、造壓驗證、韌性/打包 | ⬜ 未開始 |
+| 錯誤與韌性 | 逾時/重試接上、部分不可達→unknown | ✅ 完成，見 spec-resilience.md |
+| 多版本 golden test | es8/es9 × healthy/unhealthy 4 組 | 🟡 完成，覆蓋率受限於 Phase 0 錄製範圍（已誠實記錄） |
+| 安全與非功能 | 唯讀保證、密鑰遮蔽測試、multi-arch 打包 | ✅ 完成 |
+| 待辦 | B 類真機驗證、症狀樹真機驗證、造壓驗證 | ⬜ 未開始（需真機環境，非本機可完成） |

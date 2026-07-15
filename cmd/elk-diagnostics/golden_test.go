@@ -68,23 +68,30 @@ func fixtureServer(t *testing.T, clusterDir string) *httptest.Server {
 	}))
 }
 
+// newTestConnFlags 建構一份直接指向給定 hosts、其餘皆空值的 connFlags，繞過 cobra
+// 解析（測試與 production code 同一個 package，可直接組結構）。username/password 可傳
+// 空字串以外的值供密鑰遮蔽測試使用。
+func newTestConnFlags(t *testing.T, hosts []string, username, password string) *connFlags {
+	t.Helper()
+	cfgPath := filepath.Join(t.TempDir(), "no-such-config.yaml")
+	empty := ""
+	falseVal := false
+	zero := 0
+	u, p := username, password
+	return &connFlags{
+		cfgPath: &cfgPath, hosts: &hosts,
+		username: &u, password: &p, apiKey: &empty, caCert: &empty, rulesPath: &empty,
+		insecure: &falseVal, timeout: &zero,
+	}
+}
+
 // runGoldenCheck 對指定 cluster 的 fixture server 跑完整 check，回傳去除易變欄位後的報告。
 func runGoldenCheck(t *testing.T, clusterDir string) diagnostic.Report {
 	t.Helper()
 	srv := fixtureServer(t, clusterDir)
 	defer srv.Close()
 
-	cfgPath := filepath.Join(t.TempDir(), "no-such-config.yaml")
-	hosts := []string{srv.URL}
-	empty := ""
-	falseVal := false
-	zero := 0
-	cf := &connFlags{
-		cfgPath: &cfgPath, hosts: &hosts,
-		username: &empty, password: &empty, apiKey: &empty, caCert: &empty, rulesPath: &empty,
-		insecure: &falseVal, timeout: &zero,
-	}
-
+	cf := newTestConnFlags(t, []string{srv.URL}, "", "")
 	outFile := filepath.Join(t.TempDir(), "report.json")
 	code := runCheck(cf, "", "json", outFile)
 	t.Logf("cluster=%s exit_code=%d", clusterDir, code)
