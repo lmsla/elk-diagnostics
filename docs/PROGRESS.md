@@ -112,7 +112,7 @@
 | 🟡 | `high-heap` | spec-diagnose-symptoms |（#7 jvm_pressure → #8 circuit_breaker → #6 rejected；真機端到端待驗）
 | 🟡 | `ingest-lag` | spec-diagnose-symptoms |（#13 ingest_pipeline → #12 task_backlog → #6 rejected(write) → #3 disk；真機端到端待驗）
 | 🟡 | `ilm-stuck` | spec-diagnose-symptoms |（#5 ilm → #3 disk → #10 shards_capacity；真機端到端待驗）
-| ⬜ | check 反向觸發提示 | spec-diagnose-symptoms §3 |
+| 🟡 | check 反向觸發提示 | spec-diagnose-symptoms §3 |（已實作 §3 列出的 2 個範例：ILM ERROR→ilm-stuck、write-bottleneck 因果鏈成立→write-bottleneck；`Report.suggested_symptoms`＋HTML 提示區塊；純函式單元測試通過，真機端到端待驗）
 
 ---
 

@@ -66,12 +66,20 @@ type Summary struct {
 	Unknown  int `json:"unknown"`
 }
 
+// SymptomHint 是 check 巡檢時偵測到特定症狀特徵組合後的反向觸發提示
+// （見 spec-diagnose-symptoms §3），非診斷結論，僅建議下一步指令。
+type SymptomHint struct {
+	Symptom string `json:"symptom"`
+	Reason  string `json:"reason"`
+}
+
 type Report struct {
-	Meta          Meta     `json:"meta"`
-	OverallStatus Status   `json:"overall_status"`
-	Summary       Summary  `json:"summary"`
-	Results       []Result `json:"results"`
-	Disclaimer    string   `json:"disclaimer"`
+	Meta              Meta          `json:"meta"`
+	OverallStatus     Status        `json:"overall_status"`
+	Summary           Summary       `json:"summary"`
+	Results           []Result      `json:"results"`
+	SuggestedSymptoms []SymptomHint `json:"suggested_symptoms,omitempty"`
+	Disclaimer        string        `json:"disclaimer"`
 }
 
 const disclaimer = "本工具提供診斷引導，非根因確認。結論基於單次唯讀快照與預設閾值，請結合現場日誌、時間序列監控與業務脈絡綜合判斷。工具僅執行唯讀操作，任何修復指令均需人工確認後手動執行。"

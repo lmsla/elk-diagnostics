@@ -9,6 +9,7 @@ import (
 	"elk-diagnostics/internal/analyzer"
 	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
+	"elk-diagnostics/rules"
 )
 
 func newCheckCmd() *cobra.Command {
@@ -68,7 +69,9 @@ func runCheck(cf *connFlags, fromFile, output, outFile string) int {
 	if brks, e := client.NodesBreakers(); e == nil {
 		results = append(results, analyzer.CircuitBreaker(brks))
 	}
-	if cpus, e := client.CatNodesCPU(); e == nil {
+	var cpus []collector.NodeCPU
+	if c, e := client.CatNodesCPU(); e == nil {
+		cpus = c
 		results = append(results, analyzer.HighCPU(cpus, t), analyzer.HotSpotting(cpus, t))
 	}
 	if alloc, e := client.CatAllocation(); e == nil {
@@ -125,8 +128,39 @@ func runCheck(cf *connFlags, fromFile, output, outFile string) int {
 		results = append(results, analyzer.RestoreStatus(ops)) // #36
 	}
 
+	var pools []collector.WritePoolRow
+	if p, e := client.WritePool(); e == nil {
+		pools = p
+	}
+
 	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: client.Version()}
-	return emit(buildReport(meta, results, "check"), output, outFile)
+	report := buildReport(meta, results, "check")
+	report.SuggestedSymptoms = suggestSymptoms(results, cpus, pools, t)
+	return emit(report, output, outFile)
+}
+
+// suggestSymptoms 依 spec-diagnose-symptoms §3 的反向觸發規則，偵測到特定症狀特徵組合
+// 時提示對應 diagnose --symptom；純函式、不觸發額外採集，只重用 check 已收集的資料。
+func suggestSymptoms(results []diagnostic.Result, cpus []collector.NodeCPU, pools []collector.WritePoolRow, t rules.Thresholds) []diagnostic.SymptomHint {
+	var hints []diagnostic.SymptomHint
+	for _, r := range results {
+		if r.ID == "ilm_slm_status" && r.Status == diagnostic.StatusCritical {
+			hints = append(hints, diagnostic.SymptomHint{
+				Symptom: "ilm-stuck",
+				Reason:  "偵測到 ILM 已停止或有 index 處於 ERROR step",
+			})
+			break
+		}
+	}
+	if len(cpus) > 0 && len(pools) > 0 {
+		if wb := analyzer.WriteBottleneck(cpus, pools, t); wb.Status == diagnostic.StatusCritical {
+			hints = append(hints, diagnostic.SymptomHint{
+				Symptom: "write-bottleneck",
+				Reason:  "偵測到 CPU 低 + write queue 積壓 + allocated_processors 偏低",
+			})
+		}
+	}
+	return hints
 }
 
 const maxIndexAllocationScan = 20 // 對照 spec 原定上限，避免受影響 index 過多時逐一查爆量請求

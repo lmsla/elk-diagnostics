@@ -104,6 +104,10 @@ const htmlTmpl = `<!DOCTYPE html>
   .banner.pass{background:var(--pass)}.banner.warning{background:var(--warning)}.banner.critical{background:var(--critical)}.banner.unknown{background:var(--unknown)}
   .counts{font-size:13px;font-weight:400}
   .counts b{font-weight:700}
+  .hints{margin:16px 0;padding:10px 16px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px}
+  .hints h4{margin:0 0 6px;font-size:13px;color:#795548}
+  .hints ul{margin:0;padding-left:20px}
+  .hints li{font-size:14px;margin:2px 0}
   h2{font-size:15px;margin:24px 0 8px;padding-bottom:4px;border-bottom:2px solid #ddd}
   .card{background:#fff;border:1px solid #e0e0e0;border-left-width:5px;border-radius:6px;margin:8px 0;overflow:hidden}
   .card.pass{border-left-color:var(--pass)}.card.warning{border-left-color:var(--warning)}.card.critical{border-left-color:var(--critical)}.card.skipped{border-left-color:var(--skipped)}.card.unknown{border-left-color:var(--unknown)}
@@ -140,6 +144,15 @@ const htmlTmpl = `<!DOCTYPE html>
   <span>整體狀態：{{statusText .R.OverallStatus}}</span>
   <span class="counts">✅ <b>{{.R.Summary.Pass}}</b>　⚠️ <b>{{.R.Summary.Warning}}</b>　❌ <b>{{.R.Summary.Critical}}</b>　⏭️ <b>{{.R.Summary.Skipped}}</b>　❓ <b>{{.R.Summary.Unknown}}</b></span>
 </div>
+
+{{if .R.SuggestedSymptoms}}
+<div class="hints">
+  <h4>建議進一步排查</h4>
+  <ul>
+    {{range .R.SuggestedSymptoms}}<li>{{.Reason}} → <code>diagnose --symptom {{.Symptom}}</code></li>{{end}}
+  </ul>
+</div>
+{{end}}
 
 {{range .Groups}}
 <h2>{{.Name}}</h2>
