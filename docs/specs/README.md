@@ -110,6 +110,7 @@ elk-diagnostics：連上 ES、跑一輪唯讀診斷、輸出一份中文健康�
 | [spec-cli.md](./spec-cli.md) | 指令、flag、**結束碼**、版本偵測與 fallback | cmd/ |
 | [spec-diagnose-symptoms.md](./spec-diagnose-symptoms.md) | 症狀診斷樹（red-cluster / write-bottleneck / high-heap / ingest-lag / ilm-stuck）、反向觸發 | cmd/diagnose.go |
 | [spec-resilience.md](./spec-resilience.md) | 錯誤與韌性：逾時/重試、部分不可達→unknown、host 故障轉移範圍 | collector/client.go + cmd/check.go, diagnose.go |
+| [spec-bundle.md](./spec-bundle.md) | 採集與判斷分離：離線 bundle 模式、端點表單一事實來源 | collector/endpoints.go, client.go + cmd/check.go |
 
 | 階段 | 內容 |
 |---|---|

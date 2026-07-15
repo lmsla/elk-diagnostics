@@ -1,0 +1,99 @@
+# spec-bundle — 採集與判斷分離（離線 bundle 模式）
+
+**實作位置**：`internal/collector/endpoints.go`（端點表）、`internal/collector/client.go`（`NewFromBundle`）、`cmd/elk-diagnostics/check.go`（`--from-bundle`）。
+
+## 1. 要解決的問題
+
+不是技術問題，是**交付問題**：工具寫得再正確，客戶只要覺得導入麻煩、直接拒絕，價值就歸零。
+
+政府／金融客戶對「在正式環境執行一個未知二進位檔」的預設反應是走導入審查——弱掃、SBOM、資安簽核。為了一次健檢付這個成本，客戶多半會直接說不。
+
+關鍵觀察是：`check` 做的兩件事，風險屬性完全不同。
+
+| | 採集 | 判斷 |
+|---|---|---|
+| 做什麼 | 打 24 個唯讀 GET，存成 JSON | 讀 JSON、套規則、產報告 |
+| 需要碰客戶網路 | 是 | **否** |
+| 客戶看不看得懂 | 一眼就懂（就是 curl） | 看不懂 |
+| 需要什麼 | **只要 curl** | Go runtime |
+
+既然「判斷」根本不需要碰客戶環境，就不該逼客戶為它做導入審查。
+
+## 2. 架構
+
+```
+客戶環境                                  自己的機器
+─────────                                ─────────
+採集腳本（純 curl，逐行可讀）
+     │
+     └──→  bundle/*.json  ────────────→  elk-diagnostics check --from-bundle
+                                                 │
+                                                 └──→ 報告（與連線模式完全相同）
+```
+
+**客戶從頭到尾沒有執行過本工具的二進位檔。** 導入審查的對象從「未知執行檔」降級為「一份文字檔」。
+
+對照 `討論總結.md` §11 的流程（客戶環境取最小必要輸出 → 人工檢查 → 分析），本模式即是把「分析」那一格接上既有實作；同時也滿足 §13.3 的方案 C——客戶若連腳本都不想跑，可直接拿端點清單自行在 Kibana Dev Tools 查。
+
+## 3. 設計約束：判斷邏輯只能有一份
+
+**不得用 shell 重寫診斷邏輯。** 理由：
+
+1. **jq 不是可假設的相依**。RHEL/CentOS minimal 預設沒有 jq，而那正是政府／金融的機型；要客戶裝 jq＝回到同一個導入審查問題。純 bash 啃 JSON 則是另一種災難。
+2. **兩份邏輯必然漂移**。2026-07-15 已證明：Go 寫的、有註解、有單元測試，仍藏了 6 個 bug、其中 4 條永遠回報綠燈（見 [VERIFICATION.md](../VERIFICATION.md) §1）。同樣邏輯用 bash 重寫不會更好。
+3. C 類診斷（JVM old pool 壓力、mapping 遞迴數欄位、hot spotting 取中位數）在 bash 裡不該存在。
+
+因此實作上**只換傳輸層**：`Client.fetch` 是可抽換的欄位，連線模式走 HTTP、bundle 模式走讀檔，其上的 `get()`（重試、錯誤語意）與所有 analyzer 完全共用。bundle 與連線模式的差別僅止於 bytes 從哪來。
+
+> 真機驗證（2026-07-15，es8=8.14.3 健康叢集）：bundle 模式與連線模式 31 條診斷判定**逐條完全一致**，`unknown=0`，exit code 相同。
+
+## 4. Bundle 格式
+
+一個目錄，內含依 `collector.Endpoints` 命名的 JSON 檔，每個檔案是對應端點的**原始回應**（不加工、不重排）：
+
+```
+bundle/
+├── version.json              # GET /
+├── health_report.json        # GET /_health_report
+├── cluster_settings.json     # GET /_cluster/settings?include_defaults=true&flat_settings=true
+├── ...
+└── cat_thread_pool_write.json
+```
+
+端點 → 檔名的對照由 `collector.Endpoints` 單一定義，同時供 bundle 讀取、golden test 回放、與後續的採集腳本產生使用。`dev/phase0/fixtures/<cluster>/` 即是此格式，故既有 fixture 可直接當 bundle 使用。
+
+**collector 各方法一律使用 `endpoints.go` 的常數，不寫字面字串**——否則端點表與實際呼叫會各自演化，讓表本身變成新一輪靜默錯誤的來源。golden test 原本自帶一份端點對照副本，正是它讓 filter_path bug 逃過測試。
+
+## 5. 已知限制
+
+### 5.1 動態端點無法涵蓋 → #20 判 unknown
+
+`GET /<index>/_settings`（#20 用）要查哪些 index，得先看 `health_report` 點名誰受影響，採集當下無法預知，故不在端點表中。
+
+bundle 模式下 #20 因此判定為 **unknown 而非 pass**——查不到就說查不到。這是刻意的：把「沒查到封鎖」講成「正常」正是 2026-07-15 那批 bug 的共同模式。
+
+> 附帶修正：此規則同時修好連線模式的一個潛在假陰性——原本若逐 index 探測因權限不足而失敗，#20 會回報「無受影響 index 需檢查（shards_availability 目前正常）」，即使 `shards_availability` 明明點名了受影響 index。舊的 golden 檔就把這句假話當成 unhealthy fixture 的預期輸出。
+
+### 5.2 bundle 內容尚未遮罩（**未實作**）
+
+bundle 是原始 ES 回應，包含：
+
+- index 名稱（可能透露業務資訊，如 `transactions-taipei-branch-2026`）
+- node 名稱、IP、hostname
+- **`_mapping` 的欄位名稱**（可能是 `national_id`、`account_balance` 這類敏感命名）
+
+**本工具從不讀取文件內容**（全部端點皆為 `_cluster/*`、`_cat/*`、`_nodes/*`、`_mapping`），故 `討論總結.md` §14「不讀取客戶文件內容」結構上成立。但上述識別資訊確實存在，**bundle 離開客戶環境前需人工檢視**，且必須主動向客戶說明，不能略過。
+
+`--redact`（遮罩 index／node／host 名稱）為待辦，見 [VERIFICATION.md](../VERIFICATION.md)。
+
+### 5.3 現場拿不到即時報告
+
+需把 bundle 帶回分析。對「健檢」屬可接受；救火情境若客戶允許直接執行二進位檔，仍可用連線模式——兩種模式並存，邏輯共用。
+
+## 6. 邊界
+
+- bundle 模式不改變任何判定規則、閾值或收斂邏輯（spec-report §2 照舊）。
+- 缺檔一律轉 `unknown`（spec-resilience §1/§3 的既有規則），絕不因缺資料而回報 pass。
+- 採集腳本不做任何判斷，只負責取得 bytes；所有判斷留在 analyzer。
+
+`tested_versions`：bundle 層與 ES 版本無關（純檔案讀取）；各診斷沿用其原本標記。

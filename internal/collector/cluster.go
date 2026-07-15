@@ -4,7 +4,7 @@ import "encoding/json"
 
 // ClusterNodeCounts 取 GET _cluster/health 的節點數（#30 用，佐證叢集規模）。
 func (c *Client) ClusterNodeCounts() (numberOfNodes int, err error) {
-	b, err := c.get("/_cluster/health")
+	b, err := c.get(EpClusterHealth)
 	if err != nil {
 		return 0, err
 	}
@@ -23,7 +23,7 @@ var dataTiers = []string{"data_content", "data_hot", "data_warm", "data_cold", "
 // DataTierNodeCounts 取各 data tier 的節點數（GET _nodes）。#24 用：確認是否缺少
 // 對應 tier 的節點，是 preferred tier 缺節點最直接的結構性根因。
 func (c *Client) DataTierNodeCounts() (map[string]int, error) {
-	b, err := c.get("/_nodes?filter_path=nodes.*.roles")
+	b, err := c.get(EpNodesRoles)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func (c *Client) DataTierNodeCounts() (map[string]int, error) {
 // MasterEligibleCount 取具備 master role 的節點數（GET _nodes）。#30 用：
 // master-eligible 節點數過少（尤其偶數或僅 1）是叢集不穩定最常見的結構性根因。
 func (c *Client) MasterEligibleCount() (masterEligible int, err error) {
-	b, err := c.get("/_nodes?filter_path=nodes.*.roles")
+	b, err := c.get(EpNodesRoles)
 	if err != nil {
 		return 0, err
 	}

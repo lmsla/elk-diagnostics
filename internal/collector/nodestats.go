@@ -12,7 +12,7 @@ type NodeJVM struct {
 
 // NodesJVMOldPool 取 GET /_nodes/stats（只要 old pool）。
 func (c *Client) NodesJVMOldPool() ([]NodeJVM, error) {
-	b, err := c.get("/_nodes/stats?filter_path=nodes.*.name,nodes.*.jvm.mem.pools.old")
+	b, err := c.get(EpNodesJVMOldPool)
 	if err != nil {
 		return nil, err
 	}
@@ -55,7 +55,7 @@ type NodeBreaker struct {
 
 // NodesBreakers 取 GET /_nodes/stats/breaker。
 func (c *Client) NodesBreakers() ([]NodeBreaker, error) {
-	b, err := c.get("/_nodes/stats/breaker?filter_path=nodes.*.name,nodes.*.breakers")
+	b, err := c.get(EpNodesBreakers)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +92,7 @@ type NodeCPU struct {
 
 // CatNodesCPU 取 GET /_cat/nodes（含 heap/disk，供 HighCPU 與 HotSpotting 共用）。
 func (c *Client) CatNodesCPU() ([]NodeCPU, error) {
-	b, err := c.get("/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent")
+	b, err := c.get(EpCatNodes)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ type AllocationRow struct {
 
 // CatAllocation 取 GET /_cat/allocation。
 func (c *Client) CatAllocation() ([]AllocationRow, error) {
-	b, err := c.get("/_cat/allocation?format=json&h=node,shards,shards.undesired,disk.percent")
+	b, err := c.get(EpCatAllocation)
 	if err != nil {
 		return nil, err
 	}

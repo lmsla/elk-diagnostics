@@ -31,6 +31,18 @@
 
 **golden test 也沒抓到，而且情況更糟**：Phase 0 錄的 fixture 沒有這些端點，測試裡它們 404 之後被當成「預期跳過」。也就是說 golden test 一邊通過、一邊完全瞎掉。這是結構性的，不是漏寫。
 
+更根本的原因是 **golden test 自帶一份端點對照副本**：它用自己維護的 map 決定「哪個 path 回哪個檔」，與 collector 實際呼叫的字串各自演化。測試以為自己在回放某端點，其實對不上。已於 2026-07-15 改為共用 `collector.Endpoints`（見 [spec-bundle.md](./specs/spec-bundle.md) §4），並要求 collector 一律使用端點常數而非字面字串，讓這種漂移在編譯期就不可能發生。
+
+### 1.1 同一模式的第三個實例（2026-07-15 稍晚）
+
+補 `--from-bundle` 時，又發現 **#20 的同款假陰性**（這次是連線模式也有的既有缺陷）：
+
+逐 index 探測 `index.routing.allocation.enable` 若失敗（權限不足），錯誤被吞掉 → `enables` 為空 → 判定輸出「無受影響 index 需檢查（**shards_availability 目前正常**）」。但 `shards_availability` 明明點名了受影響 index，這句話是假的。
+
+**舊的 golden 檔就把這句假話當成 unhealthy fixture 的預期輸出 checked in 進 repo。**
+
+已修正：`IndexAllocationBlocked` 改為接收 `unprobed` 清單並參與判定，查不到即判 unknown。這是本文 §7 更新規則的實例——**每次都要問「這條在資料缺失時會說什麼」，而不只是「它在資料齊全時對不對」**。
+
 ### 對交付的意義
 
 客戶是政府與金融。這批 bug 的失效模式不是「工具壞掉跳錯誤」（看得見、可補救），而是**「叢集有問題，工具說一切正常」**——這是顧問場景最壞的一種失敗。客戶事後自己發現問題而報告寫著綠燈，失去的不只是那條診斷的信任，是整份報告與顧問本人的信任。
@@ -86,7 +98,7 @@
 
 | # | 診斷 | 建議觸發方式 | 目前狀態 |
 |---|---|---|---|
-| 20 | Index allocation blocked | 對單一 index 設 `index.routing.allocation.enable=none` | 修正後仍只驗過 pass 分支 |
+| 20 | Index allocation blocked | 對單一 index 設 `index.routing.allocation.enable=none` | 修正後仍只驗過 pass 分支。另已修好一個假陰性：探測失敗（權限不足／bundle 模式）原本會回報「shards_availability 目前正常」，現改判 unknown（見 §1.1） |
 | 21 | Not enough nodes for replica | 單節點建 `number_of_replicas=1` 的 index | 未觀察到 |
 | 22 | Shards per index exceeded | 設 index 層 `total_shards_per_node` 上限 | 只驗過 node 層（#23） |
 | 27 | Watcher | `POST _watcher/_stop` | 真機為「運作中」 |
@@ -198,6 +210,7 @@ POST logs-explosion2-default/_doc {"@timestamp":"...","field_0":0, ... ,"field_1
 
 1. **Group A（11 條）** — 單節點設定切換即可，今天的配方直接沿用。預計 1 個 session 內可清完。
 2. **重錄 golden fixture** — 從真機的健康／異常兩種狀態各錄一次，讓 golden test 真的覆蓋到端點，而不是靠 404 假裝通過。**這一步同時解決 golden test 目前給假信心的結構問題**，優先度應高於 Group B/C。
+   - 2026-07-15 已完成前置：端點對照改為共用 `collector.Endpoints`（副本漂移問題已解決），且 `--from-bundle` 讓「用 curl 採一份真機 bundle 直接當 fixture」變得可行——採集腳本產出的 bundle 與 fixture 是同一種格式。
 3. **Group B（5 條）** — `docker-compose.yml` 擴充 3 節點叢集，一次解決 hot spotting／unbalanced／master 穩定性／tier 遷移。
 4. **Group C（7 條）** — 引入 esrally 或等效負載工具。**#16 write bottleneck 是產品差異化核心，值得單獨投資**。
 5. **#15 SLM** — 需查官方原始碼確認 indicator 觸發條件。

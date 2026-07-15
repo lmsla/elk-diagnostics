@@ -18,17 +18,22 @@ func newCheckCmd() *cobra.Command {
 		Short: "全面巡檢，跑所有適用診斷，產出整份報告",
 	}
 	cf := addConnFlags(cmd)
-	fromFile := cmd.Flags().String("from-file", "", "改讀本機 health_report.json（離線重播，不連線）")
+	fromFile := cmd.Flags().String("from-file", "", "改讀本機單一 health_report.json（僅 A 類；完整離線分析請用 --from-bundle）")
+	fromBundle := cmd.Flags().String("from-bundle", "", "改讀採集腳本產出的 bundle 目錄（完整離線分析，全程不連線）")
 	output, outFile := addOutputFlags(cmd)
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		os.Exit(runCheck(cf, *fromFile, *output, *outFile))
+		os.Exit(runCheck(cf, *fromFile, *fromBundle, *output, *outFile))
 		return nil
 	}
 	return cmd
 }
 
-func runCheck(cf *connFlags, fromFile, output, outFile string) int {
+func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
+	if fromFile != "" && fromBundle != "" {
+		fmt.Fprintln(os.Stderr, "--from-file 與 --from-bundle 不可同時使用")
+		return 10
+	}
 	if fromFile != "" {
 		b, err := os.ReadFile(fromFile)
 		if err != nil {
@@ -44,10 +49,27 @@ func runCheck(cf *connFlags, fromFile, output, outFile string) int {
 		return emit(buildReport(meta, analyzer.FromHealthReport(hr), "check"), output, outFile)
 	}
 
-	client, host, code := buildClient(cf)
-	if code != 0 {
-		return code
+	// bundle 模式與連線模式共用底下完整的診斷流程——差別只在 client 的資料來源，
+	// 判斷邏輯一份，不會分岔（見 collector.NewFromBundle）。
+	var (
+		client *collector.Client
+		host   string
+	)
+	if fromBundle != "" {
+		c, err := collector.NewFromBundle(fromBundle)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "讀取 bundle 失敗:", err)
+			return 11
+		}
+		client, host = c, "(bundle) "+fromBundle
+	} else {
+		c, h, code := buildClient(cf)
+		if code != 0 {
+			return code
+		}
+		client, host = c, h
 	}
+
 	t := loadThresholds(cf)
 	hr, err := client.HealthReport()
 	if err != nil {
@@ -141,7 +163,8 @@ func runCheck(cf *connFlags, fromFile, output, outFile string) int {
 	} else {
 		results = append(results, unknownFrom(analyzer.DataAllocationBlocked(""), e))
 	}
-	results = append(results, analyzer.IndexAllocationBlocked(indexAllocationEnables(client, hr))) // #20（逐 index 探測失敗時的處理見函式註解，非本節範圍）
+	enables, unprobed := indexAllocationEnables(client, hr)
+	results = append(results, analyzer.IndexAllocationBlocked(enables, unprobed)) // #20
 	if exp, found, e := client.AllocationExplain(); e == nil {
 		results = append(results, analyzer.AllocationGuidance(exp, found)) // #37
 	} else {
@@ -229,16 +252,22 @@ const maxIndexAllocationScan = 20 // 對照 spec 原定上限，避免受影響 
 
 // indexAllocationEnables 對 shards_availability 診斷點名的受影響 index（上限 20 個），
 // 逐一查 index.routing.allocation.enable 生效值，供 #20 使用。
-func indexAllocationEnables(client *collector.Client, hr *collector.HealthReport) map[string]string {
+//
+// unprobed 回傳「該查但查不到」的 index（權限不足、或 bundle 模式）。**必須回傳而非
+// 吞掉**：analyzer 要靠它區分「查過都正常」與「根本沒查到」，否則會把後者講成前者。
+func indexAllocationEnables(client *collector.Client, hr *collector.HealthReport) (enables map[string]string, unprobed []string) {
 	affected := analyzer.AffectedIndices(hr, "shards_availability")
 	if len(affected) > maxIndexAllocationScan {
 		affected = affected[:maxIndexAllocationScan]
 	}
-	enables := make(map[string]string, len(affected))
+	enables = make(map[string]string, len(affected))
 	for _, idx := range affected {
-		if v, err := client.IndexAllocationEnable(idx); err == nil {
-			enables[idx] = v
+		v, err := client.IndexAllocationEnable(idx)
+		if err != nil {
+			unprobed = append(unprobed, idx)
+			continue
 		}
+		enables[idx] = v
 	}
-	return enables
+	return enables, unprobed
 }

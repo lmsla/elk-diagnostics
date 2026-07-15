@@ -13,7 +13,7 @@ type WritePoolRow struct {
 
 // WritePool 取 GET /_cat/thread_pool/write（含 size，用於 write-bottleneck 因果鏈）。
 func (c *Client) WritePool() ([]WritePoolRow, error) {
-	b, err := c.get("/_cat/thread_pool/write?format=json&h=node_name,name,size,active,queue,rejected")
+	b, err := c.get(EpCatThreadPoolWrite)
 	if err != nil {
 		return nil, err
 	}

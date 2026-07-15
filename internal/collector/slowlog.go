@@ -11,7 +11,7 @@ import (
 // ——同一組 bug 曾讓本函式無論實際設定為何永遠回傳空清單，真機建了真的開啟
 // slow log 的 index 才測出來。
 func (c *Client) SlowlogEnabledIndices() ([]string, error) {
-	b, err := c.get("/_settings?flat_settings=true")
+	b, err := c.get(EpAllSettings)
 	if err != nil {
 		return nil, err
 	}

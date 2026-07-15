@@ -23,7 +23,7 @@ type IndexFieldCount struct {
 // backing index 一律是 ".ds-" 開頭（真機建測試 data stream 驗證過），故只排除
 // 「. 開頭但非 .ds- 開頭」者，兩者皆已用真機資料驗證。
 func (c *Client) MappingFieldCounts() ([]IndexFieldCount, error) {
-	b, err := c.get("/_mapping")
+	b, err := c.get(EpMapping)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +83,7 @@ type IngestPipeline struct {
 
 // IngestPipelineStats 取 GET /_nodes/stats/ingest 並依 pipeline 彙總。
 func (c *Client) IngestPipelineStats() ([]IngestPipeline, error) {
-	b, err := c.get("/_nodes/stats/ingest?filter_path=nodes.*.ingest.pipelines")
+	b, err := c.get(EpNodesIngest)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +131,7 @@ type IndexHealth struct {
 // 的健康狀態波動多半是 ES/Kibana 內部機制所致（如升版過渡期），與客戶資料毀損無關，
 // 不該被 #32 當成資料毀損徵兆呈報；但客戶用 data stream 送的資料仍須檢查。
 func (c *Client) CatIndicesHealth() ([]IndexHealth, error) {
-	b, err := c.get("/_cat/indices?format=json&h=index,health,status")
+	b, err := c.get(EpCatIndices)
 	if err != nil {
 		return nil, err
 	}

@@ -15,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"elk-diagnostics/internal/collector"
 )
 
 // TestCheckIsReadOnly 驗證整輪 check（涵蓋所有已知端點）只送出 GET 請求，
@@ -25,14 +27,15 @@ func TestCheckIsReadOnly(t *testing.T) {
 		if r.Method != http.MethodGet {
 			nonGET = append(nonGET, r.Method+" "+r.URL.RequestURI())
 		}
-		file, ok := fixtureEndpoints[r.URL.RequestURI()]
+		file, ok := collector.FileForEndpoint(r.URL.RequestURI())
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		b, err := os.ReadFile(filepath.Join("..", "..", "dev", "phase0", "fixtures", "es9-unhealthy", file))
+		b, err := os.ReadFile(filepath.Join(fixtureDir("es9-unhealthy"), file))
 		if err != nil {
-			t.Fatalf("讀 fixture 失敗: %v", err)
+			http.NotFound(w, r) // Phase 0 未錄製，比照真機缺權限
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(b)
@@ -41,7 +44,7 @@ func TestCheckIsReadOnly(t *testing.T) {
 
 	cf := newTestConnFlags(t, []string{srv.URL}, "", "")
 	outFile := filepath.Join(t.TempDir(), "report.json")
-	runCheck(cf, "", "json", outFile)
+	runCheck(cf, "", "", "json", outFile)
 
 	if len(nonGET) > 0 {
 		t.Errorf("check 送出了非 GET 請求（違反唯讀保證）: %v", nonGET)
@@ -55,14 +58,15 @@ func TestCheckDoesNotLeakSecretsOnSuccess(t *testing.T) {
 	const secret = "S3cr3t-Pa55w0rd-should-not-leak"
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		file, ok := fixtureEndpoints[r.URL.RequestURI()]
+		file, ok := collector.FileForEndpoint(r.URL.RequestURI())
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		b, err := os.ReadFile(filepath.Join("..", "..", "dev", "phase0", "fixtures", "es9-unhealthy", file))
+		b, err := os.ReadFile(filepath.Join(fixtureDir("es9-unhealthy"), file))
 		if err != nil {
-			t.Fatalf("讀 fixture 失敗: %v", err)
+			http.NotFound(w, r) // Phase 0 未錄製，比照真機缺權限
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(b)
@@ -71,7 +75,7 @@ func TestCheckDoesNotLeakSecretsOnSuccess(t *testing.T) {
 
 	cf := newTestConnFlags(t, []string{srv.URL}, username, secret)
 	outFile := filepath.Join(t.TempDir(), "report.json")
-	runCheck(cf, "", "json", outFile)
+	runCheck(cf, "", "", "json", outFile)
 
 	b, err := os.ReadFile(outFile)
 	if err != nil {
@@ -96,7 +100,7 @@ func TestCheckDoesNotLeakSecretsOnConnectFailure(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "report.json")
 
 	stderr := captureStderr(t, func() {
-		runCheck(cf, "", "json", outFile)
+		runCheck(cf, "", "", "json", outFile)
 	})
 	assertNoSecretLeak(t, stderr, username, secret, "stderr")
 }

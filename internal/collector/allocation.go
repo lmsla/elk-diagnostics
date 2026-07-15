@@ -41,7 +41,7 @@ func flatSettingString(b []byte, key, defaultVal string) string {
 // ClusterAllocationEnable 取 cluster.routing.allocation.enable 的生效值
 // （persistent > transient > defaults 優先序；預設 "all"）。#19 用。
 func (c *Client) ClusterAllocationEnable() (string, error) {
-	b, err := c.get("/_cluster/settings?include_defaults=true&flat_settings=true")
+	b, err := c.get(EpClusterSettings)
 	if err != nil {
 		return "", err
 	}
@@ -52,7 +52,7 @@ func (c *Client) ClusterAllocationEnable() (string, error) {
 // （預設 "all"）。#20 用。不加 filter_path、不硬解 map[string]string 的理由見
 // flatSettingString 註解。
 func (c *Client) IndexAllocationEnable(index string) (string, error) {
-	b, err := c.get("/" + index + "/_settings?include_defaults=true&flat_settings=true")
+	b, err := c.get(EpIndexSettings(index))
 	if err != nil {
 		return "", err
 	}
@@ -98,7 +98,7 @@ type AllocationExplanation struct {
 // 原定上限 20 逐一查），取一個代表性範例已足以判斷 decider 類型；若叢集無未分配
 // shard 可解釋，ES 回 400，視為「無可解釋對象」而非錯誤。
 func (c *Client) AllocationExplain() (*AllocationExplanation, bool, error) {
-	b, err := c.get("/_cluster/allocation/explain")
+	b, err := c.get(EpAllocationExplain)
 	if err != nil {
 		// ES 對「無未分配 shard」回 400；get() 仍會把 body 一併回傳，直接檢查內容。
 		if len(b) > 0 && isNoUnassignedShardError(b) {

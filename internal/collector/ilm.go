@@ -4,7 +4,7 @@ import "encoding/json"
 
 // IlmStatus 取 GET /_ilm/status 的 operation_mode（RUNNING / STOPPING / STOPPED）。
 func (c *Client) IlmStatus() (string, error) {
-	b, err := c.get("/_ilm/status")
+	b, err := c.get(EpIlmStatus)
 	if err != nil {
 		return "", err
 	}
@@ -25,7 +25,7 @@ type IlmError struct {
 
 // IlmExplain 取處於 ERROR step 的 index（health_report ilm indicator 會延遲，故須直接問 explain）。
 func (c *Client) IlmExplain() ([]IlmError, error) {
-	b, err := c.get("/_all/_ilm/explain?only_errors=true&only_managed=true")
+	b, err := c.get(EpIlmExplainErrors)
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ type IlmMigration struct {
 // 是否「卡住」本質是時間序列問題：單次快照只能列候選名單，需重複執行比對同一批
 // index 是否長時間停在同一 step 才能確認，不在此臆測。
 func (c *Client) IlmMigrating() ([]IlmMigration, error) {
-	b, err := c.get("/_all/_ilm/explain?only_managed=true")
+	b, err := c.get(EpIlmExplainManaged)
 	if err != nil {
 		return nil, err
 	}

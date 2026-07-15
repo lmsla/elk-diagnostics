@@ -11,11 +11,11 @@
   },
   "overall_status": "warning",
   "summary": {
-    "pass": 21,
+    "pass": 20,
     "warning": 3,
     "critical": 0,
     "skipped": 0,
-    "unknown": 7
+    "unknown": 8
   },
   "results": [
     {
@@ -445,17 +445,20 @@
       "id": "index_allocation_blocked",
       "title": "Index 層級 shard 分配封鎖",
       "category": "cluster",
-      "status": "pass",
+      "status": "unknown",
       "conclusion": "normal",
-      "summary": "無受影響 index 需檢查（shards_availability 目前正常）",
-      "findings": null,
+      "summary": "2 個受影響 index 無法查詢 allocation 設定，無法判定",
+      "findings": [
+        "查不到設定的 index：[elkdoctor-ilmerr elkdoctor-unhealthy]"
+      ],
       "root_causes": null,
       "recommendations": null,
       "docs": [
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/diagnose-unassigned-shards"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": true,
+      "extra_reason": "可能是權限不足，或以 --from-bundle 離線分析（bundle 無法涵蓋逐 index 的動態端點）；請確認該 index 的 index.routing.allocation.enable"
     },
     {
       "id": "allocation_guidance",

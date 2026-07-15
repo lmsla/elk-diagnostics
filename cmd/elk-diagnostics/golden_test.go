@@ -22,46 +22,37 @@ import (
 	"path/filepath"
 	"testing"
 
+	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
 )
 
 var update = flag.Bool("update", false, "更新 golden 檔（dev/phase0/golden/）")
 
-// fixtureEndpoints 對照各 collector 方法實際打的 path+query 到 Phase 0 錄製檔檔名
-// （檔名於各 cluster fixture 目錄下一致）。未列出的端點該 cluster 未錄製，回 404，
-// 讓 check 的容錯路徑跳過該診斷（如同真機缺權限）。
-var fixtureEndpoints = map[string]string{
-	"/":                                 "version.json",
-	"/_health_report":                   "health_report.json",
-	"/_cluster/health":                  "cluster_health.json",
-	"/_nodes?filter_path=nodes.*.roles": "nodes_roles.json",
-	"/_cluster/allocation/explain":      "allocation_explain.json",
-	"/_ilm/status":                      "ilm_status.json",
-	"/_nodes/stats?filter_path=nodes.*.name,nodes.*.jvm.mem.pools.old":                                         "nodes_stats_jvm.json",
-	"/_nodes/stats/breaker?filter_path=nodes.*.name,nodes.*.breakers":                                          "nodes_stats_breaker.json",
-	"/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent": "cat_nodes.json",
-	"/_cat/thread_pool?format=json&h=node_name,name,active,queue,rejected,completed":                           "cat_thread_pool.json",
-	"/_nodes/stats/ingest?filter_path=nodes.*.ingest.pipelines":                                                "nodes_stats_ingest.json",
-	"/_cat/indices?format=json&h=index,health,status":                                                          "cat_indices.json",
-	"/_migration/deprecations": "migration_deprecations.json",
-	"/_remote/info":            "remote_info.json",
-	"/_transform/_stats":       "transform_stats.json",
-	"/_watcher/stats":          "watcher_stats.json",
+func fixtureDir(clusterDir string) string {
+	return filepath.Join("..", "..", "dev", "phase0", "fixtures", clusterDir)
 }
 
-// fixtureServer 起一個回放指定 cluster 錄製檔的 httptest server；未錄製的端點回 404。
+// fixtureServer 起一個回放指定 cluster 錄製檔的 httptest server。
+//
+// path → 檔名的對照直接取自 collector.Endpoints（正式程式碼的單一事實來源），
+// 不再於測試裡另維護一份——本檔原本自帶一份副本，正是它讓 filter_path bug 逃過
+// golden test：副本裡的 path 與 collector 實際呼叫的字串各自演化，測試以為自己在
+// 回放某端點，其實對不上（見 VERIFICATION.md §1）。
 func fixtureServer(t *testing.T, clusterDir string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		file, ok := fixtureEndpoints[r.URL.RequestURI()]
+		file, ok := collector.FileForEndpoint(r.URL.RequestURI())
 		if !ok {
-			t.Logf("golden fixture 未錄製端點（回 404，比照真機缺權限）: %s", r.URL.RequestURI())
+			t.Logf("動態端點，fixture 無法涵蓋（回 404，比照真機缺權限）: %s", r.URL.RequestURI())
 			http.NotFound(w, r)
 			return
 		}
-		b, err := os.ReadFile(filepath.Join("..", "..", "dev", "phase0", "fixtures", clusterDir, file))
+		b, err := os.ReadFile(filepath.Join(fixtureDir(clusterDir), file))
 		if err != nil {
-			t.Fatalf("讀 fixture 失敗 %s/%s: %v", clusterDir, file, err)
+			// Phase 0 當時未錄製此端點——比照真機缺權限，讓 check 的容錯路徑走 unknown。
+			t.Logf("Phase 0 未錄製（回 404）: %s → %s", r.URL.RequestURI(), file)
+			http.NotFound(w, r)
+			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(b)
@@ -93,7 +84,7 @@ func runGoldenCheck(t *testing.T, clusterDir string) diagnostic.Report {
 
 	cf := newTestConnFlags(t, []string{srv.URL}, "", "")
 	outFile := filepath.Join(t.TempDir(), "report.json")
-	code := runCheck(cf, "", "json", outFile)
+	code := runCheck(cf, "", "", "json", outFile)
 	t.Logf("cluster=%s exit_code=%d", clusterDir, code)
 
 	b, err := os.ReadFile(outFile)

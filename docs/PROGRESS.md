@@ -150,6 +150,9 @@
 | 錯誤與韌性 | 逾時/重試接上、部分不可達→unknown | ✅ 完成，見 spec-resilience.md |
 | 多版本 golden test | es8/es9 × healthy/unhealthy 4 組 | 🟡 完成，覆蓋率受限於 Phase 0 錄製範圍（已誠實記錄） |
 | 安全與非功能 | 唯讀保證、密鑰遮蔽測試、multi-arch 打包 | ✅ 完成 |
+| 採集/判斷分離 | 端點表單一事實來源 + `--from-bundle` 離線分析 | ✅ 完成，見 [spec-bundle.md](./specs/spec-bundle.md)。真機驗證：bundle 與連線模式 31 條診斷判定逐條一致。**動機是交付面**——客戶不必為健檢導入未知二進位檔，只需跑一份看得懂的 curl 腳本 |
+| 客戶交付透明層 | 採集腳本 `collect.sh` + API 清單（由端點表產生） | ⬜ 未開始，端點表已就緒（`collector.Endpoints` 已含 Purpose 欄位） |
+| bundle 遮罩 | `--redact`：index/node/host 名稱 | ⬜ 未開始，見 spec-bundle §5.2 |
 | 2026-07-15 真機驗證 | 本機 Docker es8=8.14.3/es9=9.0.0 對 check 全量 + 5 條症狀樹 | ✅ 完成；意外抓到並修正 #11/#32 系統 index 誤報 bug（見 §2） |
 | 2026-07-15 造壓驗證 | disk/shards_capacity/repository_integrity/ILM/allocation 封鎖異常情境 | ✅ 完成；抓到並修正 2 個真 bug（#19/#20/#31/#33 的 filter_path+flat_settings 解析、#11/#32 的 data stream 誤排除），見 §4 |
 | 待辦 | slm indicator 觸發條件（本次造壓未重現）、write-bottleneck 因果鏈真實負載驗證（需 esrally 等造壓工具） | ⬜ 未開始 |

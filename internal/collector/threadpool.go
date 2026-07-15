@@ -16,7 +16,7 @@ type ThreadPoolRow struct {
 
 // ThreadPool 取 GET /_cat/thread_pool（rejected/completed 為自節點啟動起的累積值）。
 func (c *Client) ThreadPool() ([]ThreadPoolRow, error) {
-	b, err := c.get("/_cat/thread_pool?format=json&h=node_name,name,active,queue,rejected,completed")
+	b, err := c.get(EpCatThreadPool)
 	if err != nil {
 		return nil, err
 	}

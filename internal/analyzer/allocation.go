@@ -34,7 +34,11 @@ func DataAllocationBlocked(clusterEnable string) diagnostic.Result {
 
 // IndexAllocationBlocked #20：受影響 index 的 index.routing.allocation.enable 非 "all"。
 // enables 為 index → 生效值；只需傳入 shards_availability 診斷點名的受影響 index。
-func IndexAllocationBlocked(enables map[string]string) diagnostic.Result {
+// unprobed 為「該查但查不到」的 index（權限不足、或 bundle 模式無法涵蓋動態端點）。
+//
+// unprobed 必須參與判定，不能當成空集合忽略：查不到不等於沒問題，把「沒查到封鎖」
+// 講成「正常」正是 2026-07-15 抓到那批 bug 的共同模式（見 VERIFICATION.md §1）。
+func IndexAllocationBlocked(enables map[string]string, unprobed []string) diagnostic.Result {
 	res := diagnostic.Result{ID: "index_allocation_blocked", Title: "Index 層級 shard 分配封鎖", Category: "cluster", Source: "raw_api", Docs: []string{docUnassigned}}
 	var blocked []string
 	for idx, v := range enables {
@@ -43,6 +47,17 @@ func IndexAllocationBlocked(enables map[string]string) diagnostic.Result {
 		}
 	}
 	if len(blocked) == 0 {
+		// 有 index 查不到就無法宣稱正常——已查的都乾淨，不代表查不到的那些也乾淨。
+		if len(unprobed) > 0 {
+			res.Status, res.Conclusion = diagnostic.StatusUnknown, diagnostic.ConclusionNormal
+			res.Summary = fmt.Sprintf("%d 個受影響 index 無法查詢 allocation 設定，無法判定", len(unprobed))
+			res.Findings = []string{fmt.Sprintf("查不到設定的 index：%v", unprobed)}
+			if len(enables) > 0 {
+				res.Findings = append(res.Findings, fmt.Sprintf("另有 %d 個 index 已查，皆為 all", len(enables)))
+			}
+			res.RequiresExtra, res.ExtraReason = true, "可能是權限不足，或以 --from-bundle 離線分析（bundle 無法涵蓋逐 index 的動態端點）；請確認該 index 的 index.routing.allocation.enable"
+			return res
+		}
 		if len(enables) == 0 {
 			return pass(res, "無受影響 index 需檢查（shards_availability 目前正常）")
 		}
@@ -51,6 +66,10 @@ func IndexAllocationBlocked(enables map[string]string) diagnostic.Result {
 	res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionConfirmed
 	res.Summary = fmt.Sprintf("%d 個 index 的層級分配設定被限制或封鎖", len(blocked))
 	res.Findings = blocked
+	// 已找到封鎖時仍要揭露查不到的部分——結論成立不代表證據完整。
+	if len(unprobed) > 0 {
+		res.Findings = append(res.Findings, fmt.Sprintf("另有 %d 個受影響 index 查不到設定，未納入判定：%v", len(unprobed), unprobed))
+	}
 	res.Recommendations = []diagnostic.Recommendation{{
 		Cmd:  `PUT <index>/_settings {"index.routing.allocation.enable":"all"}`,
 		Desc: "確認非刻意限制後復原為 all",

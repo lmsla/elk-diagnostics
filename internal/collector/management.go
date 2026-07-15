@@ -4,7 +4,7 @@ import "encoding/json"
 
 // WatcherManuallyStopped 取 GET /_watcher/stats 的 manually_stopped。
 func (c *Client) WatcherManuallyStopped() (stopped bool, err error) {
-	b, err := c.get("/_watcher/stats")
+	b, err := c.get(EpWatcherStats)
 	if err != nil {
 		return false, err
 	}
@@ -25,7 +25,7 @@ type Transform struct {
 
 // Transforms 取 GET /_transform/_stats。
 func (c *Client) Transforms() ([]Transform, error) {
-	b, err := c.get("/_transform/_stats")
+	b, err := c.get(EpTransformStats)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +53,7 @@ type RemoteCluster struct {
 
 // RemoteInfo 取 GET /_remote/info（空物件表未設定 remote cluster）。
 func (c *Client) RemoteInfo() ([]RemoteCluster, error) {
-	b, err := c.get("/_remote/info")
+	b, err := c.get(EpRemoteInfo)
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +78,7 @@ type Deprecation struct {
 
 // Deprecations 取 GET /_migration/deprecations（彙整四個層級的陣列）。
 func (c *Client) Deprecations() ([]Deprecation, error) {
-	b, err := c.get("/_migration/deprecations")
+	b, err := c.get(EpMigrationDeprecations)
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func (c *Client) Deprecations() ([]Deprecation, error) {
 // flatSettingString 註解（同一組 bug：filter_path 對 flat_settings 比對不到，
 // defaults 區塊混雜非字串型別會讓整段解析失敗又被吞掉）。
 func (c *Client) MonitoringCollectionEnabled() (string, error) {
-	b, err := c.get("/_cluster/settings?include_defaults=true&flat_settings=true")
+	b, err := c.get(EpClusterSettings)
 	if err != nil {
 		return "", err
 	}

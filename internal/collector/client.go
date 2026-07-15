@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -34,10 +35,15 @@ type Client struct {
 	hosts      []string
 	hc         *http.Client
 	authHeader string
-	base       string // 故障轉移後選定的 host
+	base       string // 故障轉移後選定的 host（bundle 模式為 "(bundle) <dir>"）
 	name       string
 	version    string
 	retries    int
+
+	// fetch 是取得單一端點原始 bytes 的傳輸層：連線模式為 HTTP，bundle 模式為讀檔。
+	// 抽成欄位是為了讓兩種模式共用 get() 的重試與錯誤語意——所有 24 個端點、
+	// 所有 analyzer 的行為都完全一致，差別只在 bytes 從哪來。
+	fetch func(path string) (body []byte, status int, err error)
 }
 
 // retryDelay 是重試間的固定延遲（測試可覆寫以避免實際等待）。
@@ -65,10 +71,56 @@ func New(opts Options) (*Client, error) {
 			Transport: &http.Transport{TLSClientConfig: tlsCfg},
 		},
 	}
+	c.fetch = c.doGet
 	if err := c.connect(); err != nil {
 		return nil, err
 	}
 	return c, nil
+}
+
+// NewFromBundle 建立離線分析用的 client：資料來自採集腳本產出的 bundle 目錄，
+// 全程不連線任何叢集（見 docs/specs/spec-bundle.md）。
+//
+// 用途是把「採集」與「判斷」拆開執行——客戶環境只跑一份看得懂的 curl 腳本，
+// 二進位檔在自己機器上分析 bundle，客戶不必為了健檢導入未知執行檔。
+//
+// bundle 缺檔一律回錯誤（不是回空值），讓對應診斷落到 unknown 而非 pass：
+// 查不到就說查不到，這是 spec-resilience §1/§3 的既有規則。
+func NewFromBundle(dir string) (*Client, error) {
+	c := &Client{
+		base:    "(bundle) " + dir,
+		retries: 0, // 讀本地檔案沒有暫時性失敗，重試無意義
+	}
+	c.fetch = func(path string) ([]byte, int, error) {
+		file, ok := FileForEndpoint(path)
+		if !ok {
+			// 動態端點（如 per-index settings）本來就無法預先採集，見 EpIndexSettings。
+			return nil, 0, fmt.Errorf("bundle 模式不支援動態端點: %s", path)
+		}
+		b, err := os.ReadFile(filepath.Join(dir, file))
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil, 0, fmt.Errorf("bundle 缺少 %s（採集腳本未執行此項或該端點當時失敗）", file)
+			}
+			return nil, 0, err
+		}
+		return b, http.StatusOK, nil
+	}
+
+	name, ver, err := c.info()
+	if err != nil {
+		return nil, fmt.Errorf("讀取 bundle 失敗（%s 不存在或格式錯誤？）: %w", FileOf(EpRoot), err)
+	}
+	c.name, c.version = name, ver
+	return c, nil
+}
+
+// FileOf 回傳端點對應的 bundle 檔名，供錯誤訊息與文件使用；未知端點回原 path。
+func FileOf(path string) string {
+	if f, ok := FileForEndpoint(path); ok {
+		return f
+	}
+	return path
 }
 
 func buildTLS(opts Options) (*tls.Config, error) {
@@ -132,10 +184,15 @@ func (c *Client) connect() error {
 // 如 AllocationExplain 的「無未分配 shard」，呼叫端需要讀到 body 才能判斷），
 // 見 spec-resilience §2。
 func (c *Client) get(path string) ([]byte, error) {
+	// 零值 Client（未經 New/NewFromBundle 建構）預設走 HTTP，不因欄位未設而 panic。
+	fetch := c.fetch
+	if fetch == nil {
+		fetch = c.doGet
+	}
 	var lastBody []byte
 	var lastErr error
 	for attempt := 0; attempt <= c.retries; attempt++ {
-		body, status, err := c.doGet(path)
+		body, status, err := fetch(path)
 		if err == nil && status < 400 {
 			return body, nil
 		}
@@ -174,7 +231,7 @@ func (c *Client) doGet(path string) (body []byte, status int, err error) {
 }
 
 func (c *Client) info() (name, version string, err error) {
-	b, err := c.get("/")
+	b, err := c.get(EpRoot)
 	if err != nil {
 		return "", "", err
 	}
@@ -196,7 +253,7 @@ func (c *Client) Version() string     { return c.version }
 
 // HealthReport 取並解析 GET /_health_report。
 func (c *Client) HealthReport() (*HealthReport, error) {
-	b, err := c.get("/_health_report")
+	b, err := c.get(EpHealthReport)
 	if err != nil {
 		return nil, err
 	}

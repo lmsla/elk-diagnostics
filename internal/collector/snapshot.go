@@ -17,7 +17,7 @@ type RestoreOperation struct {
 // 「建立快照」的進度，不是「還原」的進度；還原的正確查詢端點是 recovery API，
 // 這裡改用 _recovery 以求技術正確。
 func (c *Client) RestoreProgress() ([]RestoreOperation, error) {
-	b, err := c.get("/_recovery?active_only=true")
+	b, err := c.get(EpRecovery)
 	if err != nil {
 		return nil, err
 	}
