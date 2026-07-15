@@ -2,47 +2,77 @@ package collector
 
 import "encoding/json"
 
+// flatSettingString 從 flat_settings=true 的 _cluster/settings 回應中，依
+// persistent > transient > defaults 優先序取出單一設定鍵的字串值；找不到回 defaultVal。
+//
+// 不能對 flat_settings=true 的回應套用 filter_path=**.a.b.c 這種巢狀路徑寫法：
+// flat_settings 把設定壓成單一字串 key（如 "cluster.routing.allocation.enable"），
+// key 本身帶的點不是 JSON 巢狀層級，filter_path 卻是照巢狀層級比對，兩者語意衝突，
+// 會直接比對不到、永遠回空物件——真機驗證時曾被這個 bug 坑過。
+//
+// 也不能把整個 persistent/transient/defaults 硬解成 map[string]string：defaults
+// 區塊混雜大量非字串型別值（如 network.host 是陣列、xpack.security.user 是 null），
+// 一旦其中任一鍵型別不符，整個 json.Unmarshal 直接失敗；若呼叫端把這個錯誤吞掉當
+// 「查無設定」處理，會產生比原本 filter_path bug 更隱蔽的假陰性（明明有值卻讀不到，
+// 真機驗證也曾實際踩到）。故用 map[string]json.RawMessage 延遲解析，只在確定拿到
+// 目標鍵之後才嘗試字串解析，其餘鍵的型別問題不影響。
+func flatSettingString(b []byte, key, defaultVal string) string {
+	var generic map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(b, &generic); err != nil {
+		return defaultVal
+	}
+	for _, layer := range []string{"persistent", "transient", "defaults"} {
+		m, ok := generic[layer]
+		if !ok {
+			continue
+		}
+		raw, ok := m[key]
+		if !ok {
+			continue
+		}
+		var v string
+		if err := json.Unmarshal(raw, &v); err == nil {
+			return v
+		}
+	}
+	return defaultVal
+}
+
 // ClusterAllocationEnable 取 cluster.routing.allocation.enable 的生效值
 // （persistent > transient > defaults 優先序；預設 "all"）。#19 用。
 func (c *Client) ClusterAllocationEnable() (string, error) {
-	b, err := c.get("/_cluster/settings?include_defaults=true&flat_settings=true&filter_path=**.cluster.routing.allocation.enable")
+	b, err := c.get("/_cluster/settings?include_defaults=true&flat_settings=true")
 	if err != nil {
 		return "", err
 	}
-	var generic map[string]map[string]string
-	if err := json.Unmarshal(b, &generic); err != nil {
-		return "all", nil
-	}
-	for _, layer := range []string{"persistent", "transient", "defaults"} {
-		if m, ok := generic[layer]; ok {
-			if v, ok := m["cluster.routing.allocation.enable"]; ok {
-				return v, nil
-			}
-		}
-	}
-	return "all", nil
+	return flatSettingString(b, "cluster.routing.allocation.enable", "all"), nil
 }
 
 // IndexAllocationEnable 取單一 index 的 index.routing.allocation.enable 生效值
-// （預設 "all"）。#20 用。
+// （預設 "all"）。#20 用。不加 filter_path、不硬解 map[string]string 的理由見
+// flatSettingString 註解。
 func (c *Client) IndexAllocationEnable(index string) (string, error) {
-	b, err := c.get("/" + index + "/_settings?include_defaults=true&flat_settings=true&filter_path=**.index.routing.allocation.enable")
+	b, err := c.get("/" + index + "/_settings?include_defaults=true&flat_settings=true")
 	if err != nil {
 		return "", err
 	}
 	var raw map[string]struct {
-		Settings map[string]string `json:"settings"`
-		Defaults map[string]string `json:"defaults"`
+		Settings map[string]json.RawMessage `json:"settings"`
+		Defaults map[string]json.RawMessage `json:"defaults"`
 	}
 	if err := json.Unmarshal(b, &raw); err != nil {
 		return "all", nil
 	}
 	for _, idx := range raw {
-		if v, ok := idx.Settings["index.routing.allocation.enable"]; ok {
-			return v, nil
-		}
-		if v, ok := idx.Defaults["index.routing.allocation.enable"]; ok {
-			return v, nil
+		for _, m := range []map[string]json.RawMessage{idx.Settings, idx.Defaults} {
+			raw, ok := m["index.routing.allocation.enable"]
+			if !ok {
+				continue
+			}
+			var v string
+			if err := json.Unmarshal(raw, &v); err == nil {
+				return v, nil
+			}
 		}
 	}
 	return "all", nil

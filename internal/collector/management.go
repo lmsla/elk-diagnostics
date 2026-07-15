@@ -111,22 +111,13 @@ func (c *Client) Deprecations() ([]Deprecation, error) {
 }
 
 // MonitoringCollectionEnabled 取 stack monitoring 收集設定（"" 表未明確設定）。
+// 不加 filter_path、不硬解 map[string]string 的理由見 allocation.go 的
+// flatSettingString 註解（同一組 bug：filter_path 對 flat_settings 比對不到，
+// defaults 區塊混雜非字串型別會讓整段解析失敗又被吞掉）。
 func (c *Client) MonitoringCollectionEnabled() (string, error) {
-	b, err := c.get("/_cluster/settings?include_defaults=true&flat_settings=true&filter_path=**.xpack.monitoring.collection.enabled")
+	b, err := c.get("/_cluster/settings?include_defaults=true&flat_settings=true")
 	if err != nil {
 		return "", err
 	}
-	// 值可能落在 persistent/transient/defaults 任一層，直接字串搜尋最穩。
-	var generic map[string]map[string]string
-	if err := json.Unmarshal(b, &generic); err != nil {
-		return "", nil
-	}
-	for _, layer := range []string{"persistent", "transient", "defaults"} {
-		if m, ok := generic[layer]; ok {
-			if v, ok := m["xpack.monitoring.collection.enabled"]; ok {
-				return v, nil
-			}
-		}
-	}
-	return "", nil
+	return flatSettingString(b, "xpack.monitoring.collection.enabled", ""), nil
 }

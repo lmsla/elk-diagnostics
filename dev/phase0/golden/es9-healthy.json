@@ -384,7 +384,7 @@
       "conclusion": "normal",
       "summary": "資料抓取失敗，無法判定",
       "findings": [
-        "ES 回應 404: /_cluster/settings?include_defaults=true\u0026flat_settings=true\u0026filter_path=**.xpack.monitoring.collection.enabled"
+        "ES 回應 404: /_cluster/settings?include_defaults=true\u0026flat_settings=true"
       ],
       "root_causes": null,
       "recommendations": null,
@@ -402,7 +402,7 @@
       "conclusion": "normal",
       "summary": "資料抓取失敗，無法判定",
       "findings": [
-        "ES 回應 404: /_settings?flat_settings=true\u0026filter_path=**.index.search.slowlog.threshold*"
+        "ES 回應 404: /_settings?flat_settings=true"
       ],
       "root_causes": null,
       "recommendations": null,
@@ -420,7 +420,7 @@
       "conclusion": "normal",
       "summary": "資料抓取失敗，無法判定",
       "findings": [
-        "ES 回應 404: /_cluster/settings?include_defaults=true\u0026flat_settings=true\u0026filter_path=**.cluster.routing.allocation.enable"
+        "ES 回應 404: /_cluster/settings?include_defaults=true\u0026flat_settings=true"
       ],
       "root_causes": null,
       "recommendations": null,

@@ -11,7 +11,7 @@
 | 狀態 | 項目 | 規格 |
 |---|---|---|
 | ✅ | 備妥多版本測試叢集（docker-compose 8.14.3 / 9.0.0） | `dev/phase0/`，fixture 已產 |
-| 🟡 | 取真實 `_health_report` 輸出驗 diagnosis 顆粒度 | 已驗 shards_availability（足夠）、ilm（需補 explain）；disk/capacity/slm/repository 待各自實作時補測 |
+| ✅ | 取真實 `_health_report` 輸出驗 diagnosis 顆粒度 | 已驗 shards_availability（足夠）、ilm（需補 explain）；**2026-07-15 造壓驗證補齊 disk/shards_capacity/repository_integrity**（見 §4「造壓驗證」記錄），顆粒度皆足夠、diagnosis/action/help_url/affected_resources 完整。slm 未能在本次手動測試中重現（見 §4 說明），列為已知殘留缺口 |
 | ✅ | 顆粒度不足項目標記改走 raw API | spec-health-report「Phase 0 實測結果」：#5 ilm 須搭 `_ilm/explain`；解析器須容忍未知 indicator（9.x 多 file_settings） |
 
 ---
@@ -112,7 +112,7 @@
 | ✅ | `high-heap` | spec-diagnose-symptoms |（#7 jvm_pressure → #8 circuit_breaker → #6 rejected；2026-07-15 真機驗證：執行成功、判定 pass）
 | ✅ | `ingest-lag` | spec-diagnose-symptoms |（#13 ingest_pipeline → #12 task_backlog → #6 rejected(write) → #3 disk；2026-07-15 真機驗證：執行成功、判定 pass）
 | ✅ | `ilm-stuck` | spec-diagnose-symptoms |（#5 ilm → #3 disk → #10 shards_capacity；2026-07-15 真機驗證：執行成功、判定 pass）
-| 🟡 | check 反向觸發提示 | spec-diagnose-symptoms §3 |（已實作 §3 列出的 2 個範例：ILM ERROR→ilm-stuck、write-bottleneck 因果鏈成立→write-bottleneck；`Report.suggested_symptoms`＋HTML 提示區塊；純函式單元測試通過；2026-07-15 真機驗證確認健康叢集不會誤觸發（`suggested_symptoms` 正確為空），但兩個真機條件皆未真的觸發成立過，「真的觸發時提示正確」仍待造壓驗證）
+| 🟡 | check 反向觸發提示 | spec-diagnose-symptoms §3 |（已實作 §3 列出的 2 個範例：ILM ERROR→ilm-stuck、write-bottleneck 因果鏈成立→write-bottleneck；`Report.suggested_symptoms`＋HTML 提示區塊；純函式單元測試通過；2026-07-15 真機驗證：健康叢集正確不誤觸發（`suggested_symptoms` 為空），**造壓製造真實 ILM ERROR 後正確跳出 `ilm-stuck` 提示**——ILM 分支已完整驗證；write-bottleneck 分支需真實負載工具才能觸發，本次未驗，見 §4）
 
 ---
 
@@ -124,6 +124,7 @@
 | 🟡 | 多版本 golden test（錄製 response → 斷言 DiagnosticResult） | `cmd/elk-diagnostics/golden_test.go`＋`dev/phase0/golden/`；對 es8-health/es8-unhealthy/es9-healthy/es9-unhealthy 4 組 Phase 0 錄製檔各跑一次完整 `check`，比對整份報告。覆蓋率受限於 Phase 0 當時錄製的端點（allocation-enable/index-settings/mapping/recovery/write-thread-pool/monitoring-setting/slowlog-setting/ilm-explain 等較新端點未錄製，對應診斷在測試中如同真機缺權限被 check 容錯跳過），已在檔頭註解與 PROGRESS 誠實記錄，非缺陷。已用刻意注入的欄位改名驗證測試真的會抓到回歸。`-update` 旗標更新 golden 檔。 |
 | ✅ | 錯誤與韌性（逾時/重試/部分不可達 → unknown） | [spec-resilience.md](./specs/spec-resilience.md)；`collector/client.go`（重試：暫時性錯誤/5xx 重試、4xx 不重試，`config.yaml` 的 `cluster.retries` 首次真正接上）、`check.go`/`diagnose.go`（個別 raw API 失敗一律轉 `unknown` 結果，不再靜默消失，見 `unknownFrom`）。golden test 已隨此變更更新（原本消失的 7 項失敗現正確顯示為 unknown）；collector 層新增 4 個重試行為單元測試（含「4xx 不重試」「5xx 重試後仍失敗」情境）。host 故障轉移刻意不擴大到個別請求層級，理由見 spec §4。 |
 | ✅ | 安全與非功能（唯讀保證、密鑰遮蔽、單一二進位打包 OS/arch） | `cmd/elk-diagnostics/security_test.go`：`TestCheckIsReadOnly`（鎖住 collector 只送 GET，防未來誤加寫入方法）、`TestCheckDoesNotLeakSecretsOnSuccess`/`OnConnectFailure`（鎖住密碼明文與 Basic auth base64 編碼不出現在報告輸出或 stderr，已用刻意注入的洩漏驗證測試真的會抓到）。`Makefile` `dist` 目標擴充為 `linux/amd64` + `linux/arm64`（涵蓋 AWS Graviton 等 ARM 機型），各自產出 SHA256 checksum，已實測交叉編譯成功。 |
+| 🟡 | 造壓驗證（disk/shards_capacity/slm/repository_integrity 異常情境、症狀樹「成立」路徑） | **2026-07-15**，在真機 es8=8.14.3 上刻意製造故障，逐一驗證。**發現並修正兩個真 bug**（皆非本次新增，是既有程式碼的既有缺陷，靠造壓才浮現）：<br>1. `#11 mapping_explosion`/`#32 data_corruption` 排除系統 index 時誤把 data stream 的 `.ds-*` backing index 也排除掉，會漏掉客戶用 data stream 送的真實資料（見上方 commit 記錄，已修正為只排除「`.` 開頭且非 `.ds-` 開頭」）。<br>2. `#19 data_allocation_blocked`/`#20 index_allocation_blocked`/`#31 search_slow_log`/`#33 monitoring` 共用的 `filter_path=**.a.b.c` 寫法對 `flat_settings=true` 回應永遠比對不到（兩種語意衝突），且 `defaults` 區塊混雜陣列/null 型別、原本整段硬解 `map[string]string` 會直接失敗又被吞掉——兩層問題疊加讓這 4 條診斷長期回報「無異常」，不論實際設定為何。已改用 `flatSettingString`（`json.RawMessage` 延遲解析）修正，`internal/collector/{allocation,slowlog,management}_test.go` 補齊回歸測試（含真機實測到的陣列/null 型別 defaults 值）。<br>**驗證通過**：disk（水位）red→紅、shards_capacity red→紅、repository_integrity（真的用 `rm -rf` 破壞底層資料夾＋寫入觸發偵測）yellow→黃、ILM 停用/ERROR step→critical、cluster 層級 allocation 封鎖→critical，且 `check` 反向觸發提示在真的 ILM ERROR 時正確跳出 `ilm-stuck`。**未能重現**：`slm`（#15）indicator——`_slm/policy/_execute` 手動觸發、累積 4 次真實失敗，indicator 仍是 green；ES 似乎把「repo 本身已損壞」的失敗歸類到 `repository_integrity`（正確跳出黃燈）而非 `slm`，觸發 `slm` 本身變色的確切條件本次未測出，列為已知缺口。write-bottleneck 因果鏈的「真的觸發」路徑（需低 CPU+真實 write queue 積壓+低 allocated_processors）在單節點閒置 dev 容器上無法可靠重現，需要真實負載工具（如 esrally）才能驗，本次未做。全程測試皆已復原叢集至乾淨基準狀態。 |
 | ⬜ | 每項實作前先讀官方文件、填 `tested_versions`（鐵律，逐項執行） | specs README |
 
 ---
@@ -133,7 +134,7 @@
 | 里程碑 | 範圍 | 完成度 |
 |---|---|---|
 | 規格 | 11 份 specs（輸入→診斷→報告→平台） | ✅ 完成 |
-| Phase 0 | 多版本驗證 health_report 顆粒度 | ✅ 核心已驗（disk/capacity/slm/repo 待造壓補測） |
+| Phase 0 | 多版本驗證 health_report 顆粒度 | ✅ 核心已驗；disk/shards_capacity/repository_integrity 已造壓補測（2026-07-15），slm 未能重現（見 §4） |
 | MVP | 地基 + A 類 + #6 + JSON 報告 | ✅ 完成（真機 8.14.3） |
 | v0.2 | #7,8,9,12,11,13 + 離線 HTML 報告 | ✅ 完成（真機） |
 | v0.3 | #16,17,18,32 | ✅ 完成（真機） |
@@ -146,4 +147,5 @@
 | 多版本 golden test | es8/es9 × healthy/unhealthy 4 組 | 🟡 完成，覆蓋率受限於 Phase 0 錄製範圍（已誠實記錄） |
 | 安全與非功能 | 唯讀保證、密鑰遮蔽測試、multi-arch 打包 | ✅ 完成 |
 | 2026-07-15 真機驗證 | 本機 Docker es8=8.14.3/es9=9.0.0 對 check 全量 + 5 條症狀樹 | ✅ 完成；意外抓到並修正 #11/#32 系統 index 誤報 bug（見 §2） |
-| 待辦 | 造壓驗證（disk/shards_capacity/slm/repository 異常情境、症狀樹「成立」路徑） | ⬜ 未開始，需刻意製造故障情境 |
+| 2026-07-15 造壓驗證 | disk/shards_capacity/repository_integrity/ILM/allocation 封鎖異常情境 | ✅ 完成；抓到並修正 2 個真 bug（#19/#20/#31/#33 的 filter_path+flat_settings 解析、#11/#32 的 data stream 誤排除），見 §4 |
+| 待辦 | slm indicator 觸發條件（本次造壓未重現）、write-bottleneck 因果鏈真實負載驗證（需 esrally 等造壓工具） | ⬜ 未開始 |
