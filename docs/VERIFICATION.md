@@ -73,9 +73,9 @@
 
 > ⚠️ 注意：🟡 不等於安全。#19/#20/#31/#33 在被抓包前，全都停在 🟡（真機跑過、回報 pass、pass 看起來很合理），實際上它們永遠只會回 pass。
 
-### 3.1 ✅ 已觸發驗證（12 條）
+### 3.1 ✅ 已觸發驗證（22 條）
 
-真機 es8=8.14.3，2026-07-15 造壓確認。
+真機 es8=8.14.3，2026-07-15 / 2026-07-16 造壓確認。
 
 | # | 診斷 | 觸發方式 | 觀察到的結果 |
 |---|---|---|---|
@@ -90,25 +90,34 @@
 | 31 | Search slow log | 建 index 設 threshold ／ 移除 | 已開啟／未開啟兩態皆正確偵測 |
 | 37 | Cluster allocation 引導 | 同 #19 | warning + 真實 decider 解析正確 |
 
+**2026-07-16 Group A 批次**（工具版本 dc117f8，每個情境結束皆確認叢集回到基準線）：
+
+| # | 診斷 | 觸發方式 | 觀察到的結果 |
+|---|---|---|---|
+| 20 | Index allocation blocked | 建 index 時直接帶 `index.routing.allocation.enable=none`（shard 無法分配 → red → 被 shards_availability 點名 → #20 探測其設定） | warning，findings 精確引用 `idxblock-test：index.routing.allocation.enable="none"`；同時 #19 正確維持 pass（叢集層未動） |
+| 32 | Data corruption / red index | 同上情境的 red index | warning 點名 red index，root_causes 正確提示「可能源自未分配 shard（見 cluster_health）或實際毀損」 |
+| 21 | Not enough nodes for replica | 單節點建 `number_of_replicas=1` | cluster_health warning 點名 replica 問題；#37 給出 `same_shard（NO）` decider 原文 |
+| 22 | Shards per index exceeded | `number_of_shards=2` + `index.routing.allocation.total_shards_per_node=1` | cluster_health critical，root cause 點名 per-node 上限；#37 給出 `shards_limit（NO）` decider 原文 |
+| 27 | Watcher | `POST _watcher/_stop` | warning「已手動停止」＋正確建議 `POST _watcher/_start` |
+| 28 | Transforms | dest mapping 衝突（keyword 值寫入 long 欄位）＋ `num_failure_retries: 0` → state=failed | critical 點名 failed transform。註：「來源 index 不存在」路徑會被 `_start` 的驗證擋下（transform 停在 stopped，判 pass 正確）。**改進點**：findings 只有 `state=failed`，未帶 ES 的 `reason`（截斷後放入可大幅提高現場可行動性） |
+| 33 | Monitoring | `xpack.monitoring.collection.enabled=true` ↔ null | 兩態讀值皆正確（原 bug 為永遠讀不到設定值，已確認雙態修復） |
+| 34 | Upgrade deprecations | 啟用 legacy monitoring（其本身即 deprecated 設定） | warning，deprecation 訊息原文正確浮出 |
+| 35 | Remote clusters | `cluster.remote.rc-test.seeds` 指向不存在的位址 | warning「rc-test：未連線」 |
+| 13 | Ingest pipeline errors | fail processor pipeline 灌 10 筆 | warning「failed=10 / count=10（100%）」，正確標註累積值 |
+
+**#24（部分驗證）**：以「僅 hot/content role 的臨時節點 ＋ index 指定 `_tier_preference: data_warm`」造壓。故障被正確抓到——cluster_health critical ＋ #37 給出 `data_tier（NO）` decider 原文；`data_tier_availability` 的加深路徑（`_cat/nodes` tier 盤點）讀值正確（正確列出無節點的 tier）。但其**主判定路徑**（`data_stream_lifecycle` indicator 非 green）需要 data stream 生命週期停滯才會觸發，無法便宜重現，維持 🟡。報告層無假綠燈（因果鏈已涵蓋此情境）。
+
 ### 3.2 🟡 僅驗證正常路徑（20 條）— **待辦主體**
 
 依「要驗證需要什麼」分組，方便批次進行。
 
-#### Group A｜單節點即可，設定切換就能觸發（優先，成本最低）
+#### Group A｜單節點即可，設定切換就能觸發
 
-| # | 診斷 | 建議觸發方式 | 目前狀態 |
-|---|---|---|---|
-| 20 | Index allocation blocked | 對單一 index 設 `index.routing.allocation.enable=none` | 修正後仍只驗過 pass 分支。另已修好一個假陰性：探測失敗（權限不足／bundle 模式）原本會回報「shards_availability 目前正常」，現改判 unknown（見 §1.1） |
-| 21 | Not enough nodes for replica | 單節點建 `number_of_replicas=1` 的 index | 未觀察到 |
-| 22 | Shards per index exceeded | 設 index 層 `total_shards_per_node` 上限 | 只驗過 node 層（#23） |
-| 27 | Watcher | `POST _watcher/_stop` | 真機為「運作中」 |
-| 28 | Transforms | 建一個會 fail 的 transform | 真機為「未使用（不適用）」 |
-| 32 | Data corruption | 製造 red index（如 #19 的 blocked-test） | 真機為「無 red index」 |
-| 33 | Monitoring | 設 `xpack.monitoring.collection.enabled=true` | 已驗「未啟用」態讀值正確；啟用態未驗 |
-| 34 | Upgrade deprecations | 加一個 deprecated 設定 | 真機為 0 筆 |
-| 35 | Remote clusters | 設一個連不到的 remote cluster | 真機為「未設定（不適用）」 |
-| 13 | Ingest pipeline errors | 建含必失敗 processor 的 pipeline 並灌資料 | 真機失敗率 0 |
-| 24 | Preferred data tier missing | 建 index 指定叢集沒有的 tier | 單節點含全部 tier role |
+**✅ 2026-07-16 完成**：11 條中 10 條全數觸發驗證通過（移入 §3.1），#24 部分驗證（主判定路徑需 data stream 生命週期停滯，見 §3.1 末段）。**本批未發現假綠燈**——與 2026-07-15 首批（12 條驗出 6 條缺陷）相比，顯示 filter_path 修正與 §7 更新規則發揮了作用。
+
+| # | 診斷 | 殘留狀態 |
+|---|---|---|
+| 24 | Preferred data tier missing | 🟡 加深路徑與因果鏈已驗；`data_stream_lifecycle` indicator 變色路徑未觸發過 |
 
 #### Group B｜需要多節點叢集（`docker-compose.yml` 需擴充 3 節點）
 
@@ -197,6 +206,41 @@ PUT blocked-test {"settings":{"number_of_shards":1,"number_of_replicas":0}}
 # --- mapping explosion → critical（#11，含 data stream 迴歸情境）---
 # 送一筆含 1005+ 欄位的文件到 data stream，backing index 會是 .ds-* 開頭
 POST logs-explosion2-default/_doc {"@timestamp":"...","field_0":0, ... ,"field_1004":1004}
+
+# --- 2026-07-16 Group A 批次新增 ---
+
+# index 層 allocation 封鎖 → #20 + #32（建立時就帶設定，shard 從未分配過 → red）
+PUT idxblock-test {"settings":{"number_of_shards":1,"number_of_replicas":0,"index.routing.allocation.enable":"none"}}
+# 復原：DELETE idxblock-test
+
+# 單節點 replica → #21 + #37(same_shard)
+PUT replica-test {"settings":{"number_of_shards":1,"number_of_replicas":1}}
+
+# index 層 shards-per-node 超限 → #22 + #37(shards_limit)
+PUT shardlimit-test {"settings":{"number_of_shards":2,"number_of_replicas":0,"index.routing.allocation.total_shards_per_node":1}}
+
+# failed transform → #28（重點：num_failure_retries=0 讓第一次失敗即進 failed，否則要等多輪 backoff）
+PUT tf-src   {"mappings":{"properties":{"g":{"type":"keyword"}}}}
+POST tf-src/_doc?refresh=true {"g":"abc"}
+PUT tf-dest  {"mappings":{"properties":{"g":{"type":"long"}}}}     # 型別衝突是失敗來源
+PUT _transform/failtest {"source":{"index":"tf-src"},"dest":{"index":"tf-dest"},
+  "pivot":{"group_by":{"g":{"terms":{"field":"g"}}},"aggregations":{"cnt":{"value_count":{"field":"g"}}}},
+  "settings":{"num_failure_retries":0}}
+POST _transform/failtest/_start   # 約 10 秒後 state=failed
+# 復原：POST _transform/failtest/_stop?force=true → DELETE _transform/failtest → DELETE tf-src,tf-dest
+# 註：「來源 index 不存在」不可行——_start 的驗證會擋下，transform 停在 stopped（判 pass 正確）
+
+# Watcher → #27:  POST _watcher/_stop   復原: POST _watcher/_start
+# Monitoring → #33+#34（legacy monitoring 設定本身就是 deprecated，一石二鳥）:
+#   PUT _cluster/settings {"persistent":{"xpack.monitoring.collection.enabled":true}}   復原設 null
+# Remote cluster → #35:
+#   PUT _cluster/settings {"persistent":{"cluster":{"remote":{"rc-test":{"seeds":["127.0.0.1:9399"],"skip_unavailable":false}}}}}
+#   復原：seeds 與 skip_unavailable 皆設 null（兩者都要，否則殘留設定）
+# Ingest 失敗率 → #13:
+#   PUT _ingest/pipeline/failpipe {"processors":[{"fail":{"message":"deliberate"}}]}
+#   對任意 index 以 ?pipeline=failpipe 灌 10 筆 → failed=10/count=10
+# 缺 tier 節點 → #24（部分）：另起容器 -e node.roles=master,data_hot,data_content,ingest，
+#   建 index 帶 "index.routing.allocation.include._tier_preference":"data_warm"
 ```
 
 **單一情境成本**：改設定 → 等 ES 重新評估（2–15 秒，視 indicator 而定）→ 跑 check（0.12 秒）→ 復原，約 **30 秒–1 分鐘**。
