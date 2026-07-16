@@ -51,47 +51,19 @@ generate_certs() {
     return
   fi
 
+  # SAN 不含新容器名時視為舊版憑證，刪掉讓共用腳本重生（此檢查只決定「要不要跑」，
+  # 產生邏輯本身只有 gen-certs-in-container.sh 一份，與 docker-compose.yml 共用）
+  if [[ -f "${CERTS_DIR}/es8/es8.crt" ]] &&
+     ! openssl x509 -in "${CERTS_DIR}/es8/es8.crt" -text -noout 2>/dev/null |
+         grep -q 'DNS:elk-diagnostics-es8'; then
+    rm -rf "${CERTS_DIR}/es8" "${CERTS_DIR}/es9" "${CERTS_DIR}/kibana8" "${CERTS_DIR}/kibana9"
+  fi
+
   echo "產生本機自簽 CA 與 server certificates..."
   podman run --rm --user 0 \
     -v "${CERTS_DIR}:/usr/share/elasticsearch/config/certs" \
-    "$ES8_IMAGE" bash -c '
-      set -euo pipefail
-      cd /usr/share/elasticsearch/config/certs
-      if [ ! -f ca/ca.crt ]; then
-        /usr/share/elasticsearch/bin/elasticsearch-certutil ca --silent --pem \
-          -out /usr/share/elasticsearch/config/certs/ca.zip
-        unzip -q /usr/share/elasticsearch/config/certs/ca.zip \
-          -d /usr/share/elasticsearch/config/certs
-        rm -f /usr/share/elasticsearch/config/certs/ca.zip
-      fi
-      rm -rf es8 es9 kibana8 kibana9
-      printf "%s\n" \
-        "instances:" \
-        "  - name: es8" \
-        "    dns: [es8, elk-diagnostics-es8, localhost]" \
-        "    ip: [127.0.0.1]" \
-        "  - name: es9" \
-        "    dns: [es9, elk-diagnostics-es9, localhost]" \
-        "    ip: [127.0.0.1]" \
-        "  - name: kibana8" \
-        "    dns: [kibana8, elk-diagnostics-kibana8, localhost]" \
-        "    ip: [127.0.0.1]" \
-        "  - name: kibana9" \
-        "    dns: [kibana9, elk-diagnostics-kibana9, localhost]" \
-        "    ip: [127.0.0.1]" > instances.yml
-      /usr/share/elasticsearch/bin/elasticsearch-certutil cert --silent --pem \
-        --in /usr/share/elasticsearch/config/certs/instances.yml \
-        --out /usr/share/elasticsearch/config/certs/certs.zip \
-        --ca-cert /usr/share/elasticsearch/config/certs/ca/ca.crt \
-        --ca-key /usr/share/elasticsearch/config/certs/ca/ca.key
-      unzip -q /usr/share/elasticsearch/config/certs/certs.zip \
-        -d /usr/share/elasticsearch/config/certs
-      rm -f /usr/share/elasticsearch/config/certs/certs.zip instances.yml
-      chown -R root:root .
-      find . -type d -exec chmod 755 {} \;
-      find . -type f -name "*.crt" -exec chmod 644 {} \;
-      find . -type f -name "*.key" -exec chmod 640 {} \;
-    '
+    -v "${ROOT_DIR}/gen-certs-in-container.sh:/gen-certs-in-container.sh:ro" \
+    "$ES8_IMAGE" bash /gen-certs-in-container.sh
 }
 
 wait_https() {
@@ -183,7 +155,7 @@ up_kibana() {
     exit 1
   fi
 
-  body="$(printf '{\"password\":\"%s\"}' "$TEST_PASSWORD")"
+  body="{\"password\":\"${TEST_PASSWORD}\"}"
   for port in 9208 9209; do
     curl --silent --fail --cacert "$CA_CERT" -u "elastic:${TEST_PASSWORD}" \
       -H 'Content-Type: application/json' -X POST \
@@ -192,8 +164,10 @@ up_kibana() {
   done
   start_kibana elk-diagnostics-kibana8 kibana8 5601 kibana8 es8 "$KIBANA8_IMAGE"
   start_kibana elk-diagnostics-kibana9 kibana9 5602 kibana9 es9 "$KIBANA9_IMAGE"
-  wait_https https://localhost:5601/api/status "Kibana 8"
-  wait_https https://localhost:5602/api/status "Kibana 9"
+  # /api/status 在 8.x 預設匿名可讀，但部分版本／設定會要求認證；帶上帳密兩者皆通，
+  # 避免 401 空轉 300 秒後誤判「未就緒」
+  wait_https https://localhost:5601/api/status "Kibana 8" "elastic:${TEST_PASSWORD}"
+  wait_https https://localhost:5602/api/status "Kibana 9" "elastic:${TEST_PASSWORD}"
   echo "Kibana 已就緒；登入帳密 elastic / ${TEST_PASSWORD}"
 }
 

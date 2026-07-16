@@ -17,47 +17,9 @@ services:
     user: "0"
     volumes:
       - ./certs:/usr/share/elasticsearch/config/certs
-    command: >
-      bash -c '
-        set -euo pipefail;
-        cd config/certs;
-        if [ ! -f ca/ca.crt ]; then
-          /usr/share/elasticsearch/bin/elasticsearch-certutil ca --silent --pem \
-            -out /usr/share/elasticsearch/config/certs/ca.zip;
-          unzip -q /usr/share/elasticsearch/config/certs/ca.zip \
-            -d /usr/share/elasticsearch/config/certs;
-          rm -f /usr/share/elasticsearch/config/certs/ca.zip;
-        fi;
-        if [ ! -f es8/es8.crt ] || [ ! -f es9/es9.crt ] || [ ! -f kibana8/kibana8.crt ] || [ ! -f kibana9/kibana9.crt ]; then
-          rm -rf es8 es9 kibana8 kibana9;
-          printf "%s\n" \
-            "instances:" \
-            "  - name: es8" \
-            "    dns: [es8, elk-diagnostics-es8, localhost]" \
-            "    ip: [127.0.0.1]" \
-            "  - name: es9" \
-            "    dns: [es9, elk-diagnostics-es9, localhost]" \
-            "    ip: [127.0.0.1]" \
-            "  - name: kibana8" \
-            "    dns: [kibana8, elk-diagnostics-kibana8, localhost]" \
-            "    ip: [127.0.0.1]" \
-            "  - name: kibana9" \
-            "    dns: [kibana9, elk-diagnostics-kibana9, localhost]" \
-            "    ip: [127.0.0.1]" > instances.yml;
-          /usr/share/elasticsearch/bin/elasticsearch-certutil cert --silent --pem \
-            --in /usr/share/elasticsearch/config/certs/instances.yml \
-            --out /usr/share/elasticsearch/config/certs/certs.zip \
-            --ca-cert /usr/share/elasticsearch/config/certs/ca/ca.crt \
-            --ca-key /usr/share/elasticsearch/config/certs/ca/ca.key;
-          unzip -q /usr/share/elasticsearch/config/certs/certs.zip \
-            -d /usr/share/elasticsearch/config/certs;
-          rm -f /usr/share/elasticsearch/config/certs/certs.zip instances.yml;
-        fi;
-        chown -R root:root .;
-        find . -type d -exec chmod 755 {} \;;
-        find . -type f -name "*.crt" -exec chmod 644 {} \;;
-        find . -type f -name "*.key" -exec chmod 640 {} \;;
-      '
+      # 憑證產生邏輯只有一份，與 podman-test-env.sh 共用（見腳本檔頭說明）
+      - ./gen-certs-in-container.sh:/gen-certs-in-container.sh:ro
+    command: bash /gen-certs-in-container.sh
     restart: "no"
 
   es8:

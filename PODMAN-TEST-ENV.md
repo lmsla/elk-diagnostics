@@ -13,6 +13,8 @@
 
 固定帳密是公開測試資料，不是秘密，且不得用於正式環境。
 
+**本文所有指令一律從 repo 根目錄執行**（`podman-test-env.sh` 以自身位置定位，不依賴工作目錄）。
+
 | 服務 | 容器名 | URL |
 |---|---|---|
 | ES 8 | `elk-diagnostics-es8` | `https://localhost:9208` |
@@ -35,8 +37,7 @@ podman machine ssh "sudo sysctl -w vm.max_map_count=262144"
 ## 2. 啟動 ES
 
 ```bash
-cd /Users/russell.chen/workspace/lab/elk-diagnostics/dev/phase0
-./podman-test-env.sh up
+./dev/phase0/podman-test-env.sh up
 ```
 
 腳本會產生 `dev/phase0/certs/` 並啟動 ES 8／9。憑證與私鑰已被 Git 忽略。
@@ -44,7 +45,7 @@ cd /Users/russell.chen/workspace/lab/elk-diagnostics/dev/phase0
 ## 3. 安全驗收
 
 ```bash
-CA=/Users/russell.chen/workspace/lab/elk-diagnostics/dev/phase0/certs/ca/ca.crt
+CA="$PWD/dev/phase0/certs/ca/ca.crt"
 PASSWORD=elk-diagnostics-test-only
 
 # 正確 CA + Basic Auth：200
@@ -69,7 +70,6 @@ fi
 ## 4. 驗證 elk-diagnostics
 
 ```bash
-cd /Users/russell.chen/workspace/lab/elk-diagnostics
 export ELK_DIAGNOSTICS_HOSTS=https://localhost:9208
 export ELK_DIAGNOSTICS_AUTH_TYPE=basic
 export ELK_DIAGNOSTICS_USERNAME=elastic
@@ -98,8 +98,7 @@ ES_PASSWORD=elk-diagnostics-test-only ./collect.sh \
 ES 健檢不依賴 Kibana。只有需要 Dev Tools 或畫面交叉核對時才啟動：
 
 ```bash
-cd /Users/russell.chen/workspace/lab/elk-diagnostics/dev/phase0
-./podman-test-env.sh up-kibana
+./dev/phase0/podman-test-env.sh up-kibana
 ```
 
 登入資訊：
@@ -120,8 +119,7 @@ cd /Users/russell.chen/workspace/lab/elk-diagnostics/dev/phase0
 ## 7. 清理
 
 ```bash
-cd /Users/russell.chen/workspace/lab/elk-diagnostics/dev/phase0
-./podman-test-env.sh down
+./dev/phase0/podman-test-env.sh down
 ```
 
 容器內資料會刪除；CA 與憑證保留供下次重用。
