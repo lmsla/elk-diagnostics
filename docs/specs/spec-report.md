@@ -60,6 +60,9 @@ critical 存在            → overall = critical
 ```
 報告
 ├── meta：工具版本、產生時間、目標叢集(host, cluster_name, es_version)、模式(check/diagnose)、症狀(diagnose 時)
+│         bundle 模式另含：collected_at、collect_script_version（取自 bundle 的 _manifest.json，見 spec-bundle §4.2；
+│         舊 bundle 無 manifest 時省略欄位，HTML 頁首註明「bundle 未含採集時間（舊版採集腳本）」。
+│         採集時間與分析時間是兩個時點，報告必須能區分——政府/金融報告須註明「資料取自何時」）
 ├── overall_status + 計數摘要
 ├── version_notice：若 es_version 不在多數項目 tested_versions 內，全域警告
 ├── results[]：DiagnosticResult 陣列（依 §5 排序）
@@ -131,6 +134,39 @@ JSON 為穩定契約：欄位只增不改名；新增診斷項只是多一個 `r
 6. **頁尾**：免責聲明。
 
 色彩對應固定：pass=綠、warning=琥珀、critical=紅、skipped=灰、unknown=深灰加問號。
+
+---
+
+## 5.1 純文字格式（`--output text`，2026-07-16 新增）
+
+**用途**：顧問在客戶跳板機／終端上**立即判讀**，不依賴瀏覽器。text 不是交付物——交付仍用 html（給人）與 json（給機器）；text 也**不是穩定契約**，格式可隨版本調整，任何機器處理一律走 json。
+
+版面由上而下（全部走 stdout，或 `-o` 指定的檔案）：
+
+```
+elk-diagnostics 0.0.5 ｜ docker-cluster（ES 8.14.3）｜ check ｜ 2026-07-16T02:10:00Z
+整體狀態：⚠ 注意     ✅ 20  ⚠ 3  ❌ 0  ⏭ 0  ❓ 8
+
+❌ / ⚠ / ❓ 逐項（每項兩行）：
+  ⚠ 叢集健康 / 未分配 shard — This cluster has 7 unavailable replica shards.
+     └ Searches might be slower... [elkdoctor-ilmerr, elkdoctor-unhealthy]
+  ❓ 叢集層級 shard 分配封鎖 — bundle 缺少該端點資料，無法判定
+     └ bundle 缺少 cluster_settings.json（採集腳本未執行此項或該端點當時失敗）
+
+✅ 通過（20）：叢集健康、Master 穩定性、磁碟容量、…（僅列標題、頓號分隔、自動換行）
+⏭ 略過（2）：Watcher（未使用）、…
+
+（version_notice 若有，緊接整體狀態列之後，黃色整行）
+（免責聲明固定最後一行，暗色）
+```
+
+規則：
+
+- **非 pass 項目**（critical → warning → unknown 排序）逐項列出：狀態符號 + `title` + `summary` 一行，`findings` 第一條縮排一行（其餘省略，明細請看 html/json）。
+- **pass 與 skipped 壓縮成彙總行**，只列標題——現場判讀要的是「哪裡有事」，通過清單掃一眼確認涵蓋面即可。
+- **色彩**：pass=綠、warning=黃、critical=紅、unknown=青、skipped=暗灰。僅在 stdout 為 TTY 時輸出 ANSI；`--no-color` 或環境變數 `NO_COLOR` 存在時、或 `-o` 寫檔時，一律純文字。
+- 不用表格框線、不依賴等寬對齊（終端寬度不可控），縮排用空格。
+- exit code 規則與其他格式完全相同（spec-cli §3）。
 
 ---
 

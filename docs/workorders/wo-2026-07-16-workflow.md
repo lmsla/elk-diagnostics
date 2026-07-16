@@ -1,0 +1,65 @@
+# 工單：工作流與打包批次（2026-07-16）
+
+**背景**：通盤檢視發現的現場工作流缺口——沒有終端可讀輸出（跳板機沒瀏覽器）、報告寫不出「資料取自何時」、導入審查缺 SBOM。
+
+**規格依據（先讀完再動工）**：`docs/specs/spec-report.md` §3/§5.1（2026-07-16 新增）、`docs/specs/spec-bundle.md` §4.2（新增）、`docs/specs/spec-cli.md` §2。
+
+**鐵律**：text 輸出不是穩定契約，但 JSON 是——meta 欄位只增不改名；collect.sh 是產生檔，改範本後必須 `make generate`，過期測試會擋。
+
+---
+
+## T4｜`--output text` 終端摘要 ＋ `--no-color`
+
+依 spec-report §5.1 實作 `internal/reporter/text.go`。要點：
+
+- 非 pass 項（critical→warning→unknown 排序）每項兩行：符號＋title＋summary；findings 第一條縮排。pass/skipped 壓縮成彙總行只列標題。
+- ANSI 色彩僅在 stdout 為 TTY 且無 `--no-color`、無 `NO_COLOR` 環境變數時輸出；`-o` 寫檔一律純文字。
+- `check` 與 `diagnose` 都支援。exit code 規則不變。
+- `--no-color` 為全域 flag（spec-cli §2 本來就列了，只是從未實作）。
+
+**驗收**：
+- [ ] `check --from-bundle dev/phase0/fixtures/es9-unhealthy --output text` 一屏內可判讀：頂部整體狀態列、11 條非 pass 逐項、20 條 pass 壓縮一行。
+- [ ] 管線重導（非 TTY）時輸出無任何 `\x1b` 字元（單元測試驗字串即可）。
+- [ ] `--output text -o out.txt` 檔案內無 ANSI。
+- [ ] 不合法的 `--output foo` 有清楚錯誤（維持既有行為）。
+
+## T5｜bundle `_manifest.json`（採集時間可追溯）
+
+依 spec-bundle §4.2 實作：
+
+1. `collect-script` 範本（`cmd/elk-diagnostics/collect_script.go`）：腳本開始時寫入 `_manifest.json`（collect_script_version / collected_at UTC / host base URL / endpoints_total）。POSIX sh 手寫 JSON 即可（欄位固定、值無需跳脫的格式），不得引入 jq 依賴。
+2. `make generate` 同步 checked-in 的 `collect.sh`。
+3. 分析端：`--from-bundle` 讀 manifest，`collected_at`／`collect_script_version` 進報告 meta（JSON 新欄位；HTML 頁首顯示採集時間）。manifest 不存在 → 欄位省略、HTML 註明「bundle 未含採集時間（舊版採集腳本）」；**不得**用 mtime 或目錄名猜。
+
+**驗收**：
+- [ ] 新產出的 `collect.sh` 跑過 `sh -n` 語法檢查；產出的 `_manifest.json` 可被 `json.Unmarshal` 解析。
+- [ ] 含 manifest 的 bundle → JSON meta 有兩個新欄位、HTML 頁首顯示採集時間。
+- [ ] 舊 bundle（fixture 目錄）→ 欄位省略、HTML 有註明、不報錯。
+- [ ] `TestCollectScript_CheckedInCopyIsFresh` 通過（記得 `make generate`）。
+- [ ] manifest 不進 `collector.Endpoints`（它不是端點），`apis` 輸出與 `docs/api-inventory.md` 不受影響。
+
+## T6｜SBOM 進 `make dist`
+
+導入審查清單（討論總結.md §8）最後一個缺口。用 CycloneDX：`go run github.com/CycloneDX/cyclonedx-gomod/cmd/cyclonedx-gomod@<pin 最新穩定版> mod -json -output dist/sbom.cdx.json .`（module 層級即可，工具版本要 pin 死，不用 @latest）。SBOM 一併納入既有的 SHA256 清單。
+
+**驗收**：
+- [ ] `make dist` 產出 `dist/sbom.cdx.json`，內容含本 module 與全部相依及其版本。
+- [ ] SHA256 清單涵蓋 sbom 檔。
+- [ ] README 或 spec-bundle 的交付清單提到 SBOM 一句話即可。
+
+## T7｜repo 清潔
+
+- `git rm` 根目錄的 `report.html`、`report1.html`、`report2.html`（測試殘留，誤入版控）。
+- `.gitignore` 加 `/report*.html` 與 `/elk-bundle-*/`（collect.sh 的預設輸出）。
+- **不動** `dev/` 底下的任何東西、不動未追蹤的 `討論總結.md`。
+
+**驗收**：
+- [ ] `git status` 乾淨（除既有未追蹤檔）；根目錄跑 `collect.sh` 或輸出 report.html 不會弄髒 `git status`。
+
+---
+
+## 完成定義
+
+- `go build ./... && go test ./...` 全過；`make generate` 後無 diff 殘留。
+- `docs/PROGRESS.md` 相應更新（僅標「已實作」）。
+- 每個 T 一個 commit，訊息說明行為變化而非檔案清單。

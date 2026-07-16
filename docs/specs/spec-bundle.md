@@ -70,6 +70,7 @@ checked in 而非只留在 `dist/`（gitignore）的理由：新增端點時，d
 
 ```
 bundle/
+├── _manifest.json            # 採集中繼資料（見 §4.2，2026-07-16 新增）
 ├── _status.txt               # 每行 "<檔名> <HTTP 狀態碼>"
 ├── _errors.log               # curl 層級的錯誤（連線失敗等）
 ├── version.json              # GET /
@@ -94,6 +95,24 @@ bundle/
 有了狀態碼，bundle 模式的 `get()` 對 4xx/5xx 的處理與連線模式完全相同，兩者行為一致。
 
 `_status.txt` 不存在時一律視為 200，以相容於直接拿 `dev/phase0/fixtures/<cluster>/` 當 bundle 的用法；`AllocationExplain` 因此額外自行辨識錯誤 body（見 collector 內註解）。
+
+### 4.2 `_manifest.json`：採集時間必須可追溯（2026-07-16 新增）
+
+報告的 `generated_at` 是**分析**時間；政府／金融的健檢報告必須寫得出「資料**取自**何時」。bundle 可能在採集數天後才被分析，兩個時點不可混同。採集腳本於開始時寫入：
+
+```json
+{
+  "collect_script_version": "0.0.5",
+  "collected_at": "2026-07-16T02:10:00Z",
+  "host": "https://es.example.local:9200",
+  "endpoints_total": 24
+}
+```
+
+- `collected_at` 一律 UTC（`date -u +%Y-%m-%dT%H:%M:%SZ`），取採集**開始**時間。
+- `host` 只記 base URL，**絕不含帳密**（認證本來就走環境變數）。host 名稱屬於 bundle 既有的識別資訊範疇（§5.2），未來 `--redact` 一併處理。
+- 產生方式與其他交付物相同：改 `collect-script` 範本 → `make generate` 同步 checked-in 的 `collect.sh`，過期測試會擋漂移。
+- 分析端：`--from-bundle` 時把 `collected_at`／`collect_script_version` 帶進報告 meta（JSON 欄位只增，向後相容）；manifest 不存在（舊 bundle、fixture 直接當 bundle 用）時欄位省略，HTML 頁首註明「bundle 未含採集時間（舊版採集腳本）」，**不得**拿檔案 mtime 或目錄名猜測。
 
 端點 → 檔名的對照由 `collector.Endpoints` 單一定義，同時供 bundle 讀取、golden test 回放、與後續的採集腳本產生使用。`dev/phase0/fixtures/<cluster>/` 即是此格式，故既有 fixture 可直接當 bundle 使用。
 

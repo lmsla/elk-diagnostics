@@ -21,7 +21,7 @@
 | `--config <path>` | `./config.yaml` | 設定檔 |
 | `--host <url>`（可重複） | — | 覆寫 hosts |
 | `--api-key` / `--username` / `--password` / `--ca-cert` / `--insecure` | — | 連線（見 spec-config） |
-| `--output <fmt>` | `json` | `json` \| `html` |
+| `--output <fmt>` | `json` | `json` \| `html` \| `text`（text 為終端摘要，見 spec-report §5.1） |
 | `-o, --output-file <path>` | stdout | 輸出檔；省略則印 stdout |
 | `--rules <path>` | （內建） | 覆寫規則 YAML |
 | `--timeout <sec>` | 10 | 單請求逾時 |
@@ -47,10 +47,11 @@
 
 ## 4. 版本偵測與 fallback 行為
 
-1. 連線後 `GET /` 取 `version.number`。
+1. 連線後 `GET /` 取 `version.number`（bundle 模式讀 `version.json`）。
 2. `>= 8.4`：採 `_health_report` 為 primary（spec-health-report）。
-3. `< 8.4`：`_health_report` 不可用 → 該類診斷全面走 raw API fallback，並在報告 meta 與頁首輸出版本警告。
-4. 版本落在某診斷 `tested_versions` 之外：該診斷照跑，但加 `version_warning` 並降低結論信心措辭（不靜默）。
+3. `< 8.4`：**目前不提供 raw API fallback**（2026-07-16 修訂：原規劃的全面 fallback 未實作，明文降級為待辦而非假承諾）。行為：A 類診斷全數 `skipped`（summary 註明「ES < 8.4 無 _health_report，本項不適用」）、B/C 類照跑但每條附 `version_warning`（8.4 以下未經測試）、報告頂層設 `version_notice` 全域警告。理由：假裝支援而未測試，比明說不支援更危險——這正是 VERIFICATION.md §1 的教訓。
+4. 版本高於已測上限（見各診斷 `tested_versions`）：診斷照跑，報告頂層 `version_notice` 提示（不靜默）。
+5. 執行期 `_health_report` 抓取失敗（版本支援但拿不到）：不中止，A 類全數 `unknown`，見 spec-resilience §1（2026-07-16 修訂）。
 
 ## 5. 範例
 

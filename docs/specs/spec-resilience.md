@@ -8,9 +8,13 @@
 
 | 失敗層級 | 例子 | 行為 |
 |---|---|---|
-| 連線/初始握手失敗（`GET /`，見 spec-cli §4） | 所有 `--host` 都連不上、認證錯誤 | 整個指令中止，`exit 11`（見 spec-cli §3）。無法連線就無法產出任何有意義的報告 |
-| `_health_report` 抓取失敗 | 已連線，但 `_health_report` 逾時/中斷 | `check`／需要 `_health_report` 的症狀樹中止，`exit 11`。這是 A 類的地基，沒有它多數判定無法進行 |
+| 連線/初始握手失敗（`GET /`，見 spec-cli §4）；bundle 目錄不存在/不可讀/缺 `version.json` | 所有 `--host` 都連不上、認證錯誤、`--from-bundle` 指到不存在的路徑 | 整個指令中止，`exit 11`（見 spec-cli §3）。無法連線／無法辨識目標就無法產出任何有意義的報告 |
+| `_health_report` 抓取失敗 | 已連線但 `_health_report` 逾時/4xx/5xx；bundle 缺 `health_report.json` 或該檔為錯誤 body | **不中止**（2026-07-16 修訂，舊行為為 `exit 11`）。A 類診斷全數以 `status=unknown` 浮出（`summary` 註明地基資料缺失），B/C 類照常執行；overall 依 spec-report §2 既有公式收斂 |
 | 個別 raw API 加深呼叫失敗 | 某台節點逾時、`_transform/_stats` 403、單一 B 類端點 404 | **不中止**、**不靜默省略**。該診斷項目仍出現在報告中，`status=unknown`，`summary` 註明抓取失敗原因（見 §3） |
+
+第二層的修訂理由（2026-07-16）：舊行為在連線模式勉強說得通（人在現場，可立即重試），但在 bundle 工作流是最壞的失效點——**人已離開客戶環境才發現 bundle 缺一個檔，其餘 23 個端點的資料完好，卻一條診斷都跑不出來，也無法補採**。B/C 類根本不依賴 `_health_report`，沒有理由陪葬。這也消除了本規格與 spec-bundle §6「缺檔一律轉 unknown，絕不中止其他判定」的矛盾。
+
+注意與版本問題的區分：ES < 8.4 沒有 `_health_report` **不是**「抓取失敗」，A 類標 `skipped` 而非 `unknown`（見 spec-cli §4、spec-report §6）——前者是「此環境不適用」，後者是「該有而拿不到」。
 
 第三層是本次補強的重點：舊行為是 `if x, e := client.Foo(); e == nil { results = append(...) }`——失敗時該診斷項目直接從報告消失，不算 pass 也不算 unknown，形同無痕跡遺失。這違反 spec-report §1/§2「`unknown`：資料抓取失敗，不可當 pass」的既有規則，且比「當 pass」更糟：連「有失敗」這件事本身都沒被記錄。修正後一律浮出為 `unknown` 結果。
 
@@ -28,6 +32,7 @@
 
 每個 raw API 加深呼叫失敗時，改為呼叫 `unknownFrom(既有 analyzer 函式(零值), err)`：藉由呼叫該診斷項目本身的 analyzer 函式（帶零值/nil 輸入）取得正確的 `id`/`title`/`category`/`docs`（避免另建一份重複、易漂移的對照表），再覆寫 `status=unknown`、`conclusion=normal`、`summary`、`findings=[錯誤訊息]`。
 
+- **措辭因模式而異**（2026-07-16 補）：`summary` 在連線模式為「資料抓取失敗，無法判定」；在 `--from-bundle` 模式為「**bundle 缺少該端點資料，無法判定**」——bundle 模式沒有「抓取」這個動作，原措辭會誤導使用者以為是分析端的網路問題。`findings` 兩種模式都保留完整錯誤訊息（bundle 模式含缺少的檔名）。
 - **範圍**：check 的所有非 health_report 加深診斷（thread pool／JVM／breaker／CPU／balance／mapping／ingest／data corruption／watcher／transforms／remote clusters／deprecations／monitoring／slow log／B 類的 #19/#25/#30/#24/#36/#37）。
 - **不在此範圍**（維持既有的「盡力而為、內部再退化」設計，見程式註解，非本次調整標的）：
   - `#20 IndexAllocationBlocked` 逐 index 查 `allocation.enable`：單一 index 探測失敗只影響該 index 的統計，非整條診斷失敗，維持既有「盡力蒐集、無法探測的略過」邏輯。
