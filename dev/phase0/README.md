@@ -2,7 +2,8 @@
 
 目的：在寫任何 analyzer 之前，用**真實 ES 輸出**回答唯一未消除的架構問題——
 **`_health_report` 各 indicator 的 `diagnosis` 是否足以取代 A 類逐 API 判斷？**
-順便產出測試用 fixture。需求：Docker、`curl`、`jq`。
+順便產出測試用 fixture。安全基線固定為自簽 CA、HTTPS、Basic Auth。
+需求：Docker Compose、`curl`、`jq`。
 
 ## 步驟
 
@@ -13,17 +14,21 @@ docker compose up -d          # 起 es8（:9208）與 es9（:9209）
 # 等到 healthy（約 30–60 秒）
 docker compose ps
 
+export CA_CERT="$PWD/certs/ca/ca.crt"
+export ES_USER=elastic
+export ES_PASS=elk-diagnostics-test-only
+
 # 1) 健康狀態下擷取
-./capture.sh http://localhost:9208 es8-healthy
-./capture.sh http://localhost:9209 es9-healthy
+./capture.sh https://localhost:9208 es8-healthy
+./capture.sh https://localhost:9209 es9-healthy
 
 # 2) 製造異常，讓 indicator 吐出 diagnosis（重點）
-./seed-unhealthy.sh http://localhost:9208
+./seed-unhealthy.sh https://localhost:9208
 sleep 10
-./capture.sh http://localhost:9208 es8-unhealthy
-./seed-unhealthy.sh http://localhost:9209
+./capture.sh https://localhost:9208 es8-unhealthy
+./seed-unhealthy.sh https://localhost:9209
 sleep 10
-./capture.sh http://localhost:9209 es9-unhealthy
+./capture.sh https://localhost:9209 es9-unhealthy
 
 docker compose down -v        # 收工清除
 ```
@@ -59,12 +64,13 @@ docker-compose 內含對應版本的 Kibana，用來與 elk-diagnostics 的判�
 
 | ES | Kibana |
 |---|---|
-| es8 `http://localhost:9208` | kibana8 `http://localhost:5601` |
-| es9 `http://localhost:9209` | kibana9 `http://localhost:5602` |
+| es8 `https://localhost:9208` | kibana8 `https://localhost:5601` |
+| es9 `https://localhost:9209` | kibana9 `https://localhost:5602` |
 
 ```bash
-docker compose up -d es8 kibana8   # 只起 es8 + 對應 Kibana（省資源）
-# Kibana 首次啟動約 1–2 分鐘，就緒後開 http://localhost:5601（security 關閉，免登入）
+docker compose --profile kibana up -d es8 kibana8
+# Kibana 首次啟動約 1–2 分鐘，就緒後開 https://localhost:5601
+# 使用 elastic / elk-diagnostics-test-only 登入，瀏覽器需信任 certs/ca/ca.crt。
 ```
 
 對照用法：
@@ -77,6 +83,7 @@ docker compose up -d es8 kibana8   # 只起 es8 + 對應 Kibana（省資源）
 
 ## 注意
 
-- security 已關閉，僅限本機。連有防護的真實叢集時，用 `ES_USER/ES_PASS` 或 `ES_API_KEY` + `CA_CERT` 環境變數（見 capture.sh 開頭）。
+- 標準驗證不得用 `--insecure`／`-k`；必須實際驗證 `certs/ca/ca.crt` trust path。
+- `elk-diagnostics-test-only` 是公開的 localhost 測試密碼，不得用於正式環境。
 - `seed-unhealthy.sh` 是唯一有寫入的腳本，**只對本機測試叢集執行**。
 - Kibana 版本必須與其連接的 ES 完全一致（compose 已用同一版本變數綁定）。

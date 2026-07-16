@@ -155,10 +155,16 @@
 | 路徑 | 結果 |
 |---|---|
 | 連線模式 `--ca-cert` ＋ `--username/--password` | ✅ 31 條全數判定，與 http 基準完全一致，unknown=0 |
-| 不給 CA（自簽憑證） | ✅ 明確報 `x509: certificate signed by unknown authority`，exit 11，不會靜默降級 |
+| 不給 CA（自簽憑證） | ✅ 明確報 x509 憑證驗證錯誤，exit 11，不會靜默降級（錯誤文字依 Go 版本而異） |
 | `collect.sh --ca-cert` ＋ `ES_PASSWORD` 環境變數 | ✅ 24 端點 23 個 200（allocation/explain 400 為語意化回應），bundle 離線分析與連線模式一致 |
 
 尚未驗：mTLS（client_cert/client_key）、bearer token、API key 實際值（程式碼路徑存在，無對應測試環境）。
+
+自 2026-07-16 起，本機 ES 8／ES 9 測試環境的預設基線改為：**自簽 CA、HTTPS、
+Basic Auth、嚴格 CA 驗證**。HTTP／security disabled 不再算有效的端到端驗證；操作方式見
+[`PODMAN-TEST-ENV.md`](../PODMAN-TEST-ENV.md) 與 `dev/phase0/docker-compose.yml`。
+本機帳密固定為 `elastic / elk-diagnostics-test-only`，只綁 localhost；Kibana 為選配，
+不屬於 ES 健檢的必要依賴。
 
 ---
 

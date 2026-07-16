@@ -1,68 +1,223 @@
-# Phase 0：本機多版本 ES（+ 對應 Kibana），用於驗證 _health_report 顆粒度、擷取 fixture、
-# 以及用視覺化介面交叉核對 elk-doctor 的判斷。
-# 僅供本機開發，security 關閉以簡化。請勿用於正式環境。
-# 版本以 .env 控制（複製 .env.example 為 .env 後調整為當前可用 tag）。
-# Kibana 版本必須與其連接的 ES 完全一致，故共用同一個版本變數。
+# Phase 0：本機多版本安全測試基線。
+#
+# 標準：自簽 CA + HTTPS + Basic Auth。憑證由 certs-setup 產生到 ./certs/（已 gitignore）。
+# 固定帳密為 elastic / ${TEST_PASSWORD:-elk-diagnostics-test-only}，只供 localhost 測試。
+# 預設只啟動 ES；Kibana 是人工交叉核對用的選配 profile。
 #
 # 對照表：
-#   es8      http://localhost:9208   |  kibana8  http://localhost:5601
-#   es9      http://localhost:9209   |  kibana9  http://localhost:5602
+#   es8      https://localhost:9208   |  kibana8  https://localhost:5601
+#   es9      https://localhost:9209   |  kibana9  https://localhost:5602
+#
+# 僅供本機開發；所有對外埠只綁 127.0.0.1。請勿用於正式環境。
 
 services:
+  certs-setup:
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES8_VERSION:-8.14.3}
+    container_name: elk-diagnostics-certs-setup
+    user: "0"
+    volumes:
+      - ./certs:/usr/share/elasticsearch/config/certs
+    command: >
+      bash -c '
+        set -euo pipefail;
+        cd config/certs;
+        if [ ! -f ca/ca.crt ]; then
+          /usr/share/elasticsearch/bin/elasticsearch-certutil ca --silent --pem \
+            -out /usr/share/elasticsearch/config/certs/ca.zip;
+          unzip -q /usr/share/elasticsearch/config/certs/ca.zip \
+            -d /usr/share/elasticsearch/config/certs;
+          rm -f /usr/share/elasticsearch/config/certs/ca.zip;
+        fi;
+        if [ ! -f es8/es8.crt ] || [ ! -f es9/es9.crt ] || [ ! -f kibana8/kibana8.crt ] || [ ! -f kibana9/kibana9.crt ]; then
+          rm -rf es8 es9 kibana8 kibana9;
+          printf "%s\n" \
+            "instances:" \
+            "  - name: es8" \
+            "    dns: [es8, elk-diagnostics-es8, localhost]" \
+            "    ip: [127.0.0.1]" \
+            "  - name: es9" \
+            "    dns: [es9, elk-diagnostics-es9, localhost]" \
+            "    ip: [127.0.0.1]" \
+            "  - name: kibana8" \
+            "    dns: [kibana8, elk-diagnostics-kibana8, localhost]" \
+            "    ip: [127.0.0.1]" \
+            "  - name: kibana9" \
+            "    dns: [kibana9, elk-diagnostics-kibana9, localhost]" \
+            "    ip: [127.0.0.1]" > instances.yml;
+          /usr/share/elasticsearch/bin/elasticsearch-certutil cert --silent --pem \
+            --in /usr/share/elasticsearch/config/certs/instances.yml \
+            --out /usr/share/elasticsearch/config/certs/certs.zip \
+            --ca-cert /usr/share/elasticsearch/config/certs/ca/ca.crt \
+            --ca-key /usr/share/elasticsearch/config/certs/ca/ca.key;
+          unzip -q /usr/share/elasticsearch/config/certs/certs.zip \
+            -d /usr/share/elasticsearch/config/certs;
+          rm -f /usr/share/elasticsearch/config/certs/certs.zip instances.yml;
+        fi;
+        chown -R root:root .;
+        find . -type d -exec chmod 755 {} \;;
+        find . -type f -name "*.crt" -exec chmod 644 {} \;;
+        find . -type f -name "*.key" -exec chmod 640 {} \;;
+      '
+    restart: "no"
+
   es8:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES8_VERSION:-8.14.3}
-    container_name: elkdoctor-es8
+    container_name: elk-diagnostics-es8
+    depends_on:
+      certs-setup:
+        condition: service_completed_successfully
     environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - xpack.security.http.ssl.enabled=false
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      discovery.type: single-node
+      ELASTIC_PASSWORD: ${TEST_PASSWORD:-elk-diagnostics-test-only}
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "true"
+      xpack.security.http.ssl.key: certs/es8/es8.key
+      xpack.security.http.ssl.certificate: certs/es8/es8.crt
+      xpack.security.http.ssl.certificate_authorities: certs/ca/ca.crt
+      xpack.security.transport.ssl.enabled: "true"
+      xpack.security.transport.ssl.verification_mode: certificate
+      xpack.security.transport.ssl.key: certs/es8/es8.key
+      xpack.security.transport.ssl.certificate: certs/es8/es8.crt
+      xpack.security.transport.ssl.certificate_authorities: certs/ca/ca.crt
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - ./certs:/usr/share/elasticsearch/config/certs:ro
     ulimits:
       memlock: { soft: -1, hard: -1 }
     ports:
-      - "9208:9200"
+      - "127.0.0.1:9208:9200"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl --silent --fail --cacert config/certs/ca/ca.crt -u elastic:$${ELASTIC_PASSWORD} https://localhost:9200/_cluster/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 30
 
-  kibana8:
-    image: docker.elastic.co/kibana/kibana:${ES8_VERSION:-8.14.3}
-    container_name: elkdoctor-kibana8
-    environment:
-      - ELASTICSEARCH_HOSTS=http://es8:9200
-    ports:
-      - "5601:5601"
+  kibana8-password:
+    profiles: ["kibana"]
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES8_VERSION:-8.14.3}
+    container_name: elk-diagnostics-kibana8-password
     depends_on:
       es8:
         condition: service_healthy
+    environment:
+      ELASTIC_PASSWORD: ${TEST_PASSWORD:-elk-diagnostics-test-only}
+      KIBANA_PASSWORD: ${TEST_PASSWORD:-elk-diagnostics-test-only}
+    volumes:
+      - ./certs:/usr/share/elasticsearch/config/certs:ro
+    command: >
+      bash -c '
+        set -e;
+        until curl --silent --fail --cacert config/certs/ca/ca.crt \
+          -u "elastic:$${ELASTIC_PASSWORD}" -H "Content-Type: application/json" \
+          -X POST https://es8:9200/_security/user/kibana_system/_password \
+          -d "{\"password\":\"$${KIBANA_PASSWORD}\"}" >/dev/null; do sleep 3; done;
+      '
+    restart: "no"
+
+  kibana8:
+    profiles: ["kibana"]
+    image: docker.elastic.co/kibana/kibana:${ES8_VERSION:-8.14.3}
+    container_name: elk-diagnostics-kibana8
+    depends_on:
+      kibana8-password:
+        condition: service_completed_successfully
+    environment:
+      SERVERNAME: kibana8
+      SERVER_SSL_ENABLED: "true"
+      SERVER_SSL_CERTIFICATE: /usr/share/kibana/config/certs/kibana8/kibana8.crt
+      SERVER_SSL_KEY: /usr/share/kibana/config/certs/kibana8/kibana8.key
+      ELASTICSEARCH_HOSTS: https://es8:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${TEST_PASSWORD:-elk-diagnostics-test-only}
+      ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES: /usr/share/kibana/config/certs/ca/ca.crt
+      ELASTICSEARCH_SSL_VERIFICATIONMODE: full
+    volumes:
+      - ./certs:/usr/share/kibana/config/certs:ro
+    ports:
+      - "127.0.0.1:5601:5601"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail --cacert config/certs/ca/ca.crt https://localhost:5601/api/status >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 40
 
   es9:
     image: docker.elastic.co/elasticsearch/elasticsearch:${ES9_VERSION:-9.0.0}
-    container_name: elkdoctor-es9
+    container_name: elk-diagnostics-es9
+    depends_on:
+      certs-setup:
+        condition: service_completed_successfully
     environment:
-      - discovery.type=single-node
-      - xpack.security.enabled=false
-      - xpack.security.http.ssl.enabled=false
-      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      discovery.type: single-node
+      ELASTIC_PASSWORD: ${TEST_PASSWORD:-elk-diagnostics-test-only}
+      xpack.security.enabled: "true"
+      xpack.security.http.ssl.enabled: "true"
+      xpack.security.http.ssl.key: certs/es9/es9.key
+      xpack.security.http.ssl.certificate: certs/es9/es9.crt
+      xpack.security.http.ssl.certificate_authorities: certs/ca/ca.crt
+      xpack.security.transport.ssl.enabled: "true"
+      xpack.security.transport.ssl.verification_mode: certificate
+      xpack.security.transport.ssl.key: certs/es9/es9.key
+      xpack.security.transport.ssl.certificate: certs/es9/es9.crt
+      xpack.security.transport.ssl.certificate_authorities: certs/ca/ca.crt
+      ES_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - ./certs:/usr/share/elasticsearch/config/certs:ro
     ulimits:
       memlock: { soft: -1, hard: -1 }
     ports:
-      - "9209:9200"
+      - "127.0.0.1:9209:9200"
     healthcheck:
-      test: ["CMD-SHELL", "curl -fs http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl --silent --fail --cacert config/certs/ca/ca.crt -u elastic:$${ELASTIC_PASSWORD} https://localhost:9200/_cluster/health >/dev/null || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 30
 
-  kibana9:
-    image: docker.elastic.co/kibana/kibana:${ES9_VERSION:-9.0.0}
-    container_name: elkdoctor-kibana9
-    environment:
-      - ELASTICSEARCH_HOSTS=http://es9:9200
-    ports:
-      - "5602:5601"
+  kibana9-password:
+    profiles: ["kibana"]
+    image: docker.elastic.co/elasticsearch/elasticsearch:${ES9_VERSION:-9.0.0}
+    container_name: elk-diagnostics-kibana9-password
     depends_on:
       es9:
         condition: service_healthy
+    environment:
+      ELASTIC_PASSWORD: ${TEST_PASSWORD:-elk-diagnostics-test-only}
+      KIBANA_PASSWORD: ${TEST_PASSWORD:-elk-diagnostics-test-only}
+    volumes:
+      - ./certs:/usr/share/elasticsearch/config/certs:ro
+    command: >
+      bash -c '
+        set -e;
+        until curl --silent --fail --cacert config/certs/ca/ca.crt \
+          -u "elastic:$${ELASTIC_PASSWORD}" -H "Content-Type: application/json" \
+          -X POST https://es9:9200/_security/user/kibana_system/_password \
+          -d "{\"password\":\"$${KIBANA_PASSWORD}\"}" >/dev/null; do sleep 3; done;
+      '
+    restart: "no"
+
+  kibana9:
+    profiles: ["kibana"]
+    image: docker.elastic.co/kibana/kibana:${ES9_VERSION:-9.0.0}
+    container_name: elk-diagnostics-kibana9
+    depends_on:
+      kibana9-password:
+        condition: service_completed_successfully
+    environment:
+      SERVERNAME: kibana9
+      SERVER_SSL_ENABLED: "true"
+      SERVER_SSL_CERTIFICATE: /usr/share/kibana/config/certs/kibana9/kibana9.crt
+      SERVER_SSL_KEY: /usr/share/kibana/config/certs/kibana9/kibana9.key
+      ELASTICSEARCH_HOSTS: https://es9:9200
+      ELASTICSEARCH_USERNAME: kibana_system
+      ELASTICSEARCH_PASSWORD: ${TEST_PASSWORD:-elk-diagnostics-test-only}
+      ELASTICSEARCH_SSL_CERTIFICATEAUTHORITIES: /usr/share/kibana/config/certs/ca/ca.crt
+      ELASTICSEARCH_SSL_VERIFICATIONMODE: full
+    volumes:
+      - ./certs:/usr/share/kibana/config/certs:ro
+    ports:
+      - "127.0.0.1:5602:5601"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --silent --fail --cacert config/certs/ca/ca.crt https://localhost:5601/api/status >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 40

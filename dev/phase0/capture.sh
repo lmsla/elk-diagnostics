@@ -5,11 +5,12 @@
 # 用法:
 #   ./capture.sh <base_url> <label>
 # 範例:
-#   ./capture.sh http://localhost:9208 es8
-#   ./capture.sh http://localhost:9209 es9
+#   ./capture.sh https://localhost:9208 es8
+#   ./capture.sh https://localhost:9209 es9
 #
 # 選用環境變數（連線到有安全防護的叢集時）:
 #   ES_USER / ES_PASS        basic auth
+#   ELASTIC_PASSWORD         未指定 ES_USER 時，等同 elastic / ELASTIC_PASSWORD
 #   ES_API_KEY               api key（會送 Authorization: ApiKey ...）
 #   CA_CERT                  自簽 CA 路徑（curl --cacert）
 #   INSECURE=1               curl -k（略過憑證驗證，僅測試用）
@@ -18,7 +19,7 @@
 
 set -uo pipefail
 
-BASE="${1:?需提供 base_url，例如 http://localhost:9208}"
+BASE="${1:?需提供 base_url，例如 https://localhost:9208}"
 LABEL="${2:?需提供 label，例如 es8}"
 OUT="fixtures/${LABEL}"
 mkdir -p "$OUT"
@@ -31,6 +32,8 @@ if [[ -n "${ES_API_KEY:-}" ]]; then
   CURL+=(-H "Authorization: ApiKey ${ES_API_KEY}")
 elif [[ -n "${ES_USER:-}" ]]; then
   CURL+=(-u "${ES_USER}:${ES_PASS:-}")
+elif [[ -n "${ELASTIC_PASSWORD:-}" ]]; then
+  CURL+=(-u "elastic:${ELASTIC_PASSWORD}")
 fi
 
 # fetch <name> <method> <path> [body]
