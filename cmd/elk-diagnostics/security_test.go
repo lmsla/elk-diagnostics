@@ -44,7 +44,7 @@ func TestCheckIsReadOnly(t *testing.T) {
 
 	cf := newTestConnFlags(t, []string{srv.URL}, "", "")
 	outFile := filepath.Join(t.TempDir(), "report.json")
-	runCheck(cf, "", "", "json", outFile)
+	runCheck(cf, "", "", "json", outFile, false)
 
 	if len(nonGET) > 0 {
 		t.Errorf("check 送出了非 GET 請求（違反唯讀保證）: %v", nonGET)
@@ -75,7 +75,7 @@ func TestCheckDoesNotLeakSecretsOnSuccess(t *testing.T) {
 
 	cf := newTestConnFlags(t, []string{srv.URL}, username, secret)
 	outFile := filepath.Join(t.TempDir(), "report.json")
-	runCheck(cf, "", "", "json", outFile)
+	runCheck(cf, "", "", "json", outFile, false)
 
 	b, err := os.ReadFile(outFile)
 	if err != nil {
@@ -100,7 +100,7 @@ func TestCheckDoesNotLeakSecretsOnConnectFailure(t *testing.T) {
 	outFile := filepath.Join(t.TempDir(), "report.json")
 
 	stderr := captureStderr(t, func() {
-		runCheck(cf, "", "", "json", outFile)
+		runCheck(cf, "", "", "json", outFile, false)
 	})
 	assertNoSecretLeak(t, stderr, username, secret, "stderr")
 }

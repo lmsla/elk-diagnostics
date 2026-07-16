@@ -3,6 +3,7 @@ package reporter
 import (
 	"bytes"
 	"html/template"
+	"strings"
 
 	"elk-diagnostics/internal/diagnostic"
 )
@@ -84,6 +85,10 @@ var htmlFuncs = template.FuncMap{
 		}
 	},
 	"isOpen": func(s diagnostic.Status) bool { return s != diagnostic.StatusPass && s != diagnostic.StatusSkipped },
+	// isBundleHost 判斷本次分析是否來自 --from-bundle：Host 欄位在 bundle 模式固定帶
+	// "(bundle) " 前綴（見 check.go）。只有 bundle 模式才需要提示「未含採集時間」，
+	// 連線模式本來就沒有採集/分析時間差的問題。
+	"isBundleHost": func(h string) bool { return strings.HasPrefix(h, "(bundle) ") },
 }
 
 const htmlTmpl = `<!DOCTYPE html>
@@ -104,6 +109,7 @@ const htmlTmpl = `<!DOCTYPE html>
   .banner.pass{background:var(--pass)}.banner.warning{background:var(--warning)}.banner.critical{background:var(--critical)}.banner.unknown{background:var(--unknown)}
   .counts{font-size:13px;font-weight:400}
   .counts b{font-weight:700}
+  .version-notice{margin:16px 0;padding:10px 16px;background:#fff8e1;border:1px solid #ffca28;border-radius:6px;color:#795548;font-size:13px}
   .hints{margin:16px 0;padding:10px 16px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px}
   .hints h4{margin:0 0 6px;font-size:13px;color:#795548}
   .hints ul{margin:0;padding-left:20px}
@@ -137,6 +143,9 @@ const htmlTmpl = `<!DOCTYPE html>
     <span>模式：{{.R.Meta.Mode}}</span>
     <span>{{.R.Meta.GeneratedAt}}</span>
     <span>工具 {{.R.Meta.ToolVersion}}</span>
+    {{if .R.Meta.CollectedAt}}<span>採集時間：{{.R.Meta.CollectedAt}}（採集腳本 {{.R.Meta.CollectScriptVersion}}）</span>
+    {{else if isBundleHost .R.Meta.Cluster.Host}}<span class="vw">bundle 未含採集時間（舊版採集腳本）</span>
+    {{end}}
   </div>
 </header>
 
@@ -144,6 +153,10 @@ const htmlTmpl = `<!DOCTYPE html>
   <span>整體狀態：{{statusText .R.OverallStatus}}</span>
   <span class="counts">✅ <b>{{.R.Summary.Pass}}</b>　⚠️ <b>{{.R.Summary.Warning}}</b>　❌ <b>{{.R.Summary.Critical}}</b>　⏭️ <b>{{.R.Summary.Skipped}}</b>　❓ <b>{{.R.Summary.Unknown}}</b></span>
 </div>
+
+{{if .R.VersionNotice}}
+<div class="version-notice">⚠ {{.R.VersionNotice}}</div>
+{{end}}
 
 {{if .R.SuggestedSymptoms}}
 <div class="hints">

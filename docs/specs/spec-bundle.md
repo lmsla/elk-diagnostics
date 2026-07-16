@@ -46,7 +46,7 @@ collect.sh（純 curl，逐行可讀）
 
 checked in 而非只留在 `dist/`（gitignore）的理由：新增端點時，diff 會直接顯示「對客戶叢集的 API 呼叫面變了」——那是該進 code review 的訊號，不該只在打包時一閃而過。
 
-`make dist` 會把兩者連同二進位檔一併收進 `dist/`，各附 SHA256。
+`make dist` 會把兩者連同二進位檔一併收進 `dist/`，各附 SHA256；同時以 CycloneDX 產出本 module 的 SBOM（`dist/sbom.cdx.json`，記錄本工具與全部相依套件版本，供客戶資安做已知漏洞比對），是導入審查清單的最後一項。
 
 **客戶從頭到尾沒有執行過本工具的二進位檔。** 導入審查的對象從「未知執行檔」降級為「一份文字檔」。
 

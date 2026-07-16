@@ -1,6 +1,9 @@
 package main
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -116,6 +119,68 @@ func TestCollectScript_DoesNotPutCredentialsOnCommandLine(t *testing.T) {
 	}
 	if !strings.Contains(s, `trap 'rm -f "$CURL_CFG"' EXIT`) {
 		t.Error("認證暫存檔應在結束時清除")
+	}
+}
+
+// TestCollectScript_WritesParsableManifest 對映 spec-bundle §4.2 驗收條件：跑過
+// sh -n 只驗語法，這裡實際執行一次採集，確認 _manifest.json 存在且可被
+// json.Unmarshal 解析、欄位值正確。
+func TestCollectScript_WritesParsableManifest(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("本機未安裝 sh")
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// 任何路徑都回一個能被 fetch 寫入且不影響本測試判定的最小 body。
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"cluster_name":"test","version":{"number":"8.14.3"}}`))
+	}))
+	defer srv.Close()
+
+	script := filepath.Join(t.TempDir(), "collect.sh")
+	s, err := renderCollectScript()
+	if err != nil {
+		t.Fatalf("renderCollectScript() 失敗: %v", err)
+	}
+	if err := os.WriteFile(script, []byte(s), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	out := filepath.Join(t.TempDir(), "bundle")
+	cmd := exec.Command(sh, script, "-h", srv.URL, "-o", out)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("執行 collect.sh 失敗: %v\n%s", err, b)
+	}
+
+	manifestPath := filepath.Join(out, collector.BundleManifestFile)
+	b, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("讀 %s 失敗: %v", manifestPath, err)
+	}
+	var manifest struct {
+		CollectScriptVersion string `json:"collect_script_version"`
+		CollectedAt          string `json:"collected_at"`
+		Host                 string `json:"host"`
+		EndpointsTotal       int    `json:"endpoints_total"`
+	}
+	if err := json.Unmarshal(b, &manifest); err != nil {
+		t.Fatalf("_manifest.json 應可被 json.Unmarshal 解析: %v\n內容:\n%s", err, b)
+	}
+	if manifest.CollectScriptVersion != toolVersion {
+		t.Errorf("collect_script_version = %q, want %q", manifest.CollectScriptVersion, toolVersion)
+	}
+	if manifest.Host != srv.URL {
+		t.Errorf("host = %q, want %q", manifest.Host, srv.URL)
+	}
+	if manifest.EndpointsTotal != len(collector.Endpoints) {
+		t.Errorf("endpoints_total = %d, want %d", manifest.EndpointsTotal, len(collector.Endpoints))
+	}
+	if manifest.CollectedAt == "" {
+		t.Error("collected_at 不應為空")
+	}
+	if !strings.HasSuffix(manifest.CollectedAt, "Z") {
+		t.Errorf("collected_at = %q, 應為 UTC（Z 結尾）", manifest.CollectedAt)
 	}
 }
 

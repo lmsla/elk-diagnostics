@@ -84,7 +84,7 @@ func runGoldenCheck(t *testing.T, clusterDir string) diagnostic.Report {
 
 	cf := newTestConnFlags(t, []string{srv.URL}, "", "")
 	outFile := filepath.Join(t.TempDir(), "report.json")
-	code := runCheck(cf, "", "", "json", outFile)
+	code := runCheck(cf, "", "", "json", outFile, false)
 	t.Logf("cluster=%s exit_code=%d", clusterDir, code)
 
 	b, err := os.ReadFile(outFile)

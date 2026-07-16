@@ -19,7 +19,10 @@ func TestAffectedIndices(t *testing.T) {
 			},
 		},
 	}
-	got := AffectedIndices(hr, "shards_availability")
+	got, ok := AffectedIndices(hr, "shards_availability")
+	if !ok {
+		t.Fatal("want ok=true（indicator 存在）")
+	}
 	want := []string{"a", "b", "c"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("got %v, want %v（應去重且保留出現順序）", got, want)
@@ -28,7 +31,21 @@ func TestAffectedIndices(t *testing.T) {
 
 func TestAffectedIndices_MissingIndicator(t *testing.T) {
 	hr := &collector.HealthReport{Indicators: map[string]collector.HRIndicator{}}
-	if got := AffectedIndices(hr, "shards_availability"); got != nil {
+	got, ok := AffectedIndices(hr, "shards_availability")
+	if ok {
+		t.Error("want ok=false（indicator 不存在時不可與「清單為空」混淆）")
+	}
+	if got != nil {
+		t.Errorf("got %v, want nil", got)
+	}
+}
+
+func TestAffectedIndices_NilHealthReport(t *testing.T) {
+	got, ok := AffectedIndices(nil, "shards_availability")
+	if ok {
+		t.Error("want ok=false（health_report 不可用時不可與「清單為空」混淆）")
+	}
+	if got != nil {
 		t.Errorf("got %v, want nil", got)
 	}
 }

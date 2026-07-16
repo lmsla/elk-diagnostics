@@ -56,6 +56,14 @@ type Meta struct {
 	GeneratedAt string      `json:"generated_at"`
 	Cluster     ClusterMeta `json:"cluster"`
 	Mode        string      `json:"mode"`
+
+	// CollectedAt / CollectScriptVersion：bundle 採集開始時間與採集腳本版本
+	// （見 docs/specs/spec-bundle.md §4.2，2026-07-16 新增）。GeneratedAt 是分析時間，
+	// 這兩個是採集時間——bundle 可能在採集數天後才被分析，不可混同。僅 --from-bundle
+	// 且 bundle 含 _manifest.json 時才有值；省略代表舊版採集腳本產出的 bundle，不得用
+	// mtime 或目錄名猜測。
+	CollectedAt          string `json:"collected_at,omitempty"`
+	CollectScriptVersion string `json:"collect_script_version,omitempty"`
 }
 
 type Summary struct {
@@ -77,6 +85,7 @@ type Report struct {
 	Meta              Meta          `json:"meta"`
 	OverallStatus     Status        `json:"overall_status"`
 	Summary           Summary       `json:"summary"`
+	VersionNotice     string        `json:"version_notice,omitempty"` // 見 spec-report §3；目標版本不受支援時的全域提示（見 buildReport 呼叫端設值）
 	Results           []Result      `json:"results"`
 	SuggestedSymptoms []SymptomHint `json:"suggested_symptoms,omitempty"`
 	Disclaimer        string        `json:"disclaimer"`

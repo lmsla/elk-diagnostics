@@ -19,20 +19,20 @@ func newDiagnoseCmd() *cobra.Command {
 	}
 	cf := addConnFlags(cmd)
 	symptom := cmd.Flags().String("symptom", "", "症狀："+supportedSymptoms)
-	output, outFile := addOutputFlags(cmd)
+	output, outFile, noColor := addOutputFlags(cmd)
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if *symptom == "" {
 			fmt.Fprintln(os.Stderr, "需提供 --symptom（目前支援："+supportedSymptoms+"）")
 			os.Exit(10)
 		}
-		os.Exit(runDiagnose(cf, *symptom, *output, *outFile))
+		os.Exit(runDiagnose(cf, *symptom, *output, *outFile, *noColor))
 		return nil
 	}
 	return cmd
 }
 
-func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
+func runDiagnose(cf *connFlags, symptom, output, outFile string, noColor bool) int {
 	client, host, code := buildClient(cf)
 	if code != 0 {
 		return code
@@ -54,13 +54,13 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		if ce, e := client.ClusterAllocationEnable(); e == nil {
 			res = append(res, analyzer.DataAllocationBlocked(ce)) // #19
 		} else {
-			res = append(res, unknownFrom(analyzer.DataAllocationBlocked(""), e))
+			res = append(res, unknownFrom(analyzer.DataAllocationBlocked(""), e, false))
 		}
-		res = append(res, analyzer.IndexAllocationBlocked(indexAllocationEnables(client, hr))) // #20
+		res = append(res, indexAllocationBlockedResult(client, hr, false)) // #20
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok {                           // #3
 			res = append(res, r)
 		}
-		return emit(buildReport(meta, res, "diagnose:red-cluster"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:red-cluster"), output, outFile, noColor)
 
 	case "write-bottleneck":
 		cpus, e1 := client.CatNodesCPU()
@@ -73,28 +73,28 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 			if err == nil {
 				err = e2
 			}
-			res = append(res, unknownFrom(analyzer.WriteBottleneck(nil, nil, t), err))
+			res = append(res, unknownFrom(analyzer.WriteBottleneck(nil, nil, t), err, false))
 		}
-		return emit(buildReport(meta, res, "diagnose:write-bottleneck"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:write-bottleneck"), output, outFile, noColor)
 
 	case "high-heap":
 		var res []diagnostic.Result
 		if nodes, e := client.NodesJVMOldPool(); e == nil {
 			res = append(res, analyzer.JVMPressure(nodes, t)) // #7
 		} else {
-			res = append(res, unknownFrom(analyzer.JVMPressure(nil, t), e))
+			res = append(res, unknownFrom(analyzer.JVMPressure(nil, t), e, false))
 		}
 		if brks, e := client.NodesBreakers(); e == nil {
 			res = append(res, analyzer.CircuitBreaker(brks)) // #8
 		} else {
-			res = append(res, unknownFrom(analyzer.CircuitBreaker(nil), e))
+			res = append(res, unknownFrom(analyzer.CircuitBreaker(nil), e, false))
 		}
 		if rows, e := client.ThreadPool(); e == nil {
 			res = append(res, analyzer.RejectedRequests(rows)) // #6
 		} else {
-			res = append(res, unknownFrom(analyzer.RejectedRequests(nil), e))
+			res = append(res, unknownFrom(analyzer.RejectedRequests(nil), e, false))
 		}
-		return emit(buildReport(meta, res, "diagnose:high-heap"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:high-heap"), output, outFile, noColor)
 
 	case "ingest-lag":
 		hr, err := client.HealthReport()
@@ -106,18 +106,18 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		if pipes, e := client.IngestPipelineStats(); e == nil {
 			res = append(res, analyzer.IngestPipelineErrors(pipes, t)) // #13
 		} else {
-			res = append(res, unknownFrom(analyzer.IngestPipelineErrors(nil, t), e))
+			res = append(res, unknownFrom(analyzer.IngestPipelineErrors(nil, t), e, false))
 		}
 		if rows, e := client.ThreadPool(); e == nil {
 			res = append(res, analyzer.TaskBacklog(rows, t))   // #12
 			res = append(res, analyzer.RejectedRequests(rows)) // #6（write）
 		} else {
-			res = append(res, unknownFrom(analyzer.TaskBacklog(nil, t), e), unknownFrom(analyzer.RejectedRequests(nil), e))
+			res = append(res, unknownFrom(analyzer.TaskBacklog(nil, t), e, false), unknownFrom(analyzer.RejectedRequests(nil), e, false))
 		}
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok { // #3
 			res = append(res, r)
 		}
-		return emit(buildReport(meta, res, "diagnose:ingest-lag"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:ingest-lag"), output, outFile, noColor)
 
 	case "ilm-stuck":
 		hr, err := client.HealthReport()
@@ -130,7 +130,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 			errs, _ := client.IlmExplain()
 			res = append(res, analyzer.ILM(mode, errs)) // #5
 		} else {
-			res = append(res, unknownFrom(analyzer.ILM("", nil), e))
+			res = append(res, unknownFrom(analyzer.ILM("", nil), e, false))
 		}
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok { // #3
 			res = append(res, r)
@@ -138,7 +138,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		if r, ok := analyzer.HealthReportIndicator(hr, "shards_capacity"); ok { // #10
 			res = append(res, r)
 		}
-		return emit(buildReport(meta, res, "diagnose:ilm-stuck"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:ilm-stuck"), output, outFile, noColor)
 
 	default:
 		fmt.Fprintln(os.Stderr, "不支援的症狀:", symptom, "（目前支援："+supportedSymptoms+"）")
