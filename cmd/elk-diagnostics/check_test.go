@@ -28,7 +28,7 @@ func TestUnknownFrom(t *testing.T) {
 	}
 	err := errors.New("ES 回應 404: /_mapping")
 
-	got := unknownFrom(zero, err)
+	got := unknownFrom(zero, err, false)
 
 	if got.ID != "mapping_explosion" || got.Title != zero.Title || got.Category != zero.Category {
 		t.Errorf("id/title/category 應保留自 zero，got %+v", got)
@@ -50,6 +50,28 @@ func TestUnknownFrom(t *testing.T) {
 	}
 	if got.RequiresExtra {
 		t.Error("失敗時不該保留 zero-call 遺留的 RequiresExtra")
+	}
+	if got.Summary != "資料抓取失敗，無法判定" {
+		t.Errorf("連線模式 Summary = %q，want 資料抓取失敗，無法判定", got.Summary)
+	}
+}
+
+// TestUnknownFromBundleWording 驗證 T3：bundle 模式沒有「抓取」這個動作，措辭需與連線模式
+// 不同，但 findings（含檔名）照舊保留完整錯誤訊息（見 spec-resilience §3）。
+func TestUnknownFromBundleWording(t *testing.T) {
+	zero := diagnostic.Result{ID: "cluster_settings", Title: "叢集設定", Category: "cluster"}
+	err := errors.New("bundle 缺少 cluster_settings.json（採集腳本未執行此項或該端點當時失敗）")
+
+	got := unknownFrom(zero, err, true)
+
+	if got.Status != diagnostic.StatusUnknown {
+		t.Errorf("Status = %q, want unknown", got.Status)
+	}
+	if got.Summary != "bundle 缺少該端點資料，無法判定" {
+		t.Errorf("bundle 模式 Summary = %q，want bundle 缺少該端點資料，無法判定", got.Summary)
+	}
+	if len(got.Findings) != 1 || got.Findings[0] != err.Error() {
+		t.Errorf("Findings 應保留完整錯誤訊息（含檔名），got %v", got.Findings)
 	}
 }
 

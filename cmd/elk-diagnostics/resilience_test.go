@@ -308,3 +308,25 @@ func TestCheck_ConnHealthReport500(t *testing.T) {
 		}
 	}
 }
+
+// TestCheck_BundleUnknownWording 驗收 T3：--from-bundle 缺檔造成的 unknown 項，
+// summary 為 bundle 專屬措辭，而非連線模式的「資料抓取失敗」。
+func TestCheck_BundleUnknownWording(t *testing.T) {
+	report, _ := runBundleCheck(t, fixtureDir("es9-unhealthy"))
+	found := false
+	for _, r := range report.Results {
+		if r.Status != diagnostic.StatusUnknown {
+			continue
+		}
+		found = true
+		if strings.Contains(r.Summary, "抓取") {
+			t.Errorf("%q 的 summary 不應含「抓取」字樣（bundle 模式沒有抓取動作）: %q", r.ID, r.Summary)
+		}
+		if !strings.Contains(r.Summary, "bundle") && r.ID != "index_allocation_blocked" {
+			t.Errorf("%q 的 summary 應為 bundle 專屬措辭，got %q", r.ID, r.Summary)
+		}
+	}
+	if !found {
+		t.Fatal("es9-unhealthy fixture 預期至少有一項 unknown，測試前提不成立")
+	}
+}

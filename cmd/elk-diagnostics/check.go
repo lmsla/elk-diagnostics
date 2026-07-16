@@ -73,6 +73,11 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
 	}
 
 	t := loadThresholds(cf)
+	isBundle := fromBundle != ""
+	unknownf := func(zero diagnostic.Result, err error) diagnostic.Result {
+		return unknownFrom(zero, err, isBundle)
+	}
+
 	esVersion := client.Version()
 	var (
 		hr            *collector.HealthReport
@@ -91,7 +96,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
 		if err != nil {
 			// 執行期抓取失敗（連線逾時/4xx/5xx；bundle 缺檔或錯誤 body）：不中止，A 類
 			// 全數以 unknown 浮出，B/C 類照常執行（見 spec-resilience §1，2026-07-16 修訂）。
-			results = analyzer.HealthReportFetchFailed("資料抓取失敗，無法判定", []string{err.Error()})
+			results = analyzer.HealthReportFetchFailed(fetchFailureSummary(isBundle), []string{err.Error()})
 		} else {
 			results = analyzer.FromHealthReport(hr)
 		}
@@ -100,98 +105,98 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
 		errs, _ := client.IlmExplain()
 		results = append(results, analyzer.ILM(mode, errs))
 	} else {
-		results = append(results, unknownFrom(analyzer.ILM("", nil), e))
+		results = append(results, unknownf(analyzer.ILM("", nil), e))
 	}
 	if rows, e := client.ThreadPool(); e == nil {
 		results = append(results, analyzer.RejectedRequests(rows), analyzer.TaskBacklog(rows, t))
 	} else {
-		results = append(results, unknownFrom(analyzer.RejectedRequests(nil), e), unknownFrom(analyzer.TaskBacklog(nil, t), e))
+		results = append(results, unknownf(analyzer.RejectedRequests(nil), e), unknownf(analyzer.TaskBacklog(nil, t), e))
 	}
 	if nodes, e := client.NodesJVMOldPool(); e == nil {
 		results = append(results, analyzer.JVMPressure(nodes, t))
 	} else {
-		results = append(results, unknownFrom(analyzer.JVMPressure(nil, t), e))
+		results = append(results, unknownf(analyzer.JVMPressure(nil, t), e))
 	}
 	if brks, e := client.NodesBreakers(); e == nil {
 		results = append(results, analyzer.CircuitBreaker(brks))
 	} else {
-		results = append(results, unknownFrom(analyzer.CircuitBreaker(nil), e))
+		results = append(results, unknownf(analyzer.CircuitBreaker(nil), e))
 	}
 	var cpus []collector.NodeCPU
 	if c, e := client.CatNodesCPU(); e == nil {
 		cpus = c
 		results = append(results, analyzer.HighCPU(cpus, t), analyzer.HotSpotting(cpus, t))
 	} else {
-		results = append(results, unknownFrom(analyzer.HighCPU(nil, t), e), unknownFrom(analyzer.HotSpotting(nil, t), e))
+		results = append(results, unknownf(analyzer.HighCPU(nil, t), e), unknownf(analyzer.HotSpotting(nil, t), e))
 	}
 	if alloc, e := client.CatAllocation(); e == nil {
 		results = append(results, analyzer.Unbalanced(alloc))
 	} else {
-		results = append(results, unknownFrom(analyzer.Unbalanced(nil), e))
+		results = append(results, unknownf(analyzer.Unbalanced(nil), e))
 	}
 	if counts, e := client.MappingFieldCounts(); e == nil {
 		results = append(results, analyzer.MappingExplosion(counts, t))
 	} else {
-		results = append(results, unknownFrom(analyzer.MappingExplosion(nil, t), e))
+		results = append(results, unknownf(analyzer.MappingExplosion(nil, t), e))
 	}
 	if pipes, e := client.IngestPipelineStats(); e == nil {
 		results = append(results, analyzer.IngestPipelineErrors(pipes, t))
 	} else {
-		results = append(results, unknownFrom(analyzer.IngestPipelineErrors(nil, t), e))
+		results = append(results, unknownf(analyzer.IngestPipelineErrors(nil, t), e))
 	}
 	if idx, e := client.CatIndicesHealth(); e == nil {
 		results = append(results, analyzer.DataCorruption(idx))
 	} else {
-		results = append(results, unknownFrom(analyzer.DataCorruption(nil), e))
+		results = append(results, unknownf(analyzer.DataCorruption(nil), e))
 	}
 	if stopped, e := client.WatcherManuallyStopped(); e == nil {
 		results = append(results, analyzer.Watcher(stopped))
 	} else {
-		results = append(results, unknownFrom(analyzer.Watcher(false), e))
+		results = append(results, unknownf(analyzer.Watcher(false), e))
 	}
 	if ts, e := client.Transforms(); e == nil {
 		results = append(results, analyzer.Transforms(ts))
 	} else {
-		results = append(results, unknownFrom(analyzer.Transforms(nil), e))
+		results = append(results, unknownf(analyzer.Transforms(nil), e))
 	}
 	if rcs, e := client.RemoteInfo(); e == nil {
 		results = append(results, analyzer.RemoteClusters(rcs))
 	} else {
-		results = append(results, unknownFrom(analyzer.RemoteClusters(nil), e))
+		results = append(results, unknownf(analyzer.RemoteClusters(nil), e))
 	}
 	if deps, e := client.Deprecations(); e == nil {
 		results = append(results, analyzer.UpgradeDeprecations(deps))
 	} else {
-		results = append(results, unknownFrom(analyzer.UpgradeDeprecations(nil), e))
+		results = append(results, unknownf(analyzer.UpgradeDeprecations(nil), e))
 	}
 	if mon, e := client.MonitoringCollectionEnabled(); e == nil {
 		results = append(results, analyzer.Monitoring(mon))
 	} else {
-		results = append(results, unknownFrom(analyzer.Monitoring(""), e))
+		results = append(results, unknownf(analyzer.Monitoring(""), e))
 	}
 	if sl, e := client.SlowlogEnabledIndices(); e == nil {
 		results = append(results, analyzer.SlowLog(sl))
 	} else {
-		results = append(results, unknownFrom(analyzer.SlowLog(nil), e))
+		results = append(results, unknownf(analyzer.SlowLog(nil), e))
 	}
 
 	// --- B 類加深（見 spec-health-report.md；A 類已由 FromHealthReport 產出）---
 	if ce, e := client.ClusterAllocationEnable(); e == nil {
 		results = append(results, analyzer.DataAllocationBlocked(ce)) // #19
 	} else {
-		results = append(results, unknownFrom(analyzer.DataAllocationBlocked(""), e))
+		results = append(results, unknownf(analyzer.DataAllocationBlocked(""), e))
 	}
 	enables, unprobed := indexAllocationEnables(client, hr)
 	results = append(results, analyzer.IndexAllocationBlocked(enables, unprobed)) // #20
 	if exp, found, e := client.AllocationExplain(); e == nil {
 		results = append(results, analyzer.AllocationGuidance(exp, found)) // #37
 	} else {
-		results = append(results, unknownFrom(analyzer.AllocationGuidance(nil, false), e))
+		results = append(results, unknownf(analyzer.AllocationGuidance(nil, false), e))
 	}
 	if mig, e := client.IlmMigrating(); e == nil {
 		results = append(results, analyzer.IlmTierMigration(mig)) // #25
 	} else {
-		results = append(results, unknownFrom(analyzer.IlmTierMigration(nil), e))
+		results = append(results, unknownf(analyzer.IlmTierMigration(nil), e))
 	}
 	totalNodes, e1 := client.ClusterNodeCounts()
 	masterEligible, e2 := client.MasterEligibleCount()
@@ -202,17 +207,17 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
 		if err == nil {
 			err = e2
 		}
-		results = append(results, unknownFrom(analyzer.MasterStabilityContext(0, 0), err))
+		results = append(results, unknownf(analyzer.MasterStabilityContext(0, 0), err))
 	}
 	if tiers, e := client.DataTierNodeCounts(); e == nil {
 		results = append(results, analyzer.DataTierAvailability(tiers)) // #24
 	} else {
-		results = append(results, unknownFrom(analyzer.DataTierAvailability(nil), e))
+		results = append(results, unknownf(analyzer.DataTierAvailability(nil), e))
 	}
 	if ops, e := client.RestoreProgress(); e == nil {
 		results = append(results, analyzer.RestoreStatus(ops)) // #36
 	} else {
-		results = append(results, unknownFrom(analyzer.RestoreStatus(nil), e))
+		results = append(results, unknownf(analyzer.RestoreStatus(nil), e))
 	}
 
 	var pools []collector.WritePoolRow
@@ -276,6 +281,15 @@ func parseMajorMinor(version string) (major, minor int, ok bool) {
 	return major, minor, true
 }
 
+// fetchFailureSummary 依模式決定 unknown 結果的措辭（見 spec-resilience §3，2026-07-16 補）：
+// bundle 模式沒有「抓取」這個動作，沿用連線模式的措辭會誤導使用者以為是分析端的網路問題。
+func fetchFailureSummary(isBundle bool) string {
+	if isBundle {
+		return "bundle 缺少該端點資料，無法判定"
+	}
+	return "資料抓取失敗，無法判定"
+}
+
 // suggestSymptoms 依 spec-diagnose-symptoms §3 的反向觸發規則，偵測到特定症狀特徵組合
 // 時提示對應 diagnose --symptom；純函式、不觸發額外採集，只重用 check 已收集的資料。
 func suggestSymptoms(results []diagnostic.Result, cpus []collector.NodeCPU, pools []collector.WritePoolRow, t rules.Thresholds) []diagnostic.SymptomHint {
@@ -304,10 +318,14 @@ func suggestSymptoms(results []diagnostic.Result, cpus []collector.NodeCPU, pool
 // （見 spec-resilience §3）。zero 是呼叫該診斷項目的 analyzer 函式、帶零值/nil 輸入
 // 取得的結果，只用來拿正確的 id/title/category/docs，避免另建一份易漂移的對照表——
 // 所有 analyzer 函式對零值輸入都是安全的純函式（已由零值/pass-path 測試涵蓋）。
-func unknownFrom(zero diagnostic.Result, err error) diagnostic.Result {
+//
+// isBundle 決定 summary 措辭（見 spec-resilience §3，2026-07-16 補）：bundle 模式沒有
+// 「抓取」這個動作，措辭改為「bundle 缺少該端點資料」；findings 兩種模式都保留完整錯誤
+// 訊息（bundle 模式下 err 本身已含缺少的檔名，見 collector.NewFromBundle）。
+func unknownFrom(zero diagnostic.Result, err error, isBundle bool) diagnostic.Result {
 	zero.Status = diagnostic.StatusUnknown
 	zero.Conclusion = diagnostic.ConclusionNormal
-	zero.Summary = "資料抓取失敗，無法判定"
+	zero.Summary = fetchFailureSummary(isBundle)
 	zero.Findings = []string{err.Error()}
 	zero.RootCauses = nil
 	zero.Recommendations = nil

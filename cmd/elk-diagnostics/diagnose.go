@@ -54,7 +54,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		if ce, e := client.ClusterAllocationEnable(); e == nil {
 			res = append(res, analyzer.DataAllocationBlocked(ce)) // #19
 		} else {
-			res = append(res, unknownFrom(analyzer.DataAllocationBlocked(""), e))
+			res = append(res, unknownFrom(analyzer.DataAllocationBlocked(""), e, false))
 		}
 		res = append(res, analyzer.IndexAllocationBlocked(indexAllocationEnables(client, hr))) // #20
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok {                           // #3
@@ -73,7 +73,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 			if err == nil {
 				err = e2
 			}
-			res = append(res, unknownFrom(analyzer.WriteBottleneck(nil, nil, t), err))
+			res = append(res, unknownFrom(analyzer.WriteBottleneck(nil, nil, t), err, false))
 		}
 		return emit(buildReport(meta, res, "diagnose:write-bottleneck"), output, outFile)
 
@@ -82,17 +82,17 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		if nodes, e := client.NodesJVMOldPool(); e == nil {
 			res = append(res, analyzer.JVMPressure(nodes, t)) // #7
 		} else {
-			res = append(res, unknownFrom(analyzer.JVMPressure(nil, t), e))
+			res = append(res, unknownFrom(analyzer.JVMPressure(nil, t), e, false))
 		}
 		if brks, e := client.NodesBreakers(); e == nil {
 			res = append(res, analyzer.CircuitBreaker(brks)) // #8
 		} else {
-			res = append(res, unknownFrom(analyzer.CircuitBreaker(nil), e))
+			res = append(res, unknownFrom(analyzer.CircuitBreaker(nil), e, false))
 		}
 		if rows, e := client.ThreadPool(); e == nil {
 			res = append(res, analyzer.RejectedRequests(rows)) // #6
 		} else {
-			res = append(res, unknownFrom(analyzer.RejectedRequests(nil), e))
+			res = append(res, unknownFrom(analyzer.RejectedRequests(nil), e, false))
 		}
 		return emit(buildReport(meta, res, "diagnose:high-heap"), output, outFile)
 
@@ -106,13 +106,13 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		if pipes, e := client.IngestPipelineStats(); e == nil {
 			res = append(res, analyzer.IngestPipelineErrors(pipes, t)) // #13
 		} else {
-			res = append(res, unknownFrom(analyzer.IngestPipelineErrors(nil, t), e))
+			res = append(res, unknownFrom(analyzer.IngestPipelineErrors(nil, t), e, false))
 		}
 		if rows, e := client.ThreadPool(); e == nil {
 			res = append(res, analyzer.TaskBacklog(rows, t))   // #12
 			res = append(res, analyzer.RejectedRequests(rows)) // #6（write）
 		} else {
-			res = append(res, unknownFrom(analyzer.TaskBacklog(nil, t), e), unknownFrom(analyzer.RejectedRequests(nil), e))
+			res = append(res, unknownFrom(analyzer.TaskBacklog(nil, t), e, false), unknownFrom(analyzer.RejectedRequests(nil), e, false))
 		}
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok { // #3
 			res = append(res, r)
@@ -130,7 +130,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 			errs, _ := client.IlmExplain()
 			res = append(res, analyzer.ILM(mode, errs)) // #5
 		} else {
-			res = append(res, unknownFrom(analyzer.ILM("", nil), e))
+			res = append(res, unknownFrom(analyzer.ILM("", nil), e, false))
 		}
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok { // #3
 			res = append(res, r)
