@@ -1,5 +1,5 @@
 # 複製為 config.yaml 後填入。連線資訊是唯一必填（見 docs/specs/spec-config.md）。
-# 也可改用 flag（--host/--api-key…）或環境變數（ELK_DOCTOR_*）提供，優先序：flag > env > 本檔 > 預設。
+# 也可改用 flag（--host/--api-key…）或環境變數（ELK_DIAGNOSTICS_*）提供，優先序：flag > env > 本檔 > 預設。
 cluster:
   hosts:
     - "https://es-1.example.com:9200"
