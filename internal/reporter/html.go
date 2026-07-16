@@ -3,6 +3,7 @@ package reporter
 import (
 	"bytes"
 	"html/template"
+	"strings"
 
 	"elk-diagnostics/internal/diagnostic"
 )
@@ -84,6 +85,10 @@ var htmlFuncs = template.FuncMap{
 		}
 	},
 	"isOpen": func(s diagnostic.Status) bool { return s != diagnostic.StatusPass && s != diagnostic.StatusSkipped },
+	// isBundleHost 判斷本次分析是否來自 --from-bundle：Host 欄位在 bundle 模式固定帶
+	// "(bundle) " 前綴（見 check.go）。只有 bundle 模式才需要提示「未含採集時間」，
+	// 連線模式本來就沒有採集/分析時間差的問題。
+	"isBundleHost": func(h string) bool { return strings.HasPrefix(h, "(bundle) ") },
 }
 
 const htmlTmpl = `<!DOCTYPE html>
@@ -137,6 +142,9 @@ const htmlTmpl = `<!DOCTYPE html>
     <span>模式：{{.R.Meta.Mode}}</span>
     <span>{{.R.Meta.GeneratedAt}}</span>
     <span>工具 {{.R.Meta.ToolVersion}}</span>
+    {{if .R.Meta.CollectedAt}}<span>採集時間：{{.R.Meta.CollectedAt}}（採集腳本 {{.R.Meta.CollectScriptVersion}}）</span>
+    {{else if isBundleHost .R.Meta.Cluster.Host}}<span class="vw">bundle 未含採集時間（舊版採集腳本）</span>
+    {{end}}
   </div>
 </header>
 

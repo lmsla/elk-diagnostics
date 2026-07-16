@@ -54,15 +54,17 @@ func renderCollectScript() (string, error) {
 	}
 	var b strings.Builder
 	err = t.Execute(&b, struct {
-		ToolVersion string
-		Total       int
-		StatusFile  string
-		Endpoints   []collector.Endpoint
+		ToolVersion  string
+		Total        int
+		StatusFile   string
+		ManifestFile string
+		Endpoints    []collector.Endpoint
 	}{
-		ToolVersion: toolVersion,
-		Total:       len(collector.Endpoints),
-		StatusFile:  collector.BundleStatusFile,
-		Endpoints:   collector.Endpoints,
+		ToolVersion:  toolVersion,
+		Total:        len(collector.Endpoints),
+		StatusFile:   collector.BundleStatusFile,
+		ManifestFile: collector.BundleManifestFile,
+		Endpoints:    collector.Endpoints,
 	})
 	if err != nil {
 		return "", err

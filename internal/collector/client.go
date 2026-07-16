@@ -41,6 +41,11 @@ type Client struct {
 	version    string
 	retries    int
 
+	// manifest* 僅 bundle 模式、且 bundle 含 _manifest.json 時才有值（見 spec-bundle §4.2）。
+	// 連線模式與舊版（無 manifest）bundle 一律留空，呼叫端據此判斷是否顯示採集時間。
+	manifestCollectedAt   string
+	manifestScriptVersion string
+
 	// fetch 是取得單一端點原始 bytes 的傳輸層：連線模式為 HTTP，bundle 模式為讀檔。
 	// 抽成欄位是為了讓兩種模式共用 get() 的重試與錯誤語意——所有 24 個端點、
 	// 所有 analyzer 的行為都完全一致，差別只在 bytes 從哪來。
@@ -118,7 +123,29 @@ func NewFromBundle(dir string) (*Client, error) {
 		return nil, fmt.Errorf("讀取 bundle 失敗（%s 不存在或格式錯誤？）: %w", FileOf(EpRoot), err)
 	}
 	c.name, c.version = name, ver
+	c.manifestCollectedAt, c.manifestScriptVersion = readBundleManifest(dir)
 	return c, nil
+}
+
+// BundleManifestFile 記錄採集開始時間與腳本版本，由採集腳本產生（見 spec-bundle §4.2）。
+const BundleManifestFile = "_manifest.json"
+
+// readBundleManifest 讀 bundle 的採集中繼資料。檔案不存在（舊版採集腳本產出的 bundle、
+// 或直接拿 fixture 目錄當 bundle）時回空字串，呼叫端據此判斷——**不得**用檔案 mtime
+// 或目錄名猜測採集時間，查不到就是查不到。
+func readBundleManifest(dir string) (collectedAt, scriptVersion string) {
+	b, err := os.ReadFile(filepath.Join(dir, BundleManifestFile))
+	if err != nil {
+		return "", ""
+	}
+	var m struct {
+		CollectScriptVersion string `json:"collect_script_version"`
+		CollectedAt          string `json:"collected_at"`
+	}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return "", ""
+	}
+	return m.CollectedAt, m.CollectScriptVersion
 }
 
 // BundleStatusFile 記錄採集當下每個端點的 HTTP 狀態碼，由採集腳本產生。
@@ -291,6 +318,11 @@ func (c *Client) info() (name, version string, err error) {
 // ClusterName / Version：連線時已取得。
 func (c *Client) ClusterName() string { return c.name }
 func (c *Client) Version() string     { return c.version }
+
+// CollectedAt / CollectScriptVersion：bundle 模式下若 bundle 含 _manifest.json 才有值，
+// 供報告 meta 標示「資料取自何時」（spec-bundle §4.2）。連線模式與舊版 bundle 一律空字串。
+func (c *Client) CollectedAt() string          { return c.manifestCollectedAt }
+func (c *Client) CollectScriptVersion() string { return c.manifestScriptVersion }
 
 // HealthReport 取並解析 GET /_health_report。
 func (c *Client) HealthReport() (*HealthReport, error) {

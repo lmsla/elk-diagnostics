@@ -204,6 +204,8 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 
 	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: client.Version()}
 	report := buildReport(meta, results, "check")
+	report.Meta.CollectedAt = client.CollectedAt()
+	report.Meta.CollectScriptVersion = client.CollectScriptVersion()
 	report.SuggestedSymptoms = suggestSymptoms(results, cpus, pools, t)
 	return emit(report, output, outFile, noColor)
 }

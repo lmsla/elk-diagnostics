@@ -24,6 +24,7 @@
 #   - 全部為叢集／節點層級的中繼資料，不含任何文件（document）內容
 #   - 但含 index 名稱、node 名稱與 IP，以及 mapping 的欄位名稱
 #   - _status.txt 記錄每個端點的 HTTP 狀態碼，供分析端還原採集當下的真實情況
+#   - _manifest.json 記錄採集開始時間（UTC）與本腳本版本，讓報告能標出「資料取自何時」
 #   - 離開此環境前請自行檢視
 
 set -eu
@@ -98,6 +99,21 @@ if [ -n "$INSECURE" ]; then
 fi
 
 mkdir -p "$OUT"
+
+# 採集中繼資料：開始時間（UTC）與本腳本版本，讓分析端能標出「資料取自何時」，
+# 不必事後靠檔案 mtime 或目錄名猜測（見 docs/specs/spec-bundle.md §4.2）。
+# 手寫 JSON 而非用 jq：欄位固定、值本身不含需要跳脫的字元，不值得為此引入依賴。
+MANIFEST="$OUT/{{.ManifestFile}}"
+COLLECTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+cat > "$MANIFEST" <<MANIFESTEOF
+{
+  "collect_script_version": "{{.ToolVersion}}",
+  "collected_at": "$COLLECTED_AT",
+  "host": "$HOST",
+  "endpoints_total": {{.Total}}
+}
+MANIFESTEOF
+
 STATUS="$OUT/{{.StatusFile}}"
 ERRLOG="$OUT/_errors.log"
 : > "$STATUS"

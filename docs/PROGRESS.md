@@ -153,6 +153,8 @@
 | 採集/判斷分離 | 端點表單一事實來源 + `--from-bundle` 離線分析 | ✅ 完成，見 [spec-bundle.md](./specs/spec-bundle.md)。真機驗證：bundle 與連線模式 31 條診斷判定逐條一致。**動機是交付面**——客戶不必為健檢導入未知二進位檔，只需跑一份看得懂的 curl 腳本 |
 | 客戶交付透明層 | 採集腳本 `collect.sh` + API 清單（由端點表產生） | ✅ 完成。`apis`（text/markdown，供資安審查）與 `collect-script`（POSIX sh，純 curl）兩個子指令，皆由 `collector.Endpoints` 產生。`collect.sh`（repo 根目錄）與 `docs/api-inventory.md` 皆 checked in（`make generate` 更新，測試擋過期，故新增端點時 API 呼叫面的變動會出現在 diff），`make dist` 一併產出交付包（二進位＋collect.sh＋api-inventory.md，各附 SHA256）。真機驗證：用 dash 跑產出的腳本採集 es8，離線分析結果與直連逐條一致。腳本經 sh/dash/bash `-n` 語法檢查，並鎖住唯讀、認證不上命令列、必記 HTTP 狀態碼 |
 | bundle 遮罩 | `--redact`：index/node/host 名稱 | ⬜ 未開始，見 spec-bundle §5.2 |
+| `--output text` 終端摘要 | check/diagnose 皆支援；非 pass 逐項、pass/skipped 壓縮彙總、`--no-color`/`NO_COLOR`/寫檔一律純文字 | ✅ 完成，見 spec-report §5.1、reporter/text.go。不合法 `--output` 值現在回報清楚錯誤（exit 10）而非靜默退回 json |
+| bundle 採集時間可追溯 | `collect.sh` 開始時寫 `_manifest.json`（collect_script_version/collected_at UTC/host/endpoints_total）；`--from-bundle` 讀出後帶進報告 meta（JSON 新增 2 個 omitempty 欄位）、HTML 頁首顯示；無 manifest 的舊 bundle 欄位省略、HTML 註明「舊版採集腳本」，不猜測 | ✅ 完成，見 spec-bundle §4.2、internal/collector/client.go、cmd/elk-diagnostics/collect.sh.tmpl |
 | 2026-07-15 真機驗證 | 本機 Docker es8=8.14.3/es9=9.0.0 對 check 全量 + 5 條症狀樹 | ✅ 完成；意外抓到並修正 #11/#32 系統 index 誤報 bug（見 §2） |
 | 2026-07-15 造壓驗證 | disk/shards_capacity/repository_integrity/ILM/allocation 封鎖異常情境 | ✅ 完成；抓到並修正 2 個真 bug（#19/#20/#31/#33 的 filter_path+flat_settings 解析、#11/#32 的 data stream 誤排除），見 §4 |
 | 待辦 | slm indicator 觸發條件（本次造壓未重現）、write-bottleneck 因果鏈真實負載驗證（需 esrally 等造壓工具） | ⬜ 未開始 |

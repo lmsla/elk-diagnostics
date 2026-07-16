@@ -31,6 +31,12 @@ func Text(r diagnostic.Report, color bool) []byte {
 	fmt.Fprintf(&b, "elk-diagnostics %s ｜ %s（ES %s）｜ %s ｜ %s\n",
 		r.Meta.ToolVersion, cluster, r.Meta.Cluster.ESVersion, r.Meta.Mode, r.Meta.GeneratedAt)
 
+	if r.Meta.CollectedAt != "" {
+		fmt.Fprintf(&b, "採集時間：%s（採集腳本 %s）\n", r.Meta.CollectedAt, r.Meta.CollectScriptVersion)
+	} else if strings.HasPrefix(r.Meta.Cluster.Host, "(bundle) ") {
+		b.WriteString("採集時間：bundle 未含採集時間（舊版採集腳本）\n")
+	}
+
 	fmt.Fprintf(&b, "整體狀態：%s %s     %s %d  %s %d  %s %d  %s %d  %s %d\n\n",
 		paint(ansiColorFor(r.OverallStatus), textSymbol(r.OverallStatus)), textStatusName(r.OverallStatus),
 		paint(ansiGreen, textSymbol(diagnostic.StatusPass)), r.Summary.Pass,
