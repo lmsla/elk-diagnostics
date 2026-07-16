@@ -155,6 +155,7 @@
 | bundle 遮罩 | `--redact`：index/node/host 名稱 | ⬜ 未開始，見 spec-bundle §5.2 |
 | `--output text` 終端摘要 | check/diagnose 皆支援；非 pass 逐項、pass/skipped 壓縮彙總、`--no-color`/`NO_COLOR`/寫檔一律純文字 | ✅ 完成，見 spec-report §5.1、reporter/text.go。不合法 `--output` 值現在回報清楚錯誤（exit 10）而非靜默退回 json |
 | bundle 採集時間可追溯 | `collect.sh` 開始時寫 `_manifest.json`（collect_script_version/collected_at UTC/host/endpoints_total）；`--from-bundle` 讀出後帶進報告 meta（JSON 新增 2 個 omitempty 欄位）、HTML 頁首顯示；無 manifest 的舊 bundle 欄位省略、HTML 註明「舊版採集腳本」，不猜測 | ✅ 完成，見 spec-bundle §4.2、internal/collector/client.go、cmd/elk-diagnostics/collect.sh.tmpl |
+| SBOM | `make dist` 用 CycloneDX（`cyclonedx-gomod` 版本 pin 死於 Makefile）產出 `dist/sbom.cdx.json`（module + 全部相依版本），納入既有 SHA256 清單 | ✅ 完成，見 spec-bundle §2、Makefile。導入審查清單（討論總結.md §8）最後一個缺口補齊 |
 | 2026-07-15 真機驗證 | 本機 Docker es8=8.14.3/es9=9.0.0 對 check 全量 + 5 條症狀樹 | ✅ 完成；意外抓到並修正 #11/#32 系統 index 誤報 bug（見 §2） |
 | 2026-07-15 造壓驗證 | disk/shards_capacity/repository_integrity/ILM/allocation 封鎖異常情境 | ✅ 完成；抓到並修正 2 個真 bug（#19/#20/#31/#33 的 filter_path+flat_settings 解析、#11/#32 的 data stream 誤排除），見 §4 |
 | 待辦 | slm indicator 觸發條件（本次造壓未重現）、write-bottleneck 因果鏈真實負載驗證（需 esrally 等造壓工具） | ⬜ 未開始 |
