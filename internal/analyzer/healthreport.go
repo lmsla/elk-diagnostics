@@ -185,13 +185,17 @@ func HealthReportIndicator(hr *collector.HealthReport, id string) (diagnostic.Re
 
 // AffectedIndices 彙整指定 indicator 的 diagnosis 中所有受影響 index（去重、依出現順序）。
 // #20 用：找出需要逐一查 index.routing.allocation.enable 的候選 index。
-func AffectedIndices(hr *collector.HealthReport, indicator string) []string {
+//
+// ok=false 表示 health_report 不可用（hr 為 nil）或該 indicator 不存在——「沒有資料」
+// 與「讀到資料且清單為空」是兩回事，呼叫端不可把前者當成「無受影響 index」而回報正常
+//（VERIFICATION.md §1.1 的同款假陰性模式）。
+func AffectedIndices(hr *collector.HealthReport, indicator string) (indices []string, ok bool) {
 	if hr == nil {
-		return nil
+		return nil, false
 	}
-	ind, ok := hr.Indicators[indicator]
-	if !ok {
-		return nil
+	ind, found := hr.Indicators[indicator]
+	if !found {
+		return nil, false
 	}
 	seen := map[string]bool{}
 	var out []string
@@ -203,7 +207,7 @@ func AffectedIndices(hr *collector.HealthReport, indicator string) []string {
 			}
 		}
 	}
-	return out
+	return out, true
 }
 
 func symptomOr(ind collector.HRIndicator, def string) string {

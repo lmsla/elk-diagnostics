@@ -148,6 +148,9 @@ func TestCheck_BundleMissingHealthReport(t *testing.T) {
 		if aIDs[id] {
 			continue // A 類本來就預期改變（pass/warning → unknown），不比對
 		}
+		if id == "index_allocation_blocked" {
+			continue // #20 的輸入就是 health_report 的受影響 index 清單，刪檔後必然改變，另有專屬斷言（見下）
+		}
 		a, ok := afterByID[id]
 		if !ok {
 			t.Errorf("B/C 類 id %q 在刪檔後消失", id)
@@ -158,6 +161,27 @@ func TestCheck_BundleMissingHealthReport(t *testing.T) {
 		if string(bj) != string(aj) {
 			t.Errorf("B/C 類 %q 刪檔前後不一致:\n前: %s\n後: %s", id, bj, aj)
 		}
+	}
+
+	// #20 依賴 health_report 點名受影響 index；health_report 不可用時必須是 unknown，
+	// 絕不可說出「shards_availability 目前正常」——沒有資料時宣稱正常正是
+	// VERIFICATION.md §1.1 記載的假陰性模式（T2 讓 health_report 失敗不再中止後，
+	// 此路徑首次真正可達）。
+	iab, ok := afterByID["index_allocation_blocked"]
+	if !ok {
+		t.Fatal("index_allocation_blocked 未出現在結果中")
+	}
+	if iab.Status != diagnostic.StatusUnknown {
+		t.Errorf("index_allocation_blocked status = %q, want unknown", iab.Status)
+	}
+	if strings.Contains(iab.Summary, "目前正常") {
+		t.Errorf("index_allocation_blocked summary 不得含「目前正常」（health_report 不可用時無資料可佐證），got %q", iab.Summary)
+	}
+	if !strings.Contains(iab.Summary, "無法取得受影響 index 清單") {
+		t.Errorf("index_allocation_blocked summary 應說明受影響 index 清單不可得，got %q", iab.Summary)
+	}
+	if !strings.Contains(iab.Summary, "bundle") {
+		t.Errorf("bundle 模式的 summary 應沿用 T3 措辭慣例（提及 bundle），got %q", iab.Summary)
 	}
 }
 
@@ -306,6 +330,19 @@ func TestCheck_ConnHealthReport500(t *testing.T) {
 		if r.Summary != "資料抓取失敗，無法判定" {
 			t.Errorf("連線模式 summary = %q，措辭不應變（見 T3）", r.Summary)
 		}
+	}
+
+	// #20 在連線模式 health_report 失敗時同樣必須是 unknown（不可宣稱「目前正常」），
+	// 措辭用連線版而非 bundle 版。
+	iab, ok := byID["index_allocation_blocked"]
+	if !ok {
+		t.Fatal("index_allocation_blocked 未出現在結果中")
+	}
+	if iab.Status != diagnostic.StatusUnknown {
+		t.Errorf("index_allocation_blocked status = %q, want unknown", iab.Status)
+	}
+	if strings.Contains(iab.Summary, "目前正常") || strings.Contains(iab.Summary, "bundle") {
+		t.Errorf("連線模式 index_allocation_blocked summary 不得含「目前正常」或 bundle 措辭，got %q", iab.Summary)
 	}
 }
 

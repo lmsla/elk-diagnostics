@@ -186,8 +186,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
 	} else {
 		results = append(results, unknownf(analyzer.DataAllocationBlocked(""), e))
 	}
-	enables, unprobed := indexAllocationEnables(client, hr)
-	results = append(results, analyzer.IndexAllocationBlocked(enables, unprobed)) // #20
+	results = append(results, indexAllocationBlockedResult(client, hr, isBundle)) // #20
 	if exp, found, e := client.AllocationExplain(); e == nil {
 		results = append(results, analyzer.AllocationGuidance(exp, found)) // #37
 	} else {
@@ -340,17 +339,34 @@ const (
 	maxIndexAllocationScanStr = "20"
 )
 
-// indexAllocationEnables 對 shards_availability 診斷點名的受影響 index（上限 20 個），
-// 逐一查 index.routing.allocation.enable 生效值，供 #20 使用。
+// indexAllocationBlockedResult 產出 #20 的完整結果：對 shards_availability 診斷點名的
+// 受影響 index（上限 20 個）逐一查 index.routing.allocation.enable 生效值後交給 analyzer 判定。
 //
-// unprobed 回傳「該查但查不到」的 index（權限不足、或 bundle 模式）。**必須回傳而非
-// 吞掉**：analyzer 要靠它區分「查過都正常」與「根本沒查到」，否則會把後者講成前者。
-func indexAllocationEnables(client *collector.Client, hr *collector.HealthReport) (enables map[string]string, unprobed []string) {
-	affected := analyzer.AffectedIndices(hr, "shards_availability")
+// unprobed（該查但查不到的 index，權限不足或 bundle 模式）**必須傳給 analyzer 而非吞掉**：
+// analyzer 要靠它區分「查過都正常」與「根本沒查到」，否則會把後者講成前者。
+//
+// health_report 本身不可用（hr 為 nil，或無 shards_availability indicator）時直接回
+// unknown——受影響 index 清單根本拿不到，「無受影響 index 需檢查（shards_availability
+// 目前正常）」這句 pass 只有真的讀到 shards_availability 且清單為空時才可能出現；
+// 沒有資料時說「目前正常」正是 VERIFICATION.md §1.1 記載的假陰性模式（T2 讓
+// health_report 失敗不再整份中止後，此路徑首次真正可達，故須在此明確擋住）。
+func indexAllocationBlockedResult(client *collector.Client, hr *collector.HealthReport, isBundle bool) diagnostic.Result {
+	affected, ok := analyzer.AffectedIndices(hr, "shards_availability")
+	if !ok {
+		res := unknownFrom(analyzer.IndexAllocationBlocked(nil, nil),
+			fmt.Errorf("health_report 的 shards_availability indicator 不可用，無法取得受影響 index 清單"), isBundle)
+		if isBundle {
+			res.Summary = "bundle 缺少 health_report 資料，無法取得受影響 index 清單，無法判定"
+		} else {
+			res.Summary = "health_report 不可用，無法取得受影響 index 清單，無法判定"
+		}
+		return res
+	}
 	if len(affected) > maxIndexAllocationScan {
 		affected = affected[:maxIndexAllocationScan]
 	}
-	enables = make(map[string]string, len(affected))
+	enables := make(map[string]string, len(affected))
+	var unprobed []string
 	for _, idx := range affected {
 		v, err := client.IndexAllocationEnable(idx)
 		if err != nil {
@@ -359,5 +375,5 @@ func indexAllocationEnables(client *collector.Client, hr *collector.HealthReport
 		}
 		enables[idx] = v
 	}
-	return enables, unprobed
+	return analyzer.IndexAllocationBlocked(enables, unprobed)
 }

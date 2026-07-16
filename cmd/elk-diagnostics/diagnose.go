@@ -56,7 +56,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		} else {
 			res = append(res, unknownFrom(analyzer.DataAllocationBlocked(""), e, false))
 		}
-		res = append(res, analyzer.IndexAllocationBlocked(indexAllocationEnables(client, hr))) // #20
+		res = append(res, indexAllocationBlockedResult(client, hr, false)) // #20
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok {                           // #3
 			res = append(res, r)
 		}
