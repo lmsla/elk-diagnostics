@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -71,13 +73,29 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
 	}
 
 	t := loadThresholds(cf)
-	hr, err := client.HealthReport()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "採集失敗:", err)
-		return 11
+	esVersion := client.Version()
+	var (
+		hr            *collector.HealthReport
+		results       []diagnostic.Result
+		versionNotice string
+	)
+	switch {
+	case !supportsHealthReport(esVersion):
+		// ES < 8.4：無 _health_report，非「抓取失敗」而是「此環境不適用」，A 類 skipped
+		// 而非 unknown（見 spec-cli §4、spec-resilience §1）。
+		results = analyzer.HealthReportVersionUnsupported(esVersion)
+		versionNotice = fmt.Sprintf("目標叢集 ES %s 低於 8.4，無 _health_report：A 類診斷全數略過，B/C 類結果照跑但未經此版本測試（見各項 version_warning）。", esVersion)
+	default:
+		var err error
+		hr, err = client.HealthReport()
+		if err != nil {
+			// 執行期抓取失敗（連線逾時/4xx/5xx；bundle 缺檔或錯誤 body）：不中止，A 類
+			// 全數以 unknown 浮出，B/C 類照常執行（見 spec-resilience §1，2026-07-16 修訂）。
+			results = analyzer.HealthReportFetchFailed("資料抓取失敗，無法判定", []string{err.Error()})
+		} else {
+			results = analyzer.FromHealthReport(hr)
+		}
 	}
-
-	results := analyzer.FromHealthReport(hr)
 	if mode, e := client.IlmStatus(); e == nil {
 		errs, _ := client.IlmExplain()
 		results = append(results, analyzer.ILM(mode, errs))
@@ -202,10 +220,60 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
 		pools = p
 	}
 
-	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: client.Version()}
+	if versionNotice != "" {
+		applyVersionWarning(results, esVersion)
+	}
+
+	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: esVersion}
 	report := buildReport(meta, results, "check")
+	report.VersionNotice = versionNotice
 	report.SuggestedSymptoms = suggestSymptoms(results, cpus, pools, t)
 	return emit(report, output, outFile)
+}
+
+// applyVersionWarning 幫 B/C 類結果附上 version_warning（ES < 8.4 未經測試，見 spec-cli §4）。
+// A 類（healthReportIndicators 驅動表）此時已是 skipped，不需要再疊加版本警告，
+// 排除清單一律從 analyzer.HealthReportIndicatorIDs 這個單一來源導出，不另建清單。
+func applyVersionWarning(results []diagnostic.Result, esVersion string) {
+	skip := make(map[string]bool)
+	for _, id := range analyzer.HealthReportIndicatorIDs() {
+		skip[id] = true
+	}
+	warning := fmt.Sprintf("ES %s 低於 8.4，本項未經測試（無 _health_report 可佐證）", esVersion)
+	for i := range results {
+		if skip[results[i].ID] {
+			continue
+		}
+		results[i].VersionWarning = warning
+	}
+}
+
+// supportsHealthReport 判斷版本是否 >= 8.4（_health_report 的最低支援版本，見 spec-cli §4）。
+// 版本字串無法解析時（如 bundle/測試環境的怪異值）保守地當作「可能支援」，讓程式照常嘗試
+// 抓取 _health_report——最壞結果是抓取失敗轉 unknown，仍然不是 pass，比誤判成 skipped 安全
+// （見 docs/VERIFICATION.md §1：寧可保守判定失敗，不可靜默假設）。
+func supportsHealthReport(esVersion string) bool {
+	major, minor, ok := parseMajorMinor(esVersion)
+	if !ok {
+		return true
+	}
+	if major != 8 {
+		return major > 8
+	}
+	return minor >= 4
+}
+
+func parseMajorMinor(version string) (major, minor int, ok bool) {
+	parts := strings.SplitN(version, ".", 3)
+	if len(parts) < 2 {
+		return 0, 0, false
+	}
+	major, err1 := strconv.Atoi(parts[0])
+	minor, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil {
+		return 0, 0, false
+	}
+	return major, minor, true
 }
 
 // suggestSymptoms 依 spec-diagnose-symptoms §3 的反向觸發規則，偵測到特定症狀特徵組合
