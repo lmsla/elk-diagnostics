@@ -11,30 +11,7 @@ import (
 	"elk-diagnostics/internal/diagnostic"
 )
 
-// copyFixtureBundle 複製 fixture 目錄到一個可寫的暫存目錄，供測試在其中額外放
-// _manifest.json 而不動到 checked-in 的 fixture。
-func copyFixtureBundle(t *testing.T, clusterDir string) string {
-	t.Helper()
-	src := fixtureDir(clusterDir)
-	dst := t.TempDir()
-	entries, err := os.ReadDir(src)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-		b, err := os.ReadFile(filepath.Join(src, e.Name()))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dst, e.Name()), b, 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	return dst
-}
+// copyFixtureBundle 由 resilience_test.go 提供（兩批工單各自需要同一個 helper，合併時去重）。
 
 // TestCheckFromBundle_ManifestPresent 對映驗收條件：含 manifest 的 bundle →
 // JSON meta 有兩個新欄位、HTML 頁首顯示採集時間。

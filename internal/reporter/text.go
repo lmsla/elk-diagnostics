@@ -46,6 +46,11 @@ func Text(r diagnostic.Report, color bool) []byte {
 		paint(ansiCyan, textSymbol(diagnostic.StatusUnknown)), r.Summary.Unknown,
 	)
 
+	// version_notice 緊接整體狀態列（spec-report §5.1）——例如 ES < 8.4 的全域警告。
+	if r.VersionNotice != "" {
+		fmt.Fprintf(&b, "%s\n\n", paint(ansiYellow, "⚠ "+r.VersionNotice))
+	}
+
 	// 非 pass 項目：critical → warning → unknown 排序，逐項兩行。
 	var pass, skipped []string
 	for _, order := range []diagnostic.Status{diagnostic.StatusCritical, diagnostic.StatusWarning, diagnostic.StatusUnknown} {

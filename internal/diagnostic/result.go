@@ -85,6 +85,7 @@ type Report struct {
 	Meta              Meta          `json:"meta"`
 	OverallStatus     Status        `json:"overall_status"`
 	Summary           Summary       `json:"summary"`
+	VersionNotice     string        `json:"version_notice,omitempty"` // 見 spec-report §3；目標版本不受支援時的全域提示（見 buildReport 呼叫端設值）
 	Results           []Result      `json:"results"`
 	SuggestedSymptoms []SymptomHint `json:"suggested_symptoms,omitempty"`
 	Disclaimer        string        `json:"disclaimer"`

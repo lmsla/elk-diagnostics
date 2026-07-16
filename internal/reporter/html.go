@@ -109,6 +109,7 @@ const htmlTmpl = `<!DOCTYPE html>
   .banner.pass{background:var(--pass)}.banner.warning{background:var(--warning)}.banner.critical{background:var(--critical)}.banner.unknown{background:var(--unknown)}
   .counts{font-size:13px;font-weight:400}
   .counts b{font-weight:700}
+  .version-notice{margin:16px 0;padding:10px 16px;background:#fff8e1;border:1px solid #ffca28;border-radius:6px;color:#795548;font-size:13px}
   .hints{margin:16px 0;padding:10px 16px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px}
   .hints h4{margin:0 0 6px;font-size:13px;color:#795548}
   .hints ul{margin:0;padding-left:20px}
@@ -152,6 +153,10 @@ const htmlTmpl = `<!DOCTYPE html>
   <span>整體狀態：{{statusText .R.OverallStatus}}</span>
   <span class="counts">✅ <b>{{.R.Summary.Pass}}</b>　⚠️ <b>{{.R.Summary.Warning}}</b>　❌ <b>{{.R.Summary.Critical}}</b>　⏭️ <b>{{.R.Summary.Skipped}}</b>　❓ <b>{{.R.Summary.Unknown}}</b></span>
 </div>
+
+{{if .R.VersionNotice}}
+<div class="version-notice">⚠ {{.R.VersionNotice}}</div>
+{{end}}
 
 {{if .R.SuggestedSymptoms}}
 <div class="hints">
