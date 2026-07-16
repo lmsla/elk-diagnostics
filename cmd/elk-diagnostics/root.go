@@ -105,10 +105,11 @@ func buildClient(cf *connFlags) (*collector.Client, string, int) {
 
 // ---- 共用 ----
 
-func addOutputFlags(cmd *cobra.Command) (output, outFile *string) {
-	output = cmd.Flags().String("output", "json", "輸出格式：json | html")
+func addOutputFlags(cmd *cobra.Command) (output, outFile *string, noColor *bool) {
+	output = cmd.Flags().String("output", "json", "輸出格式：json | html | text")
 	outFile = cmd.Flags().StringP("output-file", "o", "", "輸出檔路徑（省略則印 stdout）")
-	return output, outFile
+	noColor = cmd.Flags().Bool("no-color", false, "關閉終端色彩（僅影響 --output text）")
+	return output, outFile, noColor
 }
 
 func buildReport(meta diagnostic.ClusterMeta, results []diagnostic.Result, mode string) diagnostic.Report {
@@ -119,16 +120,21 @@ func buildReport(meta diagnostic.ClusterMeta, results []diagnostic.Result, mode 
 	}, results)
 }
 
-func emit(report diagnostic.Report, format, outFile string) int {
+func emit(report diagnostic.Report, format, outFile string, noColor bool) int {
 	var (
 		out []byte
 		err error
 	)
 	switch format {
+	case "json":
+		out, err = reporter.JSON(report)
 	case "html":
 		out, err = reporter.HTML(report)
+	case "text":
+		out = reporter.Text(report, colorEnabled(outFile, noColor, stdoutIsTTY()))
 	default:
-		out, err = reporter.JSON(report)
+		fmt.Fprintf(os.Stderr, "不支援的輸出格式: %q（支援 json | html | text）\n", format)
+		return 10
 	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "輸出失敗:", err)
@@ -141,7 +147,24 @@ func emit(report diagnostic.Report, format, outFile string) int {
 		}
 		fmt.Fprintln(os.Stderr, "已寫入", outFile)
 	} else {
-		fmt.Println(string(out))
+		fmt.Print(string(out))
+		if format != "text" {
+			fmt.Println()
+		}
 	}
 	return report.ExitCode()
+}
+
+// colorEnabled 依 spec-report §5.1：僅在 stdout 為 TTY、無 --no-color、無 NO_COLOR
+// 環境變數、且非寫檔時輸出 ANSI。抽成純函式（isTTY 由呼叫端注入）方便測試，不必真造 TTY。
+func colorEnabled(outFile string, noColor, isTTY bool) bool {
+	if outFile != "" || noColor || os.Getenv("NO_COLOR") != "" {
+		return false
+	}
+	return isTTY
+}
+
+func stdoutIsTTY() bool {
+	fi, err := os.Stdout.Stat()
+	return err == nil && (fi.Mode()&os.ModeCharDevice) != 0
 }

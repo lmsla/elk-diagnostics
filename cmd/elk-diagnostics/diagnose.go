@@ -19,20 +19,20 @@ func newDiagnoseCmd() *cobra.Command {
 	}
 	cf := addConnFlags(cmd)
 	symptom := cmd.Flags().String("symptom", "", "症狀："+supportedSymptoms)
-	output, outFile := addOutputFlags(cmd)
+	output, outFile, noColor := addOutputFlags(cmd)
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		if *symptom == "" {
 			fmt.Fprintln(os.Stderr, "需提供 --symptom（目前支援："+supportedSymptoms+"）")
 			os.Exit(10)
 		}
-		os.Exit(runDiagnose(cf, *symptom, *output, *outFile))
+		os.Exit(runDiagnose(cf, *symptom, *output, *outFile, *noColor))
 		return nil
 	}
 	return cmd
 }
 
-func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
+func runDiagnose(cf *connFlags, symptom, output, outFile string, noColor bool) int {
 	client, host, code := buildClient(cf)
 	if code != 0 {
 		return code
@@ -60,7 +60,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok {                           // #3
 			res = append(res, r)
 		}
-		return emit(buildReport(meta, res, "diagnose:red-cluster"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:red-cluster"), output, outFile, noColor)
 
 	case "write-bottleneck":
 		cpus, e1 := client.CatNodesCPU()
@@ -75,7 +75,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 			}
 			res = append(res, unknownFrom(analyzer.WriteBottleneck(nil, nil, t), err))
 		}
-		return emit(buildReport(meta, res, "diagnose:write-bottleneck"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:write-bottleneck"), output, outFile, noColor)
 
 	case "high-heap":
 		var res []diagnostic.Result
@@ -94,7 +94,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		} else {
 			res = append(res, unknownFrom(analyzer.RejectedRequests(nil), e))
 		}
-		return emit(buildReport(meta, res, "diagnose:high-heap"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:high-heap"), output, outFile, noColor)
 
 	case "ingest-lag":
 		hr, err := client.HealthReport()
@@ -117,7 +117,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok { // #3
 			res = append(res, r)
 		}
-		return emit(buildReport(meta, res, "diagnose:ingest-lag"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:ingest-lag"), output, outFile, noColor)
 
 	case "ilm-stuck":
 		hr, err := client.HealthReport()
@@ -138,7 +138,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string) int {
 		if r, ok := analyzer.HealthReportIndicator(hr, "shards_capacity"); ok { // #10
 			res = append(res, r)
 		}
-		return emit(buildReport(meta, res, "diagnose:ilm-stuck"), output, outFile)
+		return emit(buildReport(meta, res, "diagnose:ilm-stuck"), output, outFile, noColor)
 
 	default:
 		fmt.Fprintln(os.Stderr, "不支援的症狀:", symptom, "（目前支援："+supportedSymptoms+"）")

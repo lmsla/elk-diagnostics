@@ -20,7 +20,7 @@ func TestCheckFromBundle(t *testing.T) {
 	bundle := fixtureDir("es8-health")
 	outFile := filepath.Join(t.TempDir(), "report.json")
 
-	code := runCheck(newTestConnFlags(t, nil, "", ""), "", bundle, "json", outFile)
+	code := runCheck(newTestConnFlags(t, nil, "", ""), "", bundle, "json", outFile, false)
 	t.Logf("exit_code=%d", code)
 
 	b, err := os.ReadFile(outFile)
@@ -72,7 +72,7 @@ func TestCheckFromBundle(t *testing.T) {
 // TestCheckFromBundleAndFileMutuallyExclusive 兩個離線來源同時給是使用者錯誤，
 // 應明確拒絕而不是默默只用其中一個。
 func TestCheckFromBundleAndFileMutuallyExclusive(t *testing.T) {
-	code := runCheck(newTestConnFlags(t, nil, "", ""), "some.json", "some-dir", "json", "")
+	code := runCheck(newTestConnFlags(t, nil, "", ""), "some.json", "some-dir", "json", "", false)
 	if code != 10 {
 		t.Errorf("exit code = %d, want 10（設定錯誤）", code)
 	}

@@ -20,16 +20,16 @@ func newCheckCmd() *cobra.Command {
 	cf := addConnFlags(cmd)
 	fromFile := cmd.Flags().String("from-file", "", "改讀本機單一 health_report.json（僅 A 類；完整離線分析請用 --from-bundle）")
 	fromBundle := cmd.Flags().String("from-bundle", "", "改讀採集腳本產出的 bundle 目錄（完整離線分析，全程不連線）")
-	output, outFile := addOutputFlags(cmd)
+	output, outFile, noColor := addOutputFlags(cmd)
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		os.Exit(runCheck(cf, *fromFile, *fromBundle, *output, *outFile))
+		os.Exit(runCheck(cf, *fromFile, *fromBundle, *output, *outFile, *noColor))
 		return nil
 	}
 	return cmd
 }
 
-func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
+func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noColor bool) int {
 	if fromFile != "" && fromBundle != "" {
 		fmt.Fprintln(os.Stderr, "--from-file 與 --from-bundle 不可同時使用")
 		return 10
@@ -46,7 +46,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
 			return 11
 		}
 		meta := diagnostic.ClusterMeta{Host: "(from-file) " + fromFile, ESVersion: "unknown"}
-		return emit(buildReport(meta, analyzer.FromHealthReport(hr), "check"), output, outFile)
+		return emit(buildReport(meta, analyzer.FromHealthReport(hr), "check"), output, outFile, noColor)
 	}
 
 	// bundle 模式與連線模式共用底下完整的診斷流程——差別只在 client 的資料來源，
@@ -205,7 +205,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string) int {
 	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: client.Version()}
 	report := buildReport(meta, results, "check")
 	report.SuggestedSymptoms = suggestSymptoms(results, cpus, pools, t)
-	return emit(report, output, outFile)
+	return emit(report, output, outFile, noColor)
 }
 
 // suggestSymptoms 依 spec-diagnose-symptoms §3 的反向觸發規則，偵測到特定症狀特徵組合
