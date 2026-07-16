@@ -147,6 +147,19 @@
 |---|---|---|
 | 15 | Snapshot policy failures (SLM) | 手動 `_slm/policy/_execute` 觸發 **4 次真實失敗**，`slm` indicator 仍為 green。ES 似乎把「repo 已損壞」造成的失敗歸類到 `repository_integrity`（該項確實正確跳黃燈）而非 `slm`。**觸發 `slm` 本身變色的確切條件未知，需查官方原始碼或文件確認** |
 
+### 3.4 傳輸層（TLS＋認證）— 2026-07-16 驗證
+
+此前所有真機測試都是 security 關閉的 http；TLS／basic auth 程式碼屬「實作了但未驗過」。
+以自簽憑證＋`xpack.security.enabled=true` 的 8.14.3 容器實測：
+
+| 路徑 | 結果 |
+|---|---|
+| 連線模式 `--ca-cert` ＋ `--username/--password` | ✅ 31 條全數判定，與 http 基準完全一致，unknown=0 |
+| 不給 CA（自簽憑證） | ✅ 明確報 `x509: certificate signed by unknown authority`，exit 11，不會靜默降級 |
+| `collect.sh --ca-cert` ＋ `ES_PASSWORD` 環境變數 | ✅ 24 端點 23 個 200（allocation/explain 400 為語意化回應），bundle 離線分析與連線模式一致 |
+
+尚未驗：mTLS（client_cert/client_key）、bearer token、API key 實際值（程式碼路徑存在，無對應測試環境）。
+
 ---
 
 ## 4. 症狀樹與反向觸發
