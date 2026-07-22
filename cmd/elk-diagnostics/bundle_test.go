@@ -69,6 +69,55 @@ func TestCheckFromBundle(t *testing.T) {
 	}
 }
 
+// TestCheckStaticHealthFromBundle 驗證新增的單次快照檢查只依賴 bundle 檔案，
+// 不會在離線分析階段偷偷回連 Elasticsearch。
+func TestCheckStaticHealthFromBundle(t *testing.T) {
+	bundle := copyFixtureBundle(t, "es8-health")
+	writeJSON(t, filepath.Join(bundle, "cluster_pending_tasks.json"), map[string]any{"tasks": []any{}})
+	writeJSON(t, filepath.Join(bundle, "running_tasks.json"), map[string]any{"tasks": map[string]any{}})
+	writeJSON(t, filepath.Join(bundle, "cat_shards_sizing.json"), []map[string]any{{
+		"index": "logs", "shard": "0", "prirep": "p", "state": "STARTED", "node": "n1", "store": "10737418240", "docs": "1000",
+	}})
+	writeJSON(t, filepath.Join(bundle, "slm_policies.json"), map[string]any{})
+	writeJSON(t, filepath.Join(bundle, "nodes_runtime.json"), map[string]any{
+		"_nodes": map[string]any{"total": 1, "successful": 1, "failed": 0},
+		"nodes": map[string]any{"a": map[string]any{
+			"name": "n1", "roles": []string{"data_hot"}, "version": "8.14.3", "build_hash": "aaa",
+			"jvm":     map[string]any{"version": "21", "vm_version": "21", "mem": map[string]any{"heap_init_in_bytes": 1073741824, "heap_max_in_bytes": 1073741824}},
+			"plugins": []any{},
+		}},
+	})
+	writeJSON(t, filepath.Join(bundle, "ssl_certificates.json"), []map[string]any{{
+		"path": "http.p12", "subject_dn": "CN=n1", "issuer": "CN=ca", "expiry": "2099-01-01T00:00:00Z", "has_private_key": true,
+	}})
+	writeJSON(t, filepath.Join(bundle, "license.json"), map[string]any{"license": map[string]any{"status": "active", "type": "basic", "issued_to": "lab"}})
+	writeJSON(t, filepath.Join(bundle, "all_settings.json"), map[string]any{"logs": map[string]any{"settings": map[string]any{"index.number_of_replicas": "1"}}})
+	writeJSON(t, filepath.Join(bundle, "cluster_settings.json"), map[string]any{"persistent": map[string]any{}, "transient": map[string]any{}, "defaults": map[string]any{}})
+	writeJSON(t, filepath.Join(bundle, "nodes_topology.json"), map[string]any{
+		"_nodes": map[string]any{"total": 1, "successful": 1, "failed": 0},
+		"nodes":  map[string]any{"a": map[string]any{"name": "n1", "roles": []string{"data_hot"}, "attributes": map[string]any{}}},
+	})
+
+	report, _ := runBundleCheck(t, bundle)
+	byID := resultsByID(report.Results)
+	want := map[string]diagnostic.Status{
+		"cluster_pending_tasks":    diagnostic.StatusPass,
+		"long_running_tasks":       diagnostic.StatusPass,
+		"shard_sizing":             diagnostic.StatusPass,
+		"snapshot_freshness":       diagnostic.StatusSkipped,
+		"node_runtime_consistency": diagnostic.StatusPass,
+		"tls_certificate_expiry":   diagnostic.StatusPass,
+		"license_expiry":           diagnostic.StatusPass,
+		"replica_resilience":       diagnostic.StatusPass,
+		"allocation_awareness":     diagnostic.StatusSkipped,
+	}
+	for id, status := range want {
+		if got, ok := byID[id]; !ok || got.Status != status {
+			t.Errorf("%s = %+v, want status=%s", id, got, status)
+		}
+	}
+}
+
 // TestCheckFromBundleAndFileMutuallyExclusive 兩個離線來源同時給是使用者錯誤，
 // 應明確拒絕而不是默默只用其中一個。
 func TestCheckFromBundleAndFileMutuallyExclusive(t *testing.T) {

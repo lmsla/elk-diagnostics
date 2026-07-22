@@ -12,13 +12,17 @@ package collector
 // filter_path bug 已經示範過「以為在查 X、其實查了空氣」的代價（見 VERIFICATION.md §1）。
 
 const (
-	EpRoot                  = "/"
-	EpHealthReport          = "/_health_report"
-	EpClusterHealth         = "/_cluster/health"
-	EpClusterSettings       = "/_cluster/settings?include_defaults=true&flat_settings=true"
-	EpAllocationExplain     = "/_cluster/allocation/explain"
-	EpNodesRoles            = "/_nodes?filter_path=nodes.*.roles"
-	EpNodesJVMOldPool       = "/_nodes/stats?filter_path=nodes.*.name,nodes.*.jvm.mem.pools.old"
+	EpRoot               = "/"
+	EpHealthReport       = "/_health_report"
+	EpClusterHealth      = "/_cluster/health"
+	EpClusterSettings    = "/_cluster/settings?include_defaults=true&flat_settings=true"
+	EpAllocationExplain  = "/_cluster/allocation/explain"
+	EpNodesRoles         = "/_nodes?filter_path=nodes.*.roles"
+	EpNodesResourceStats = "/_nodes/stats/os,process,fs,jvm?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.cpu,nodes.*.os.load_average,nodes.*.os.mem,nodes.*.os.swap,nodes.*.os.cgroup,nodes.*.process.cpu,nodes.*.process.mem,nodes.*.process.open_file_descriptors,nodes.*.process.max_file_descriptors,nodes.*.fs.total,nodes.*.fs.data,nodes.*.fs.io_stats,nodes.*.jvm.uptime_in_millis,nodes.*.jvm.mem,nodes.*.jvm.gc"
+	// EpNodesJVMOldPool 保留舊名稱，既有 analyzer 與舊 bundle 的 JVM 診斷不必分岔；
+	// 實際端點已擴充成完整 node resource stats，檔名仍維持 nodes_stats_jvm.json。
+	EpNodesJVMOldPool       = EpNodesResourceStats
+	EpNodesResourceInfo     = "/_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall"
 	EpNodesBreakers         = "/_nodes/stats/breaker?filter_path=nodes.*.name,nodes.*.breakers"
 	EpNodesIngest           = "/_nodes/stats/ingest?filter_path=nodes.*.ingest.pipelines"
 	EpCatNodes              = "/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent"
@@ -36,6 +40,14 @@ const (
 	EpRemoteInfo            = "/_remote/info"
 	EpMigrationDeprecations = "/_migration/deprecations"
 	EpRecovery              = "/_recovery?active_only=true"
+	EpPendingTasks          = "/_cluster/pending_tasks"
+	EpRunningTasks          = "/_tasks?detailed=true&group_by=none&filter_path=tasks.*.node,tasks.*.type,tasks.*.action,tasks.*.description,tasks.*.running_time_in_nanos,tasks.*.cancellable"
+	EpCatShardsSizing       = "/_cat/shards?format=json&bytes=b&h=index,shard,prirep,state,node,store,docs"
+	EpSLMPolicies           = "/_slm/policy?filter_path=*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed"
+	EpNodesRuntime          = "/_nodes/jvm,plugins?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.version,nodes.*.build_hash,nodes.*.jvm.version,nodes.*.jvm.vm_version,nodes.*.jvm.mem.heap_init_in_bytes,nodes.*.jvm.mem.heap_max_in_bytes,nodes.*.plugins.name,nodes.*.plugins.version"
+	EpSSLCertificates       = "/_ssl/certificates"
+	EpLicense               = "/_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis"
+	EpNodesTopology         = "/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes"
 )
 
 // Endpoint 是 check 會呼叫的單一唯讀端點。Purpose 供 API 清單與採集腳本註解使用，
@@ -53,7 +65,8 @@ var Endpoints = []Endpoint{
 	{EpIlmStatus, "ilm_status.json", "ILM 服務狀態（RUNNING/STOPPING/STOPPED）"},
 	{EpIlmExplainErrors, "ilm_explain_errors.json", "卡在 ERROR step 的 index（health_report 的 ilm indicator 會延遲，須直接問）"},
 	{EpCatThreadPool, "cat_thread_pool.json", "thread pool 佇列與拒絕數"},
-	{EpNodesJVMOldPool, "nodes_stats_jvm.json", "JVM old pool 記憶體壓力"},
+	{EpNodesResourceStats, "nodes_stats_jvm.json", "各節點 OS／process／filesystem／JVM 快照與 JVM old pool 記憶體壓力"},
+	{EpNodesResourceInfo, "nodes_info_os_process.json", "各節點 OS 版本／架構／processors、PID 與 memory lock 狀態"},
 	{EpNodesBreakers, "nodes_stats_breaker.json", "circuit breaker 跳閘累積次數"},
 	{EpCatNodes, "cat_nodes.json", "各節點 CPU／heap／disk 使用率與 allocated_processors"},
 	{EpCatAllocation, "cat_allocation.json", "各節點 shard 分布與待搬移數"},
@@ -72,6 +85,14 @@ var Endpoints = []Endpoint{
 	{EpNodesRoles, "nodes_roles.json", "各節點角色（master-eligible 數、data tier 分布）"},
 	{EpRecovery, "recovery.json", "進行中的 snapshot 還原進度"},
 	{EpCatThreadPoolWrite, "cat_thread_pool_write.json", "write thread pool 大小與積壓（寫入瓶頸因果鏈）"},
+	{EpPendingTasks, "cluster_pending_tasks.json", "尚未套用的 cluster state task 與排隊時間"},
+	{EpRunningTasks, "running_tasks.json", "目前執行中的 task 與執行時間（不採集 request body/header）"},
+	{EpCatShardsSizing, "cat_shards_sizing.json", "各 shard 大小、文件數與配置節點（shard sizing）"},
+	{EpSLMPolicies, "slm_policies.json", "SLM policy 最近成功／失敗時間與下次執行時間"},
+	{EpNodesRuntime, "nodes_runtime.json", "各節點 ES/JDK/heap/plugin 一致性與 Nodes API coverage"},
+	{EpSSLCertificates, "ssl_certificates.json", "回應節點載入的 TLS 憑證與到期日（單節點視角）"},
+	{EpLicense, "license.json", "叢集 License 狀態、類型與到期日"},
+	{EpNodesTopology, "nodes_topology.json", "節點角色與 allocation awareness attributes"},
 }
 
 // EpIndexSettings 組出單一 index 的 settings 端點。

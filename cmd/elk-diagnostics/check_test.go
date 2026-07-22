@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
@@ -72,6 +73,16 @@ func TestUnknownFromBundleWording(t *testing.T) {
 	}
 	if len(got.Findings) != 1 || got.Findings[0] != err.Error() {
 		t.Errorf("Findings 應保留完整錯誤訊息（含檔名），got %v", got.Findings)
+	}
+}
+
+func TestSnapshotReferenceTime(t *testing.T) {
+	fallback := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	if got := snapshotReferenceTime("2026-07-20T03:04:05Z", fallback); !got.Equal(time.Date(2026, 7, 20, 3, 4, 5, 0, time.UTC)) {
+		t.Fatalf("valid collected_at = %s", got)
+	}
+	if got := snapshotReferenceTime("invalid", fallback); !got.Equal(fallback) {
+		t.Fatalf("invalid collected_at = %s, want fallback %s", got, fallback)
 	}
 }
 

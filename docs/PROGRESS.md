@@ -4,6 +4,8 @@
 **狀態**：⬜ 未開始｜🟡 進行中｜✅ 完成｜⏭️ 略過（不適用）
 **規格**：實作依據，見 [`specs/`](./specs/)。所有診斷項一律產出 `DiagnosticResult`（spec-report §1）。
 
+後續 Elasticsearch 覆蓋缺口與優先級以 [`ES-COVERAGE-BACKLOG.md`](./ES-COVERAGE-BACKLOG.md) 為單一追蹤來源；本檔不複製其狀態。
+
 > ⚠️ **本文的 ✅ 只代表「已實作、跑得起來」，不代表「已證明會抓到問題」。**
 > 兩者是不同的事——2026-07-15 真機驗證找出 4 條結構上永遠回報綠燈的診斷，它們在本文長期標著 ✅。
 > **正確性追蹤請看 [`VERIFICATION.md`](./VERIFICATION.md)**，該文只認「刻意造壓並確認正確報出異常」為驗證通過。
@@ -139,7 +141,7 @@
 
 | 里程碑 | 範圍 | 完成度 |
 |---|---|---|
-| 規格 | 11 份 specs（輸入→診斷→報告→平台） | ✅ 完成 |
+| 規格 | 14 份 specs（輸入→診斷→報告→平台） | ✅ 完成 |
 | Phase 0 | 多版本驗證 health_report 顆粒度 | ✅ 核心已驗；disk/shards_capacity/repository_integrity 已造壓補測（2026-07-15），slm 未能重現（見 §4） |
 | MVP | 地基 + A 類 + #6 + JSON 報告 | ✅ 完成（真機 8.14.3） |
 | v0.2 | #7,8,9,12,11,13 + 離線 HTML 報告 | ✅ 完成（真機） |
@@ -152,11 +154,13 @@
 | 錯誤與韌性 | 逾時/重試接上、部分不可達→unknown | ✅ 完成，見 spec-resilience.md |
 | 多版本 golden test | es8/es9 × healthy/unhealthy 4 組 | 🟡 完成，覆蓋率受限於 Phase 0 錄製範圍（已誠實記錄） |
 | 安全與非功能 | 唯讀保證、密鑰遮蔽測試、multi-arch 打包 | ✅ 完成 |
-| 採集/判斷分離 | 端點表單一事實來源 + `--from-bundle` 離線分析 | ✅ 完成，見 [spec-bundle.md](./specs/spec-bundle.md)。真機驗證：bundle 與連線模式 31 條診斷判定逐條一致。**動機是交付面**——客戶不必為健檢導入未知二進位檔，只需跑一份看得懂的 curl 腳本 |
+| 採集/判斷分離 | 端點表單一事實來源 + `--from-bundle` 離線分析 | ✅ 架構完成，見 [spec-bundle.md](./specs/spec-bundle.md)。2026-07-15 當時的 31 條診斷 parity 已驗；後續新增 Node Context 與 ES-GAP-01～06 尚待重新真機驗證。**動機是交付面**——客戶不必為健檢導入未知二進位檔，只需跑一份看得懂的 curl 腳本 |
 | 客戶交付透明層 | 採集腳本 `collect.sh` + API 清單（由端點表產生） | ✅ 完成。`apis`（text/markdown，供資安審查）與 `collect-script`（POSIX sh，純 curl）兩個子指令，皆由 `collector.Endpoints` 產生。`collect.sh`（repo 根目錄）與 `docs/api-inventory.md` 皆 checked in（`make generate` 更新，測試擋過期，故新增端點時 API 呼叫面的變動會出現在 diff），`make dist` 一併產出交付包（二進位＋collect.sh＋api-inventory.md，各附 SHA256）。真機驗證：用 dash 跑產出的腳本採集 es8，離線分析結果與直連逐條一致。腳本經 sh/dash/bash `-n` 語法檢查，並鎖住唯讀、認證不上命令列、必記 HTTP 狀態碼 |
 | bundle 遮罩 | `--redact`：index/node/host 名稱 | ⬜ 未開始，見 spec-bundle §5.2 |
 | `--output text` 終端摘要 | check/diagnose 皆支援；非 pass 逐項、pass/skipped 壓縮彙總、`--no-color`/`NO_COLOR`/寫檔一律純文字 | ✅ 完成，見 spec-report §5.1、reporter/text.go。不合法 `--output` 值現在回報清楚錯誤（exit 10）而非靜默退回 json |
 | bundle 採集時間可追溯 | `collect.sh` 開始時寫 `_manifest.json`（collect_script_version/collected_at UTC/host/endpoints_total）；`--from-bundle` 讀出後帶進報告 meta（JSON 新增 2 個 omitempty 欄位）、HTML 頁首顯示；無 manifest 的舊 bundle 欄位省略、HTML 註明「舊版採集腳本」，不猜測 | ✅ 完成，見 spec-bundle §4.2、internal/collector/client.go、cmd/elk-diagnostics/collect.sh.tmpl |
+| 多節點 Node Context | Nodes Stats／Info coverage + 所有回應節點的 OS/process/filesystem/JVM context；swap、FD、有限 cgroup memory 快照診斷 | 🟡 程式、單元／2-node fixture、ES8/ES9 單節點 Live 與 ES8 Bundle parity 已驗；真實 2+ node 叢集仍待獨立環境驗證，見 spec-node-context |
+| ES 單次快照覆蓋 ES-GAP-01～06 | task 壅塞、shard sizing、snapshot RPO、runtime drift、TLS／License、HA 結構 | 🟡 Collector／Analyzer／Live-Bundle 共用流程與自動化測試完成；ES8／ES9、多節點與 403 真機驗證待補，見 ES-COVERAGE-BACKLOG |
 | SBOM | `make dist` 用 CycloneDX（`cyclonedx-gomod` 版本 pin 死於 Makefile）產出 `dist/sbom.cdx.json`（module + 全部相依版本），納入既有 SHA256 清單 | ✅ 完成，見 spec-bundle §2、Makefile。導入審查清單（討論總結.md §8）最後一個缺口補齊 |
 | 2026-07-15 真機驗證 | 本機 Docker es8=8.14.3/es9=9.0.0 對 check 全量 + 5 條症狀樹 | ✅ 完成；意外抓到並修正 #11/#32 系統 index 誤報 bug（見 §2） |
 | 2026-07-15 造壓驗證 | disk/shards_capacity/repository_integrity/ILM/allocation 封鎖異常情境 | ✅ 完成；抓到並修正 2 個真 bug（#19/#20/#31/#33 的 filter_path+flat_settings 解析、#11/#32 的 data stream 誤排除），見 §4 |

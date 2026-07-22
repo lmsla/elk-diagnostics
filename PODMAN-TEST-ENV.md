@@ -80,8 +80,9 @@ make build
 ./elk-diagnostics check --output text
 ```
 
-全新單節點基準線預期：`30 pass、1 warning、0 critical、0 unknown`。唯一 warning 是
-master 單點結構，屬預期結果。
+全新單節點基準線預期：`0 critical、0 unknown`，唯一 warning 是 master 單點結構；
+`node_api_coverage`、`node_swap_usage`、`node_file_descriptor_pressure`、
+`node_cgroup_memory_pressure` 應全部 pass。pass 總數不鎖死，避免新增診斷時產生假失敗。
 
 採集與離線分析：
 
@@ -111,10 +112,10 @@ ES 健檢不依賴 Kibana。只有需要 Dev Tools 或畫面交叉核對時才�
 
 ## 6. 造壓與復原
 
-1. 一次只執行一個 [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) §5 情境。
-2. 造壓前留基準 bundle，造壓後重新採集、分析，再復原。
-3. 復原後確認回到基準線。
-4. 工具輸出與叢集實況不符時，記回 VERIFICATION，不得只修改測試預期。
+先從 [`docs/VERIFICATION-PLAYBOOK.md`](./docs/VERIFICATION-PLAYBOOK.md) 選擇 Live 或
+Bundle 路線；一次只執行一份 Playbook，且一次只跑一案。造壓前後都必須通過基準線閘門。
+工具輸出與叢集實況不符時，記回
+[`docs/VERIFICATION.md`](./docs/VERIFICATION.md)，不得只修改測試預期。
 
 ## 7. 清理
 

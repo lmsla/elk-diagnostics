@@ -44,16 +44,30 @@ write_bottleneck:
   cpu_low_pct: 50
   write_queue_min: 1
   allocated_processors_low: 2
+node_context:
+  fd_warn_pct: 80
+  fd_crit_pct: 90
+  cgroup_memory_warn_pct: 90
+static_health:
+  pending_task_warn_seconds: 30
+  pending_task_crit_seconds: 300
+  long_task_warn_seconds: 300
+  shard_large_warn_gb: 50
+  shard_small_max_mb: 1024
+  shard_small_count_warn: 100
+  snapshot_warn_hours: 48
+  snapshot_crit_hours: 168
+  expiry_warn_days: 30
 ```
 
 每個分類對應一個 analyzer 檔案（`performance.go` / `data.go` / `balance.go` /
-`write_bottleneck.go`），欄位名稱直接對應程式內原本的常數。新增 C 類連續型指標時，在對應分類下
+`write_bottleneck.go` / `node_context.go` / `static_health.go`），欄位名稱直接對應程式內原本的常數。新增 C 類連續型指標時，在對應分類下
 加一個欄位，並在 `rules.Thresholds` struct 與 `Load()` 的合併清單各加一行。
 
 ## 3. 覆寫與合併（`--rules custom.yaml`）
 
-- 只需寫**要改的欄位**；未提供的欄位沿用內建預設值。合併判斷是「override 值不為 0 才覆寫」——
-  這裡每個閾值合理範圍內都不該是 0，因此以 0 代表「未提供」，不需要用 pointer 欄位分辨。
+- 只需寫**要改的欄位**；未提供的欄位沿用內建預設值。只有大於 0 的 override 會覆寫；
+  0 或負值視為無效並沿用預設值。
 - 覆寫檔不存在、讀取失敗、或 YAML 格式錯誤 → **不 crash**：印一行警告到 stderr、其餘沿用內建
   預設值繼續執行（鐵律：零外部 YAML 也要能跑，覆寫失敗不該讓整次診斷失敗）。
 - 覆寫檔含未知欄位（YAML 沒有的 key）→ `yaml.Unmarshal` 直接忽略，不視為錯誤。

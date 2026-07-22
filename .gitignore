@@ -6,8 +6,9 @@
 # macOS
 .DS_Store
 
-# 實測產出的診斷報告（可能含客戶叢集資訊）；僅根目錄，不影響 dev/ 下的 fixture
+# 實測產出的診斷報告（可能含客戶叢集資訊）
 /report*.html
+/reports/
 
 # collect.sh 的預設輸出目錄
 /elk-bundle-*/

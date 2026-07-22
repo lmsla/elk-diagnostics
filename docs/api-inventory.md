@@ -16,7 +16,8 @@
 | GET | `/_ilm/status` | ILM 服務狀態（RUNNING/STOPPING/STOPPED） |
 | GET | `/_all/_ilm/explain?only_errors=true&only_managed=true` | 卡在 ERROR step 的 index（health_report 的 ilm indicator 會延遲，須直接問） |
 | GET | `/_cat/thread_pool?format=json&h=node_name,name,active,queue,rejected,completed` | thread pool 佇列與拒絕數 |
-| GET | `/_nodes/stats?filter_path=nodes.*.name,nodes.*.jvm.mem.pools.old` | JVM old pool 記憶體壓力 |
+| GET | `/_nodes/stats/os,process,fs,jvm?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.cpu,nodes.*.os.load_average,nodes.*.os.mem,nodes.*.os.swap,nodes.*.os.cgroup,nodes.*.process.cpu,nodes.*.process.mem,nodes.*.process.open_file_descriptors,nodes.*.process.max_file_descriptors,nodes.*.fs.total,nodes.*.fs.data,nodes.*.fs.io_stats,nodes.*.jvm.uptime_in_millis,nodes.*.jvm.mem,nodes.*.jvm.gc` | 各節點 OS／process／filesystem／JVM 快照與 JVM old pool 記憶體壓力 |
+| GET | `/_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall` | 各節點 OS 版本／架構／processors、PID 與 memory lock 狀態 |
 | GET | `/_nodes/stats/breaker?filter_path=nodes.*.name,nodes.*.breakers` | circuit breaker 跳閘累積次數 |
 | GET | `/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent` | 各節點 CPU／heap／disk 使用率與 allocated_processors |
 | GET | `/_cat/allocation?format=json&h=node,shards,shards.undesired,disk.percent` | 各節點 shard 分布與待搬移數 |
@@ -35,8 +36,16 @@
 | GET | `/_nodes?filter_path=nodes.*.roles` | 各節點角色（master-eligible 數、data tier 分布） |
 | GET | `/_recovery?active_only=true` | 進行中的 snapshot 還原進度 |
 | GET | `/_cat/thread_pool/write?format=json&h=node_name,name,size,active,queue,rejected` | write thread pool 大小與積壓（寫入瓶頸因果鏈） |
+| GET | `/_cluster/pending_tasks` | 尚未套用的 cluster state task 與排隊時間 |
+| GET | `/_tasks?detailed=true&group_by=none&filter_path=tasks.*.node,tasks.*.type,tasks.*.action,tasks.*.description,tasks.*.running_time_in_nanos,tasks.*.cancellable` | 目前執行中的 task 與執行時間（不採集 request body/header） |
+| GET | `/_cat/shards?format=json&bytes=b&h=index,shard,prirep,state,node,store,docs` | 各 shard 大小、文件數與配置節點（shard sizing） |
+| GET | `/_slm/policy?filter_path=*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed` | SLM policy 最近成功／失敗時間與下次執行時間 |
+| GET | `/_nodes/jvm,plugins?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.version,nodes.*.build_hash,nodes.*.jvm.version,nodes.*.jvm.vm_version,nodes.*.jvm.mem.heap_init_in_bytes,nodes.*.jvm.mem.heap_max_in_bytes,nodes.*.plugins.name,nodes.*.plugins.version` | 各節點 ES/JDK/heap/plugin 一致性與 Nodes API coverage |
+| GET | `/_ssl/certificates` | 回應節點載入的 TLS 憑證與到期日（單節點視角） |
+| GET | `/_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis` | 叢集 License 狀態、類型與到期日 |
+| GET | `/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes` | 節點角色與 allocation awareness attributes |
 
-共 24 個固定端點。
+共 33 個固定端點。
 
 另有 1 個動態端點：
 

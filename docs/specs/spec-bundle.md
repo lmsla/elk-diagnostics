@@ -12,7 +12,7 @@
 
 | | 採集 | 判斷 |
 |---|---|---|
-| 做什麼 | 打 24 個唯讀 GET，存成 JSON | 讀 JSON、套規則、產報告 |
+| 做什麼 | 打 33 個固定唯讀 GET，存成 JSON | 讀 JSON、套規則、產報告 |
 | 需要碰客戶網路 | 是 | **否** |
 | 客戶看不看得懂 | 一眼就懂（就是 curl） | 看不懂 |
 | 需要什麼 | **只要 curl** | Go runtime |
@@ -62,7 +62,7 @@ checked in 而非只留在 `dist/`（gitignore）的理由：新增端點時，d
 
 因此實作上**只換傳輸層**：`Client.fetch` 是可抽換的欄位，連線模式走 HTTP、bundle 模式走讀檔，其上的 `get()`（重試、錯誤語意）與所有 analyzer 完全共用。bundle 與連線模式的差別僅止於 bytes 從哪來。
 
-> 真機驗證（2026-07-15，es8=8.14.3 健康叢集）：bundle 模式與連線模式 31 條診斷判定**逐條完全一致**，`unknown=0`，exit code 相同。
+> 歷史真機驗證（2026-07-15，es8=8.14.3 健康叢集）：當時 bundle 模式與連線模式 31 條診斷判定逐條一致。其後新增的 Node Context 與 ES-GAP-01～06 仍須重新執行真機 parity 驗證。
 
 ## 4. Bundle 格式
 
@@ -105,7 +105,7 @@ bundle/
   "collect_script_version": "0.0.5",
   "collected_at": "2026-07-16T02:10:00Z",
   "host": "https://es.example.local:9200",
-  "endpoints_total": 24
+  "endpoints_total": 33
 }
 ```
 
@@ -134,6 +134,7 @@ bundle 是原始 ES 回應，包含：
 
 - index 名稱（可能透露業務資訊，如 `transactions-taipei-branch-2026`）
 - node 名稱、IP、hostname
+- OS 版本、data path、mount 與 filesystem device 名稱（Node Context）
 - **`_mapping` 的欄位名稱**（可能是 `national_id`、`account_balance` 這類敏感命名）
 
 **本工具從不讀取文件內容**（全部端點皆為 `_cluster/*`、`_cat/*`、`_nodes/*`、`_mapping`），故 `討論總結.md` §14「不讀取客戶文件內容」結構上成立。但上述識別資訊確實存在，**bundle 離開客戶環境前需人工檢視**，且必須主動向客戶說明，不能略過。

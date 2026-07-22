@@ -4,7 +4,7 @@
 # 由 `elk-diagnostics collect-script` 依端點清單自動產生，請勿手動編輯。
 #   工具版本：0.0.4-mvp
 #
-# 這支腳本只做一件事：對 Elasticsearch 送出 24 個唯讀 GET 請求，把原始回應存成檔案。
+# 這支腳本只做一件事：對 Elasticsearch 送出 33 個唯讀 GET 請求，把原始回應存成檔案。
 # 它不做任何判斷、不修改叢集、不對外傳送任何資料。
 #
 # 產出的目錄（bundle）可帶到別台機器離線分析，客戶環境不需要安裝或執行本工具：
@@ -110,7 +110,7 @@ cat > "$MANIFEST" <<MANIFESTEOF
   "collect_script_version": "0.0.4-mvp",
   "collected_at": "$COLLECTED_AT",
   "host": "$HOST",
-  "endpoints_total": 24
+  "endpoints_total": 33
 }
 MANIFESTEOF
 
@@ -119,7 +119,7 @@ ERRLOG="$OUT/_errors.log"
 : > "$STATUS"
 : > "$ERRLOG"
 
-TOTAL=24
+TOTAL=33
 n=0
 failed=0
 
@@ -156,8 +156,10 @@ fetch '/_ilm/status' 'ilm_status.json'
 fetch '/_all/_ilm/explain?only_errors=true&only_managed=true' 'ilm_explain_errors.json'
 # thread pool 佇列與拒絕數
 fetch '/_cat/thread_pool?format=json&h=node_name,name,active,queue,rejected,completed' 'cat_thread_pool.json'
-# JVM old pool 記憶體壓力
-fetch '/_nodes/stats?filter_path=nodes.*.name,nodes.*.jvm.mem.pools.old' 'nodes_stats_jvm.json'
+# 各節點 OS／process／filesystem／JVM 快照與 JVM old pool 記憶體壓力
+fetch '/_nodes/stats/os,process,fs,jvm?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.cpu,nodes.*.os.load_average,nodes.*.os.mem,nodes.*.os.swap,nodes.*.os.cgroup,nodes.*.process.cpu,nodes.*.process.mem,nodes.*.process.open_file_descriptors,nodes.*.process.max_file_descriptors,nodes.*.fs.total,nodes.*.fs.data,nodes.*.fs.io_stats,nodes.*.jvm.uptime_in_millis,nodes.*.jvm.mem,nodes.*.jvm.gc' 'nodes_stats_jvm.json'
+# 各節點 OS 版本／架構／processors、PID 與 memory lock 狀態
+fetch '/_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall' 'nodes_info_os_process.json'
 # circuit breaker 跳閘累積次數
 fetch '/_nodes/stats/breaker?filter_path=nodes.*.name,nodes.*.breakers' 'nodes_stats_breaker.json'
 # 各節點 CPU／heap／disk 使用率與 allocated_processors
@@ -194,6 +196,22 @@ fetch '/_nodes?filter_path=nodes.*.roles' 'nodes_roles.json'
 fetch '/_recovery?active_only=true' 'recovery.json'
 # write thread pool 大小與積壓（寫入瓶頸因果鏈）
 fetch '/_cat/thread_pool/write?format=json&h=node_name,name,size,active,queue,rejected' 'cat_thread_pool_write.json'
+# 尚未套用的 cluster state task 與排隊時間
+fetch '/_cluster/pending_tasks' 'cluster_pending_tasks.json'
+# 目前執行中的 task 與執行時間（不採集 request body/header）
+fetch '/_tasks?detailed=true&group_by=none&filter_path=tasks.*.node,tasks.*.type,tasks.*.action,tasks.*.description,tasks.*.running_time_in_nanos,tasks.*.cancellable' 'running_tasks.json'
+# 各 shard 大小、文件數與配置節點（shard sizing）
+fetch '/_cat/shards?format=json&bytes=b&h=index,shard,prirep,state,node,store,docs' 'cat_shards_sizing.json'
+# SLM policy 最近成功／失敗時間與下次執行時間
+fetch '/_slm/policy?filter_path=*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed' 'slm_policies.json'
+# 各節點 ES/JDK/heap/plugin 一致性與 Nodes API coverage
+fetch '/_nodes/jvm,plugins?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.version,nodes.*.build_hash,nodes.*.jvm.version,nodes.*.jvm.vm_version,nodes.*.jvm.mem.heap_init_in_bytes,nodes.*.jvm.mem.heap_max_in_bytes,nodes.*.plugins.name,nodes.*.plugins.version' 'nodes_runtime.json'
+# 回應節點載入的 TLS 憑證與到期日（單節點視角）
+fetch '/_ssl/certificates' 'ssl_certificates.json'
+# 叢集 License 狀態、類型與到期日
+fetch '/_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis' 'license.json'
+# 節點角色與 allocation awareness attributes
+fetch '/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes' 'nodes_topology.json'
 
 echo
 echo "完成：$TOTAL 個端點，其中 $failed 個非 2xx。"

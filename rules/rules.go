@@ -34,10 +34,26 @@ type Thresholds struct {
 		WriteQueueMin          int `yaml:"write_queue_min"`
 		AllocatedProcessorsLow int `yaml:"allocated_processors_low"`
 	} `yaml:"write_bottleneck"`
+	NodeContext struct {
+		FDWarnPct           int `yaml:"fd_warn_pct"`
+		FDCritPct           int `yaml:"fd_crit_pct"`
+		CgroupMemoryWarnPct int `yaml:"cgroup_memory_warn_pct"`
+	} `yaml:"node_context"`
+	StaticHealth struct {
+		PendingTaskWarnSeconds int `yaml:"pending_task_warn_seconds"`
+		PendingTaskCritSeconds int `yaml:"pending_task_crit_seconds"`
+		LongTaskWarnSeconds    int `yaml:"long_task_warn_seconds"`
+		ShardLargeWarnGB       int `yaml:"shard_large_warn_gb"`
+		ShardSmallMaxMB        int `yaml:"shard_small_max_mb"`
+		ShardSmallCountWarn    int `yaml:"shard_small_count_warn"`
+		SnapshotWarnHours      int `yaml:"snapshot_warn_hours"`
+		SnapshotCritHours      int `yaml:"snapshot_crit_hours"`
+		ExpiryWarnDays         int `yaml:"expiry_warn_days"`
+	} `yaml:"static_health"`
 }
 
-// Load 讀內建預設值；overridePath 非空時以檔案中出現的欄位覆寫預設值（0 視為未提供，
-// 因為這裡每個閾值合理範圍內都不該是 0）。覆寫檔不存在或格式錯誤不會中斷程式，
+// Load 讀內建預設值；overridePath 非空時以檔案中大於 0 的欄位覆寫預設值。
+// 0 或負值視為無效並沿用預設值。覆寫檔不存在或格式錯誤不會中斷程式，
 // 回傳警告訊息、其餘沿用內建值——鐵律是零外部 YAML 也要能跑。
 func Load(overridePath string) (Thresholds, []string) {
 	var t Thresholds
@@ -68,11 +84,23 @@ func Load(overridePath string) (Thresholds, []string) {
 	mergeInt(&t.WriteBottleneck.CPULowPct, o.WriteBottleneck.CPULowPct)
 	mergeInt(&t.WriteBottleneck.WriteQueueMin, o.WriteBottleneck.WriteQueueMin)
 	mergeInt(&t.WriteBottleneck.AllocatedProcessorsLow, o.WriteBottleneck.AllocatedProcessorsLow)
+	mergeInt(&t.NodeContext.FDWarnPct, o.NodeContext.FDWarnPct)
+	mergeInt(&t.NodeContext.FDCritPct, o.NodeContext.FDCritPct)
+	mergeInt(&t.NodeContext.CgroupMemoryWarnPct, o.NodeContext.CgroupMemoryWarnPct)
+	mergeInt(&t.StaticHealth.PendingTaskWarnSeconds, o.StaticHealth.PendingTaskWarnSeconds)
+	mergeInt(&t.StaticHealth.PendingTaskCritSeconds, o.StaticHealth.PendingTaskCritSeconds)
+	mergeInt(&t.StaticHealth.LongTaskWarnSeconds, o.StaticHealth.LongTaskWarnSeconds)
+	mergeInt(&t.StaticHealth.ShardLargeWarnGB, o.StaticHealth.ShardLargeWarnGB)
+	mergeInt(&t.StaticHealth.ShardSmallMaxMB, o.StaticHealth.ShardSmallMaxMB)
+	mergeInt(&t.StaticHealth.ShardSmallCountWarn, o.StaticHealth.ShardSmallCountWarn)
+	mergeInt(&t.StaticHealth.SnapshotWarnHours, o.StaticHealth.SnapshotWarnHours)
+	mergeInt(&t.StaticHealth.SnapshotCritHours, o.StaticHealth.SnapshotCritHours)
+	mergeInt(&t.StaticHealth.ExpiryWarnDays, o.StaticHealth.ExpiryWarnDays)
 	return t, nil
 }
 
 func mergeInt(base *int, override int) {
-	if override != 0 {
+	if override > 0 {
 		*base = override
 	}
 }

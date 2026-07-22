@@ -5,6 +5,9 @@
 與 [`PROGRESS.md`](./PROGRESS.md) 的分工：PROGRESS 追蹤「有沒有實作」，本文追蹤「實作出來的東西對不對」。
 兩者刻意分開，因為 2026-07-15 的真機驗證證明這是兩件完全不同的事。
 
+人工執行順序、造壓指令與復原閘門統一以 [`VERIFICATION-PLAYBOOK.md`](./VERIFICATION-PLAYBOOK.md)
+為準；本文保留驗證證據與成熟度狀態，不再兼任操作 SOP。
+
 ---
 
 ## 1. 為什麼需要這份文件（2026-07-15 的發現）
@@ -163,6 +166,17 @@
 自 2026-07-16 起，本機 ES 8／ES 9 測試環境的預設基線改為：**自簽 CA、HTTPS、
 Basic Auth、嚴格 CA 驗證**。HTTP／security disabled 不再算有效的端到端驗證；操作方式見
 [`PODMAN-TEST-ENV.md`](../PODMAN-TEST-ENV.md) 與 `dev/phase0/docker-compose.yml`。
+
+### 3.5 Node Context — 2026-07-22 驗證
+
+| 路徑 | 結果 |
+|---|---|
+| ES 8.14.3 Live | ✅ `34 pass / 1 warning / 0 critical / 0 unknown`；新增四項均 pass，Stats／Info coverage `1/1` |
+| ES 9.0.0 Live | ✅ 同上；確認 Nodes Stats/Info 欄位相容 |
+| ES 8.14.3 `collect.sh → bundle → env -i 離線分析` | ✅ 當時 25 個固定端點完成；Node Context 節點與四項 status 均與 Live 一致。其後擴充至 33 端點，ES-GAP-01～06 尚待重驗 |
+| 純 parser 2-node fixture | ✅ 所有節點保留並依 name/ID 穩定排序；partial `_nodes` 轉 unknown；cgroup v1 LONG_MAX 類值與 v2 `"max"` 均辨識為 unlimited |
+
+真實 2+ node Podman 叢集尚未執行。現有 ES8、ES9 與兩套 Kibana 已使 Podman VM 記憶體接近上限，不在同一環境硬加節點，避免測試負載本身污染 CPU/memory 判定。
 本機帳密固定為 `elastic / elk-diagnostics-test-only`，只綁 localhost；Kibana 為選配，
 不屬於 ES 健檢的必要依賴。
 
@@ -182,9 +196,14 @@ Basic Auth、嚴格 CA 驗證**。HTTP／security disabled 不再算有效的端
 
 ---
 
-## 5. 已知可重現的造壓配方
+## 5. 歷史造壓紀錄（非執行 SOP）
 
-2026-07-15 實測有效，對 es8=8.14.3。**每個情境結束後務必復原**（本文所有配方皆已驗證可乾淨復原）。
+本節保留 2026-07-15／16 的驗證來源與當時配方，不再作為操作入口。現行 P01～P15
+故障定義以 [`fault-scenarios.sh`](../dev/phase0/fault-scenarios.sh) 為唯一執行來源，路線與順序
+依 [`VERIFICATION-PLAYBOOK.md`](./VERIFICATION-PLAYBOOK.md)。避免從本節複製舊指令，否則會繞過
+現行的故障確認與復原閘門。
+
+以下內容於 es8=8.14.3 實測有效，僅供追溯：
 
 ```bash
 # --- disk watermark → red ---

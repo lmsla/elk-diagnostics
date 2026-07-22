@@ -12,7 +12,7 @@ type NodeJVM struct {
 
 // NodesJVMOldPool 取 GET /_nodes/stats（只要 old pool）。
 func (c *Client) NodesJVMOldPool() ([]NodeJVM, error) {
-	b, err := c.get(EpNodesJVMOldPool)
+	b, err := c.nodeResourceStats()
 	if err != nil {
 		return nil, err
 	}

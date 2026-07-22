@@ -27,6 +27,7 @@ import (
 )
 
 var update = flag.Bool("update", false, "更新 golden 檔（dev/phase0/golden/）")
+var updateDir = flag.String("update-dir", "", "將更新後的 golden 寫到指定目錄（供受限環境先預覽；需搭配 -update）")
 
 func fixtureDir(clusterDir string) string {
 	return filepath.Join("..", "..", "dev", "phase0", "fixtures", clusterDir)
@@ -111,6 +112,9 @@ func TestGolden(t *testing.T) {
 				t.Fatalf("序列化失敗: %v", err)
 			}
 			goldenPath := filepath.Join("..", "..", "dev", "phase0", "golden", cluster+".json")
+			if *updateDir != "" {
+				goldenPath = filepath.Join(*updateDir, cluster+".json")
+			}
 
 			if *update {
 				if err := os.WriteFile(goldenPath, append(gotJSON, '\n'), 0644); err != nil {

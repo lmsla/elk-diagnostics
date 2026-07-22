@@ -14,7 +14,7 @@
 |---|---|---|
 | `id` | string | 規格 id，如 `cluster_health` |
 | `title` | string | 中文標題 |
-| `category` | enum | `cluster`/`capacity`/`data`/`management`/`performance`/`snapshot` |
+| `category` | enum | `cluster`/`capacity`/`data`/`management`/`performance`/`snapshot`/`node` |
 | `status` | enum | `pass`/`warning`/`critical`/`skipped`/`unknown` |
 | `conclusion` | enum | 三態：`normal`／`suspected`（疑似異常）／`confirmed`（已確認異常） |
 | `summary` | string | 一句話結論 |
@@ -65,6 +65,7 @@ critical 存在            → overall = critical
 │         採集時間與分析時間是兩個時點，報告必須能區分——政府/金融報告須註明「資料取自何時」）
 ├── overall_status + 計數摘要
 ├── version_notice：若 es_version 不在多數項目 tested_versions 內，全域警告
+├── node_context：Nodes Stats／Info coverage、所有回應節點的 OS/process/filesystem/JVM 快照（check 模式且資料可得時）
 ├── results[]：DiagnosticResult 陣列（依 §5 排序）
 └── disclaimer：固定免責聲明
 ```
@@ -90,6 +91,11 @@ critical 存在            → overall = critical
   "overall_status": "critical",
   "summary": { "pass": 12, "warning": 5, "critical": 2, "skipped": 3, "unknown": 1 },
   "version_notice": null,
+	"node_context": {
+	  "stats_coverage": { "available": true, "total": 3, "successful": 3, "failed": 0, "returned": 3 },
+	  "info_coverage": { "available": true, "total": 3, "successful": 3, "failed": 0, "returned": 3 },
+	  "nodes": [{ "id": "node-id", "name": "es-data-1", "roles": ["data_hot"], "os": {}, "process": {}, "filesystem": {}, "jvm": {} }]
+	},
   "results": [
     {
       "id": "cluster_health",
@@ -127,11 +133,12 @@ JSON 為穩定契約：欄位只增不改名；新增診斷項只是多一個 `r
 1. **頁首**：工具版本、產生時間、目標叢集(name/host/es_version)、模式。
 2. **總狀態橫幅**：大色塊顯示 overall_status（✅綠 / ⚠️琥珀 / ❌紅 / 灰=unknown_present），右側計數摘要。
 3. **版本警告區**（若有）：es_version 超出 tested_versions 的全域提示。
-4. **分類區塊**：依 category 分節（叢集 / 容量 / 資料 / 管理 / 效能 / 快照），節內逐項卡片：
+4. **Node Context 區塊**（資料可得時）：Stats／Info coverage、每個節點的資源摘要與可折疊 raw context；I/O、GC、CPU throttling 明示為累積值。
+5. **分類區塊**：依 category 分節（叢集 / 容量 / 資料 / 管理 / 效能 / 快照 / 節點環境），節內逐項卡片：
    - 卡片標頭：狀態 badge（色+✅/⚠️/❌）、`title`、`summary`、來源標記（health_report / raw / fallback）。
    - 可折疊明細：findings、root_causes、recommendations（指令以等寬框、可複製）、docs 連結、version_warning。
-5. **特殊項目區**：`skipped` 與 `requires_extra` 項目集中列於獨立區塊（見 §6），不混入正常判定。
-6. **頁尾**：免責聲明。
+6. **特殊項目區**：`skipped` 與 `requires_extra` 項目集中列於獨立區塊（見 §6），不混入正常判定。
+7. **頁尾**：免責聲明。
 
 色彩對應固定：pass=綠、warning=琥珀、critical=紅、skipped=灰、unknown=深灰加問號。
 

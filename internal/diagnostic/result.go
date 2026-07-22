@@ -2,7 +2,11 @@
 // analyzer 一律產出 Result，reporter 負責收斂與渲染——兩者解耦。
 package diagnostic
 
-import "time"
+import (
+	"time"
+
+	"elk-diagnostics/internal/nodecontext"
+)
 
 type Status string
 
@@ -82,13 +86,14 @@ type SymptomHint struct {
 }
 
 type Report struct {
-	Meta              Meta          `json:"meta"`
-	OverallStatus     Status        `json:"overall_status"`
-	Summary           Summary       `json:"summary"`
-	VersionNotice     string        `json:"version_notice,omitempty"` // 見 spec-report §3；目標版本不受支援時的全域提示（見 buildReport 呼叫端設值）
-	Results           []Result      `json:"results"`
-	SuggestedSymptoms []SymptomHint `json:"suggested_symptoms,omitempty"`
-	Disclaimer        string        `json:"disclaimer"`
+	Meta              Meta                  `json:"meta"`
+	OverallStatus     Status                `json:"overall_status"`
+	Summary           Summary               `json:"summary"`
+	VersionNotice     string                `json:"version_notice,omitempty"` // 見 spec-report §3；目標版本不受支援時的全域提示（見 buildReport 呼叫端設值）
+	Results           []Result              `json:"results"`
+	NodeContext       *nodecontext.Snapshot `json:"node_context,omitempty"`
+	SuggestedSymptoms []SymptomHint         `json:"suggested_symptoms,omitempty"`
+	Disclaimer        string                `json:"disclaimer"`
 }
 
 const disclaimer = "本工具提供診斷引導，非根因確認。結論基於單次唯讀快照與預設閾值，請結合現場日誌、時間序列監控與業務脈絡綜合判斷。工具僅執行唯讀操作，任何修復指令均需人工確認後手動執行。"

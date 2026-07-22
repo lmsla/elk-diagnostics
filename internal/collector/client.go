@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -46,10 +47,23 @@ type Client struct {
 	manifestCollectedAt   string
 	manifestScriptVersion string
 
+	// node resource stats 同時供既有 JVM 壓力與新增 Node Context 使用。單次 check 只採集
+	// 一次，避免對每個 consumer 重複送出相同的大型 Nodes Stats 請求。
+	nodeResourceStatsOnce sync.Once
+	nodeResourceStatsBody []byte
+	nodeResourceStatsErr  error
+
 	// fetch 是取得單一端點原始 bytes 的傳輸層：連線模式為 HTTP，bundle 模式為讀檔。
 	// 抽成欄位是為了讓兩種模式共用 get() 的重試與錯誤語意——所有 24 個端點、
 	// 所有 analyzer 的行為都完全一致，差別只在 bytes 從哪來。
 	fetch func(path string) (body []byte, status int, err error)
+}
+
+func (c *Client) nodeResourceStats() ([]byte, error) {
+	c.nodeResourceStatsOnce.Do(func() {
+		c.nodeResourceStatsBody, c.nodeResourceStatsErr = c.get(EpNodesResourceStats)
+	})
+	return c.nodeResourceStatsBody, c.nodeResourceStatsErr
 }
 
 // retryDelay 是重試間的固定延遲（測試可覆寫以避免實際等待）。

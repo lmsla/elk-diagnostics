@@ -97,6 +97,7 @@ elk-diagnostics：連上 ES、跑一輪唯讀診斷、輸出一份中文健康�
 | [spec-data.md](./spec-data.md) | #11,13,32 | data.go |
 | [spec-management.md](./spec-management.md) | #27,28,33,34,35 | management.go |
 | [spec-write-bottleneck.md](./spec-write-bottleneck.md) | #16 | write_bottleneck.go |
+| [spec-static-health.md](./spec-static-health.md) | ES-GAP-01～06 單次快照覆蓋擴充 | static_health.go |
 | [spec-report.md](./spec-report.md) | 最終報告（結果契約 / JSON / 離線 HTML / 收斂規則 / check vs diagnose） | reporter/json.go, html.go + internal/diagnostic |
 
 > **所有 analyzer 一律產出 spec-report.md §1 的 `DiagnosticResult`，不自行輸出文字。** 報告的組裝、收斂、渲染全在 reporter，與診斷邏輯解耦。
@@ -111,6 +112,7 @@ elk-diagnostics：連上 ES、跑一輪唯讀診斷、輸出一份中文健康�
 | [spec-diagnose-symptoms.md](./spec-diagnose-symptoms.md) | 症狀診斷樹（red-cluster / write-bottleneck / high-heap / ingest-lag / ilm-stuck）、反向觸發 | cmd/diagnose.go |
 | [spec-resilience.md](./spec-resilience.md) | 錯誤與韌性：逾時/重試、部分不可達→unknown、host 故障轉移範圍 | collector/client.go + cmd/check.go, diagnose.go |
 | [spec-bundle.md](./spec-bundle.md) | 採集與判斷分離：離線 bundle 模式、端點表單一事實來源 | collector/endpoints.go, client.go + cmd/check.go |
+| [spec-node-context.md](./spec-node-context.md) | ES API 可見的多節點 OS/process/filesystem/JVM context、完整性與快照診斷 | collector/node_context.go + analyzer/node_context.go |
 
 | 階段 | 內容 |
 |---|---|

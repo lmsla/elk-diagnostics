@@ -50,6 +50,15 @@ func Text(r diagnostic.Report, color bool) []byte {
 	if r.VersionNotice != "" {
 		fmt.Fprintf(&b, "%s\n\n", paint(ansiYellow, "⚠ "+r.VersionNotice))
 	}
+	if r.NodeContext != nil {
+		s, i := r.NodeContext.StatsCoverage, r.NodeContext.InfoCoverage
+		fmt.Fprintf(&b, "節點資料：Stats %d/%d、Info %d/%d；Node Context %d 個節點",
+			s.Successful, s.Total, i.Successful, i.Total, len(r.NodeContext.Nodes))
+		if len(r.NodeContext.Issues) > 0 {
+			fmt.Fprintf(&b, "（%d 個完整性問題）", len(r.NodeContext.Issues))
+		}
+		b.WriteString("\n\n")
+	}
 
 	// 非 pass 項目：critical → warning → unknown 排序，逐項兩行。
 	var pass, skipped []string

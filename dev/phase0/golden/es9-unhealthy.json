@@ -15,7 +15,7 @@
     "warning": 3,
     "critical": 0,
     "skipped": 0,
-    "unknown": 8
+    "unknown": 21
   },
   "results": [
     {
@@ -202,6 +202,82 @@
       "recommendations": null,
       "docs": [
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/high-jvm-memory-pressure"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "node_api_coverage",
+      "title": "節點資料完整性",
+      "category": "node",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "Nodes API 回應不完整，無法宣稱已涵蓋所有節點",
+      "findings": [
+        "Nodes Stats: successful=1/1 failed=0 returned=1",
+        "Nodes Info: successful=0/0 failed=0 returned=0",
+        "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall",
+        "Nodes Info 缺少 _nodes coverage"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html",
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "node_swap_usage",
+      "title": "節點 Swap 使用",
+      "category": "node",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "部分或全部節點缺少 swap 資料，無法判定",
+      "findings": [
+        "587513524e34：swap 欄位不可得"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "node_file_descriptor_pressure",
+      "title": "File descriptor 使用率",
+      "category": "node",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "部分或全部節點缺少 file descriptor 資料，無法判定",
+      "findings": [
+        "587513524e34：open/max file descriptors 不可得"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/file-descriptors.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "node_cgroup_memory_pressure",
+      "title": "Cgroup memory 餘裕",
+      "category": "node",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "部分或全部 Linux 節點缺少 cgroup memory 資料，無法判定",
+      "findings": [
+        "587513524e34：有限 cgroup memory limit 不可得"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html"
       ],
       "source": "raw_api",
       "requires_extra": false
@@ -559,7 +635,245 @@
       ],
       "source": "raw_api",
       "requires_extra": false
+    },
+    {
+      "id": "cluster_pending_tasks",
+      "title": "Cluster pending tasks",
+      "category": "cluster",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_cluster/pending_tasks"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-pending.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "long_running_tasks",
+      "title": "長時間執行 task",
+      "category": "performance",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_tasks?detailed=true\u0026group_by=none\u0026filter_path=tasks.*.node,tasks.*.type,tasks.*.action,tasks.*.description,tasks.*.running_time_in_nanos,tasks.*.cancellable"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-tasks-list"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "shard_sizing",
+      "title": "Shard 大小規劃",
+      "category": "capacity",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_cat/shards?format=json\u0026bytes=b\u0026h=index,shard,prirep,state,node,store,docs"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/size-your-shards.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "snapshot_freshness",
+      "title": "Snapshot 新鮮度 / RPO",
+      "category": "snapshot",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_slm/policy?filter_path=*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-slm-get-lifecycle"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "node_runtime_consistency",
+      "title": "Node runtime 一致性",
+      "category": "node",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_nodes/jvm,plugins?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.version,nodes.*.build_hash,nodes.*.jvm.version,nodes.*.jvm.vm_version,nodes.*.jvm.mem.heap_init_in_bytes,nodes.*.jvm.mem.heap_max_in_bytes,nodes.*.plugins.name,nodes.*.plugins.version"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "tls_certificate_expiry",
+      "title": "TLS 憑證到期",
+      "category": "security",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_ssl/certificates"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-ssl.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "license_expiry",
+      "title": "License 狀態與到期",
+      "category": "management",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/get-license.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "replica_resilience",
+      "title": "Index replica 容錯",
+      "category": "cluster",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_settings?flat_settings=true"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/troubleshoot/elasticsearch/red-yellow-cluster-status"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "allocation_awareness",
+      "title": "Shard allocation awareness",
+      "category": "cluster",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_cluster/settings?include_defaults=true\u0026flat_settings=true"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/deploy-manage/distributed-architecture/shard-allocation-relocation-recovery/shard-allocation-awareness"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
     }
   ],
+  "node_context": {
+    "stats_coverage": {
+      "available": true,
+      "total": 1,
+      "successful": 1,
+      "failed": 0,
+      "returned": 1
+    },
+    "info_coverage": {
+      "available": false,
+      "total": 0,
+      "successful": 0,
+      "failed": 0,
+      "returned": 0
+    },
+    "nodes": [
+      {
+        "id": "BKZEDwyVRSm3b1dnYpopDw",
+        "name": "587513524e34",
+        "roles": [
+          "data",
+          "data_cold",
+          "data_content",
+          "data_frozen",
+          "data_hot",
+          "data_warm",
+          "ingest",
+          "master",
+          "ml",
+          "remote_cluster_client",
+          "transform"
+        ],
+        "stats_available": true,
+        "info_available": false,
+        "os": {
+          "memory": {},
+          "swap": {},
+          "cgroup": {
+            "cpu": {},
+            "memory": {}
+          }
+        },
+        "process": {},
+        "filesystem": {},
+        "jvm": {
+          "uptime_millis": 790104,
+          "heap_used_bytes": 181242016,
+          "heap_max_bytes": 536870912,
+          "heap_used_pct": 33,
+          "old_used_bytes": 68950256,
+          "old_max_bytes": 536870912,
+          "gc_collectors": [
+            {
+              "name": "G1 Concurrent GC",
+              "collection_count": 8,
+              "collection_time_millis": 21
+            },
+            {
+              "name": "old",
+              "collection_count": 0,
+              "collection_time_millis": 0
+            },
+            {
+              "name": "young",
+              "collection_count": 17,
+              "collection_time_millis": 166
+            }
+          ]
+        }
+      }
+    ],
+    "issues": [
+      "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall",
+      "Nodes Info 缺少 _nodes coverage"
+    ]
+  },
   "disclaimer": "本工具提供診斷引導，非根因確認。結論基於單次唯讀快照與預設閾值，請結合現場日誌、時間序列監控與業務脈絡綜合判斷。工具僅執行唯讀操作，任何修復指令均需人工確認後手動執行。"
 }

@@ -5,12 +5,14 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"elk-diagnostics/internal/analyzer"
 	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
+	"elk-diagnostics/internal/nodecontext"
 	"elk-diagnostics/rules"
 )
 
@@ -117,6 +119,19 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 	} else {
 		results = append(results, unknownf(analyzer.JVMPressure(nil, t), e))
 	}
+	var nodeSnapshot *nodecontext.Snapshot
+	if snapshot, e := client.NodeContextSnapshot(); e == nil {
+		nodeSnapshot = snapshot
+		nodeResults := analyzer.NodeContextResults(snapshot, t)
+		if isBundle {
+			applyBundleNodeContextWording(nodeResults)
+		}
+		results = append(results, nodeResults...)
+	} else {
+		for _, zero := range analyzer.NodeContextResults(nil, t) {
+			results = append(results, unknownf(zero, e))
+		}
+	}
 	if brks, e := client.NodesBreakers(); e == nil {
 		results = append(results, analyzer.CircuitBreaker(brks))
 	} else {
@@ -219,6 +234,59 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		results = append(results, unknownf(analyzer.RestoreStatus(nil), e))
 	}
 
+	// --- ES-GAP-01～06：單次 API 快照即可支持的靜態健檢（spec-static-health）---
+	if tasks, e := client.PendingClusterTasks(); e == nil {
+		results = append(results, analyzer.PendingClusterTasks(tasks, t))
+	} else {
+		results = append(results, unknownf(analyzer.PendingClusterTasks(nil, t), e))
+	}
+	if tasks, e := client.RunningTasks(); e == nil {
+		results = append(results, analyzer.LongRunningTasks(tasks, t))
+	} else {
+		results = append(results, unknownf(analyzer.LongRunningTasks(nil, t), e))
+	}
+	if shards, e := client.ShardSizes(); e == nil {
+		results = append(results, analyzer.ShardSizing(shards, t))
+	} else {
+		results = append(results, unknownf(analyzer.ShardSizing(nil, t), e))
+	}
+	analysisNow := snapshotReferenceTime(client.CollectedAt(), time.Now().UTC())
+	if policies, e := client.SLMPolicies(); e == nil {
+		results = append(results, analyzer.SnapshotFreshness(policies, t, analysisNow))
+	} else {
+		results = append(results, unknownf(analyzer.SnapshotFreshness(nil, t, analysisNow), e))
+	}
+	if runtimes, e := client.NodeRuntimes(); e == nil {
+		results = append(results, analyzer.NodeRuntimeConsistency(runtimes))
+	} else {
+		results = append(results, unknownf(analyzer.NodeRuntimeConsistency(nil), e))
+	}
+	if certs, e := client.TLSCertificates(); e == nil {
+		results = append(results, analyzer.TLSCertificateExpiry(certs, t, analysisNow))
+	} else {
+		results = append(results, unknownf(analyzer.TLSCertificateExpiry(nil, t, analysisNow), e))
+	}
+	if license, e := client.LicenseInfo(); e == nil {
+		results = append(results, analyzer.LicenseHealth(license, t, analysisNow))
+	} else {
+		results = append(results, unknownf(analyzer.LicenseHealth(collector.LicenseInfo{}, t, analysisNow), e))
+	}
+	if replicas, e := client.IndexReplicas(); e == nil {
+		results = append(results, analyzer.ReplicaCoverage(replicas))
+	} else {
+		results = append(results, unknownf(analyzer.ReplicaCoverage(nil), e))
+	}
+	awareness, awarenessErr := client.AllocationAwarenessAttributes()
+	if awarenessErr != nil {
+		results = append(results, unknownf(analyzer.AllocationAwareness(nil, nil), awarenessErr))
+	} else if len(awareness) == 0 {
+		results = append(results, analyzer.AllocationAwareness(nil, nil))
+	} else if topology, e := client.NodeTopology(); e == nil {
+		results = append(results, analyzer.AllocationAwareness(awareness, topology))
+	} else {
+		results = append(results, unknownf(analyzer.AllocationAwareness(awareness, nil), e))
+	}
+
 	var pools []collector.WritePoolRow
 	if p, e := client.WritePool(); e == nil {
 		pools = p
@@ -232,9 +300,33 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 	report := buildReport(meta, results, "check")
 	report.Meta.CollectedAt = client.CollectedAt()
 	report.Meta.CollectScriptVersion = client.CollectScriptVersion()
+	report.NodeContext = nodeSnapshot
 	report.VersionNotice = versionNotice
 	report.SuggestedSymptoms = suggestSymptoms(results, cpus, pools, t)
 	return emit(report, output, outFile, noColor)
+}
+
+// snapshotReferenceTime 讓離線報告描述採集當下的狀態，而不是把一份舊 bundle
+// 依分析當天重新判成「snapshot/TLS/license 已過期」。舊 bundle 沒有 manifest 或
+// collected_at 格式錯誤時才退回分析時間。
+func snapshotReferenceTime(collectedAt string, fallback time.Time) time.Time {
+	if collectedAt != "" {
+		if parsed, err := time.Parse(time.RFC3339, collectedAt); err == nil {
+			return parsed.UTC()
+		}
+	}
+	return fallback.UTC()
+}
+
+// applyBundleNodeContextWording 保持 spec-resilience §3 的離線措辭契約：Node Context
+// 可能只缺部分欄位而非整個 endpoint，因此不會走 unknownFrom，但 summary 仍須明講
+// 資料來源是 bundle，避免使用者誤認分析端剛剛連線抓取失敗。
+func applyBundleNodeContextWording(results []diagnostic.Result) {
+	for i := range results {
+		if results[i].Status == diagnostic.StatusUnknown && !strings.Contains(results[i].Summary, "bundle") {
+			results[i].Summary = "bundle 資料不完整：" + results[i].Summary
+		}
+	}
 }
 
 // applyVersionWarning 幫 B/C 類結果附上 version_warning（ES < 8.4 未經測試，見 spec-cli §4）。

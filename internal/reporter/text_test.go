@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"elk-diagnostics/internal/diagnostic"
+	"elk-diagnostics/internal/nodecontext"
 )
 
 func sampleReport() diagnostic.Report {
@@ -88,6 +89,19 @@ func TestText_HeaderAndDisclaimer(t *testing.T) {
 	}
 	if !strings.Contains(out, diagnostic.NewReport(diagnostic.Meta{}, nil).Disclaimer) {
 		t.Errorf("末行應含免責聲明，got:\n%s", out)
+	}
+}
+
+func TestText_NodeContextCoverage(t *testing.T) {
+	r := sampleReport()
+	r.NodeContext = &nodecontext.Snapshot{
+		StatsCoverage: nodecontext.Coverage{Available: true, Total: 2, Successful: 2, Returned: 2},
+		InfoCoverage:  nodecontext.Coverage{Available: true, Total: 2, Successful: 2, Returned: 2},
+		Nodes:         make([]nodecontext.Node, 2),
+	}
+	out := string(Text(r, false))
+	if !strings.Contains(out, "節點資料：Stats 2/2、Info 2/2；Node Context 2 個節點") {
+		t.Errorf("text 應顯示 node coverage，got:\n%s", out)
 	}
 }
 
