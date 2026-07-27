@@ -14,11 +14,11 @@
 
 | ID | 優先級 | 狀態 | 項目 | 主要 API | 判定與邊界 | 權限 | 驗收 |
 |---|---|---|---|---|---|---|---|
-| ES-GAP-01 | P0 | implemented | Cluster pending tasks／長時間 task | `GET /_cluster/pending_tasks`、`GET /_tasks?detailed=true&group_by=none` | 依 queue/running age 判定；合法的長任務只標疑似並列出 action | `monitor` | 單元／Bundle 路徑完成；403 與真機待驗 |
-| ES-GAP-02 | P0 | implemented | Shard 大小與小 shard 增生 | `GET /_cat/shards?...store,docs` | 排除系統 index；大 shard 與大量小 primary shard 使用可覆寫 heuristic，不宣稱官方硬限制 | cluster/index `monitor` | parser、門檻、data stream 測試完成；ES8／ES9 真機待驗 |
-| ES-GAP-03 | P0 | implemented | Snapshot 新鮮度／RPO | `GET /_slm/policy` | 依每個 policy 的 last success age、last failure 與尚未成功執行判定；無 SLM 不等於無備份，標 `skipped` | `read_slm` | 無 policy／時間門檻／失敗測試完成；403 與真機待驗 |
-| ES-GAP-04 | P0 | implemented | Node 版本／JDK／plugin／heap 漂移 | `GET /_nodes/jvm,plugins` | 比對所有成功回應節點；Nodes API 不完整時不得回 pass | `monitor` | 2-node 一致／漂移／partial response／排序測試完成；真機待驗 |
-| ES-GAP-05 | P0 | implemented | TLS 憑證與 License 到期 | `GET /_ssl/certificates`、`GET /_license` | License 為 cluster 視角；SSL API 只代表回應節點，未逐節點採集前不得宣稱全叢集憑證正常 | `monitor` | 到期門檻／永久 license／單節點限制測試完成；403 與真機待驗 |
+| ES-GAP-01 | P0 | implemented | Cluster pending tasks／長時間 task | `GET /_cluster/pending_tasks`、`GET /_tasks?detailed=true&group_by=none` | 依 queue/running age 判定；合法的長任務只標疑似並列出 action | `monitor` | ES8／ES9 基準線與 Live-Bundle parity 完成；長時間異常與 403 仍以自動化測試驗證 |
+| ES-GAP-02 | P0 | implemented | Shard 大小與小 shard 增生 | `GET /_cat/shards?...store,docs` | 排除系統 index；大 shard 與大量小 primary shard 使用可覆寫 heuristic，不宣稱官方硬限制 | cluster/index `monitor` | ES8／ES9 基準線與 Live-Bundle parity 完成；大／小 shard 門檻異常仍以自動化測試驗證 |
+| ES-GAP-03 | P0 | implemented | Snapshot 新鮮度／RPO | `GET /_slm/policy` | 依每個 policy 的 last success age、last failure 與尚未成功執行判定；無 SLM 不等於無備份，標 `skipped` | `read_slm` | ES8／ES9 無 policy 基準線與 Live-Bundle parity 完成；過期／失敗與 403 仍以自動化測試驗證 |
+| ES-GAP-04 | P0 | implemented | Node 版本／JDK／plugin／heap 漂移 | `GET /_nodes/jvm,plugins` | 比對所有成功回應節點；Nodes API 不完整時不得回 pass | `monitor` | ES8／ES9 單節點基準線與 Live-Bundle parity 完成；真實多節點漂移／partial response 待驗 |
+| ES-GAP-05 | P0 | implemented | TLS 憑證與 License 到期 | `GET /_ssl/certificates`、`GET /_license` | License 為 cluster 視角；SSL API 只代表回應節點，未逐節點採集前不得宣稱全叢集憑證正常 | `monitor` | ES8／ES9 自簽 TLS／license 基準線與 Live-Bundle parity 完成；到期與 403 仍以自動化測試驗證 |
 | ES-GAP-06 | P0 | implemented | 高可用結構（第一階段） | `GET /_settings`、`GET /_cluster/settings`、Nodes Info | 檢查非系統 index replica=0、allocation awareness 設定與節點屬性；partial response 不得 pass | cluster/index `monitor` | replica／awareness／partial response 完成；實際 shard 跨 zone placement 留第二階段 |
 
 本批新增報告 ID：`cluster_pending_tasks`、`long_running_tasks`、`shard_sizing`、
@@ -28,14 +28,19 @@
 
 ## 第二批：單次快照次要或功能相依項目
 
-| ID | 優先級 | 狀態 | 項目 | 主要 API | 邊界 |
-|---|---|---|---|---|---|
-| ES-GAP-07 | P1 | planned | Indexing pressure 當下使用量 | `GET /_nodes/stats/indexing_pressure` | 只判目前 bytes/limit；累積 rejection 不下持續性結論 |
-| ES-GAP-08 | P1 | planned | Index read/write block | 既有 `GET /_settings?flat_settings=true` | 區分人為維護、watermark 自動 block；不提供自動解除 |
-| ES-GAP-09 | P1 | planned | 最近重啟與 memory lock | 既有 Nodes Stats／Info | uptime 只提示最近重啟；`mlockall=false` 必須與 swap 設定交叉判讀 |
-| ES-GAP-10 | P1 | planned | CCR follower／auto-follow 健康 | `GET /_ccr/stats` | 未使用 CCR 時 `skipped`；絕對 lag 可呈現，趨勢留給 Monitoring |
-| ES-GAP-11 | P2 | planned | ML job／datafeed 狀態 | ML stats APIs | 未授權或未使用時 `skipped`，不讓 optional feature 污染整體健康 |
-| ES-GAP-12 | P2 | planned | Planned shutdown／voting exclusion 殘留 | Shutdown／cluster state APIs | 僅檢查明確殘留與失敗狀態，避免把正常維護判成故障 |
+| ID | 優先級 | 狀態 | 項目 | 主要 API | 判定與邊界 | 權限 | 驗收 |
+|---|---|---|---|---|---|---|---|
+| ES-GAP-07 | P1 | implemented | Indexing pressure 當下使用量 | `GET /_nodes/stats/indexing_pressure` | coordinating+primary／replica 各自對拒絕上限判 80%/95%；不以累積 rejection 下趨勢結論 | `monitor` | ES8／ES9 基準線與 Live-Bundle parity 完成；高壓異常分支仍以自動化測試驗證 |
+| ES-GAP-08 | P1 | verified | Index read/write block | 既有 `GET /_settings?flat_settings=true` | 明確 block 為 confirmed；區分 maintenance／flood-stage，不提供盲目解除 | index `monitor` | P16 在 ES8／ES9 的 Live／Bundle 皆正確 critical，復原後 pass |
+| ES-GAP-09 | P1 | implemented | 最近重啟與 memory lock | 既有 Nodes Stats／Info | uptime 只提示最近重啟；`mlockall=false` 與 swap total 交叉判讀 | `monitor` | ES8 restart 的 Live／Bundle 均 warning；ES8／ES9 memory lock 基準線完成，memory lock 風險情境待驗 |
+| ES-GAP-10 | P1 | implemented | CCR follower／auto-follow 健康 | `GET /_ccr/stats` | 未使用／license 未啟用為 `skipped`；exception、絕對 lag 與累積失敗分級，趨勢留給 Monitoring | `monitor` | ES8／ES9 license skip 與 Live-Bundle parity 完成；真實 CCR follower 異常待驗 |
+| ES-GAP-11 | P2 | implemented | ML job／datafeed 狀態 | ML stats APIs | 未授權或未使用為 `skipped`；failed／assignment 才告警，closed/stopped 不誤報 | `monitor_ml` | ES8／ES9 無 job 的 skip 與 Live-Bundle parity 完成；真實失敗 job/datafeed 待驗 |
+| ES-GAP-12 | P2 | implemented | Planned shutdown／voting exclusion 殘留 | Shutdown／cluster state APIs | shutdown 為高權限選配；stalled critical，其他登記／exclusion 需維護脈絡 | shutdown=`manage`/operator；cluster state=`monitor` | ES8／ES9 空狀態與 Live-Bundle parity 完成；stalled shutdown／殘留 exclusion 待專用維護情境 |
+
+本批新增報告 ID：`indexing_pressure`、`index_read_write_blocks`、`recent_node_restart`、
+`node_memory_lock`、`ccr_health`、`ml_jobs_datafeeds`、`planned_shutdown`、
+`voting_config_exclusions`。`implemented` 只代表程式與自動化測試完成；真實 CCR／ML 與維護中
+planned shutdown／voting exclusion 未建立專用環境前，不得整批標 `verified`。
 
 ## 明確排除：需時間序列或外部證據
 

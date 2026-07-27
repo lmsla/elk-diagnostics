@@ -43,11 +43,11 @@ func copyFixtureBundle(t *testing.T, clusterDir string) string {
 	return dst
 }
 
-// neutralizeMasterStabilityWarning 把 es9-healthy fixture 唯一的既有 warning
-//（單一 master-eligible 節點）改成 3 節點，讓 baseline 是乾淨的 all-pass，
+// neutralizeBaselineWarnings 把 es9-healthy fixture 的結構性 warning（單一
+// master-eligible 節點）與錄製當下 uptime warning 改成中性值，讓 baseline 不含 warning，
 // 這樣「刪掉 health_report.json 後 exit code 變 3」才是乾淨的訊號，不與既有
 // warning 混在一起判讀。
-func neutralizeMasterStabilityWarning(t *testing.T, dir string) {
+func neutralizeBaselineWarnings(t *testing.T, dir string) {
 	t.Helper()
 	writeJSON(t, filepath.Join(dir, "cluster_health.json"), map[string]any{
 		"status": "green", "number_of_nodes": 3, "active_primary_shards": 0,
@@ -61,6 +61,20 @@ func neutralizeMasterStabilityWarning(t *testing.T, dir string) {
 			"n3": map[string]any{"name": "n3", "roles": []string{"master", "data"}},
 		},
 	})
+	b, err := os.ReadFile(filepath.Join(dir, "nodes_stats_jvm.json"))
+	if err != nil {
+		t.Fatalf("讀 nodes_stats_jvm.json 失敗: %v", err)
+	}
+	var stats map[string]any
+	if err := json.Unmarshal(b, &stats); err != nil {
+		t.Fatalf("解析 nodes_stats_jvm.json 失敗: %v", err)
+	}
+	for _, rawNode := range stats["nodes"].(map[string]any) {
+		node := rawNode.(map[string]any)
+		jvm := node["jvm"].(map[string]any)
+		jvm["uptime_in_millis"] = float64(2 * 60 * 60 * 1000)
+	}
+	writeJSON(t, filepath.Join(dir, "nodes_stats_jvm.json"), stats)
 }
 
 func writeJSON(t *testing.T, path string, v any) {
@@ -111,7 +125,7 @@ func aClassIDs() map[string]bool {
 // → 不中止（exit 3），A 類全數 unknown，B/C 類結果與刪檔前完全一致。
 func TestCheck_BundleMissingHealthReport(t *testing.T) {
 	dir := copyFixtureBundle(t, "es9-healthy")
-	neutralizeMasterStabilityWarning(t, dir)
+	neutralizeBaselineWarnings(t, dir)
 
 	// es9-healthy fixture 本身就缺幾個較新的 B 類端點檔案（見 golden_test.go 開頭註解），
 	// 故 baseline 已有既有 unknown（與 health_report 無關）；這裡不假設 baseline 全線
@@ -189,7 +203,7 @@ func TestCheck_BundleMissingHealthReport(t *testing.T) {
 // （_status.txt 記 404）時行為與缺檔相同。
 func TestCheck_BundleHealthReport404(t *testing.T) {
 	dir := copyFixtureBundle(t, "es9-healthy")
-	neutralizeMasterStabilityWarning(t, dir)
+	neutralizeBaselineWarnings(t, dir)
 
 	if err := os.WriteFile(filepath.Join(dir, "health_report.json"), []byte(`{"error":{"type":"not_found"}}`), 0644); err != nil {
 		t.Fatalf("寫檔失敗: %v", err)
@@ -219,7 +233,7 @@ func TestCheck_BundleHealthReport404(t *testing.T) {
 // → A 類全 skipped、B/C 附 version_warning、JSON 有 version_notice、HTML 頁首有黃條。
 func TestCheck_BundleVersionUnsupported(t *testing.T) {
 	dir := copyFixtureBundle(t, "es9-healthy")
-	neutralizeMasterStabilityWarning(t, dir)
+	neutralizeBaselineWarnings(t, dir)
 
 	writeJSON(t, filepath.Join(dir, "version.json"), map[string]any{
 		"name": "n1", "cluster_name": "docker-cluster", "cluster_uuid": "x",

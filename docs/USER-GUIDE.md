@@ -1,6 +1,6 @@
 # elk-diagnostics 操作手冊
 
-本手冊供實際健檢操作使用，不包含內部故障注入。P01～P15 測試請改用 [`VERIFICATION-PLAYBOOK.md`](./VERIFICATION-PLAYBOOK.md)。
+本手冊供實際健檢操作使用，不包含內部故障注入。P01～P16 測試請改用 [`VERIFICATION-PLAYBOOK.md`](./VERIFICATION-PLAYBOOK.md)。
 
 ## 1. 選擇執行方式
 
@@ -90,9 +90,11 @@ JSON 報告：
 
 ### 單次快照擴充檢查
 
-`check` 另會檢查 cluster pending／長任務、shard 大小、SLM snapshot 新鮮度、node 版本／JDK／heap／plugin 漂移、TLS／License 到期，以及 replica／allocation awareness。門檻可用 `--rules` 覆寫，預設值見 [`rules/default.yaml`](../rules/default.yaml)。
+`check` 另會檢查 cluster pending／長任務、shard 大小、SLM snapshot 新鮮度、node runtime 漂移、TLS／License、replica／allocation awareness，以及 indexing pressure、index block、近期重啟／memory lock、CCR、ML、planned shutdown／voting exclusions。門檻可用 `--rules` 覆寫，預設值見 [`rules/default.yaml`](../rules/default.yaml)。
 
-新增端點的最低權限為 cluster `monitor`、SLM `read_slm`，以及可讀取目標 index settings/CAT shards 的 index `monitor`。缺權限會標 `unknown`，不會當成正常。`/_ssl/certificates` 只代表接到請求的單一 ES 節點；即使 pass，仍需逐節點確認完整叢集憑證。
+一般檢查需要 cluster `monitor`、SLM `read_slm`、ML `monitor_ml`，以及可讀取目標 index settings/CAT shards 的 index `monitor`。缺權限會標 `unknown`，不會當成正常。Planned shutdown 是例外：官方要求 cluster `manage`，且不支援直接使用，因此定義為高權限選配檢查；HTTP 403/404 只讓該項 `skipped`，不要求一般健檢帳號升權。
+
+CCR／ML 未使用或 license 未啟用時為 `skipped`。Indexing pressure、近期重啟、CCR lag 與 maintenance metadata 都是單次快照訊號，報告會要求時間序列或維護窗口佐證。`/_ssl/certificates` 只代表接到請求的單一 ES 節點；即使 pass，仍需逐節點確認完整叢集憑證。
 
 ### 3.3 症狀導向診斷
 

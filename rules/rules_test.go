@@ -20,7 +20,9 @@ func TestLoad_Default(t *testing.T) {
 	if th.NodeContext.FDWarnPct != 80 || th.NodeContext.FDCritPct != 90 || th.NodeContext.CgroupMemoryWarnPct != 90 {
 		t.Errorf("NodeContext defaults = %+v", th.NodeContext)
 	}
-	if th.StaticHealth.PendingTaskWarnSeconds != 30 || th.StaticHealth.ShardLargeWarnGB != 50 || th.StaticHealth.ExpiryWarnDays != 30 {
+	if th.StaticHealth.PendingTaskWarnSeconds != 30 || th.StaticHealth.ShardLargeWarnGB != 50 || th.StaticHealth.ExpiryWarnDays != 30 ||
+		th.StaticHealth.IndexingPressureWarnPct != 80 || th.StaticHealth.IndexingPressureCritPct != 95 ||
+		th.StaticHealth.RecentRestartWarnMinutes != 60 || th.StaticHealth.CCRLagWarnOps != 10000 {
 		t.Errorf("StaticHealth defaults = %+v", th.StaticHealth)
 	}
 }
@@ -93,6 +95,21 @@ func TestLoad_OverrideInvalidYAML(t *testing.T) {
 	}
 }
 
+func TestLoad_IndexingPressureThresholdOrder(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "override.yaml")
+	if err := os.WriteFile(path, []byte("static_health:\n  indexing_pressure_warn_pct: 99\n  indexing_pressure_crit_pct: 90\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	th, warnings := Load(path)
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want 1", warnings)
+	}
+	if th.StaticHealth.IndexingPressureWarnPct != 80 || th.StaticHealth.IndexingPressureCritPct != 95 {
+		t.Errorf("thresholds = %d/%d, want defaults 80/95", th.StaticHealth.IndexingPressureWarnPct, th.StaticHealth.IndexingPressureCritPct)
+	}
+}
+
 func TestLoad_OverrideAllFields(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "override.yaml")
@@ -126,6 +143,10 @@ static_health:
   snapshot_warn_hours: 21
   snapshot_crit_hours: 22
   expiry_warn_days: 23
+  indexing_pressure_warn_pct: 24
+  indexing_pressure_crit_pct: 25
+  recent_restart_warn_minutes: 26
+  ccr_lag_warn_ops: 27
 `
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
@@ -159,6 +180,10 @@ static_health:
 	want.StaticHealth.SnapshotWarnHours = 21
 	want.StaticHealth.SnapshotCritHours = 22
 	want.StaticHealth.ExpiryWarnDays = 23
+	want.StaticHealth.IndexingPressureWarnPct = 24
+	want.StaticHealth.IndexingPressureCritPct = 25
+	want.StaticHealth.RecentRestartWarnMinutes = 26
+	want.StaticHealth.CCRLagWarnOps = 27
 	if th != want {
 		t.Errorf("th = %+v, want %+v", th, want)
 	}

@@ -40,3 +40,7 @@ static_health:
   snapshot_warn_hours: 48         # 預設 RPO heuristic，可依客戶政策覆寫
   snapshot_crit_hours: 168
   expiry_warn_days: 30            # TLS／License 到期預警
+  indexing_pressure_warn_pct: 80  # 當下 coordinating+primary／replica 各自相對拒絕上限
+  indexing_pressure_crit_pct: 95
+  recent_restart_warn_minutes: 60 # 單次快照只提示近期重啟，不推斷原因
+  ccr_lag_warn_ops: 10000          # follower global checkpoint 絕對落後量；趨勢留給 Monitoring

@@ -173,12 +173,34 @@ Basic Auth、嚴格 CA 驗證**。HTTP／security disabled 不再算有效的端
 |---|---|
 | ES 8.14.3 Live | ✅ `34 pass / 1 warning / 0 critical / 0 unknown`；新增四項均 pass，Stats／Info coverage `1/1` |
 | ES 9.0.0 Live | ✅ 同上；確認 Nodes Stats/Info 欄位相容 |
-| ES 8.14.3 `collect.sh → bundle → env -i 離線分析` | ✅ 當時 25 個固定端點完成；Node Context 節點與四項 status 均與 Live 一致。其後擴充至 33 端點，ES-GAP-01～06 尚待重驗 |
+| ES 8.14.3 `collect.sh → bundle → env -i 離線分析` | ✅ 當時 25 個固定端點完成；Node Context 節點與四項 status 均與 Live 一致。此列是擴充前紀錄；現行 39 端點重驗見 §3.6 |
 | 純 parser 2-node fixture | ✅ 所有節點保留並依 name/ID 穩定排序；partial `_nodes` 轉 unknown；cgroup v1 LONG_MAX 類值與 v2 `"max"` 均辨識為 unlimited |
 
 真實 2+ node Podman 叢集尚未執行。現有 ES8、ES9 與兩套 Kibana 已使 Podman VM 記憶體接近上限，不在同一環境硬加節點，避免測試負載本身污染 CPU/memory 判定。
 本機帳密固定為 `elastic / elk-diagnostics-test-only`，只綁 localhost；Kibana 為選配，
 不屬於 ES 健檢的必要依賴。
+
+### 3.6 ES-GAP-01～12 完整重驗 — 2026-07-22
+
+測試環境維持自簽 CA、HTTPS、Basic Auth；ES 8.14.3 與 ES 9.0.0 各跑一次 Live 與
+Bundle，兩條路線共用同一份 Collector／Analyzer。
+
+| 路徑 | 結果 |
+|---|---|
+| ES 8.14.3／ES 9.0.0 Live 基準線 | ✅ 各 52 項：`47 pass / 1 warning / 0 critical / 4 skipped / 0 unknown`；warning 僅單節點 Master |
+| 39 端點 Bundle 基準線 | ✅ 兩版本皆採集完成；`allocation/explain=400` 與未授權 CCR `=403` 為已語意化的預期回應，Live／Bundle 52 項 status 完全一致 |
+| P01～P16 Live＋Bundle | ✅ ES 8／ES 9 全數通過故障確認、診斷斷言、復原與復原後基準線 |
+| P16 index write block | ✅ 兩版本的 `index_read_write_blocks=critical`，Live／Bundle 一致 |
+| 最近重啟 | ✅ 重啟 ES 8 容器後，Live／Bundle 均為 `recent_node_restart=warning` |
+| Memory lock | ✅ 兩版本皆能由 Nodes Info／Stats 取得並判定，coverage `1/1` |
+
+本輪發現一個 Playbook 問題：P06 清除 watermark 後，`_cluster/health` 已先恢復 green，
+但 `_health_report` 的 disk indicator 仍可能短暫維持 red。基準線閘門已改為同時等待
+`_health_report.status=green`，避免把健康指標的非同步刷新誤判成復原失敗。
+
+尚未宣稱真機驗證的異常分支：高 indexing pressure、真實 CCR follower、失敗中的 ML job／
+datafeed、卡住的 planned shutdown、殘留 voting exclusion。這些分支已有 parser／analyzer／
+Bundle 自動化測試，但需要專用負載、多叢集或維護情境，不能由單節點 P01～P16 取代。
 
 ---
 
@@ -198,7 +220,7 @@ Basic Auth、嚴格 CA 驗證**。HTTP／security disabled 不再算有效的端
 
 ## 5. 歷史造壓紀錄（非執行 SOP）
 
-本節保留 2026-07-15／16 的驗證來源與當時配方，不再作為操作入口。現行 P01～P15
+本節保留 2026-07-15／16 的驗證來源與當時配方，不再作為操作入口。現行 P01～P16
 故障定義以 [`fault-scenarios.sh`](../dev/phase0/fault-scenarios.sh) 為唯一執行來源，路線與順序
 依 [`VERIFICATION-PLAYBOOK.md`](./VERIFICATION-PLAYBOOK.md)。避免從本節複製舊指令，否則會繞過
 現行的故障確認與復原閘門。

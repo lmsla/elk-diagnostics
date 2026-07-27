@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -285,6 +286,52 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		results = append(results, analyzer.AllocationAwareness(awareness, topology))
 	} else {
 		results = append(results, unknownf(analyzer.AllocationAwareness(awareness, nil), e))
+	}
+
+	// --- ES-GAP-07～12：第二批單次快照健檢（spec-extended-health）---
+	if pressure, e := client.IndexingPressure(); e == nil {
+		results = append(results, analyzer.IndexingPressure(pressure, t))
+	} else {
+		results = append(results, unknownf(analyzer.IndexingPressure(nil, t), e))
+	}
+	if blocks, e := client.IndexBlocks(); e == nil {
+		results = append(results, analyzer.IndexReadWriteBlocks(blocks))
+	} else {
+		results = append(results, unknownf(analyzer.IndexReadWriteBlocks(nil), e))
+	}
+	if ccr, e := client.CCRStats(); e == nil {
+		results = append(results, analyzer.CCRHealth(ccr, t))
+	} else if errors.Is(e, collector.ErrFeatureUnavailable) {
+		results = append(results, analyzer.CCRFeatureUnavailable())
+	} else {
+		results = append(results, unknownf(analyzer.CCRHealth(collector.CCRStats{}, t), e))
+	}
+	jobs, jobsErr := client.MLJobs()
+	feeds, feedsErr := client.MLDatafeeds()
+	switch {
+	case jobsErr == nil && feedsErr == nil:
+		results = append(results, analyzer.MLHealth(jobs, feeds))
+	case (jobsErr == nil || errors.Is(jobsErr, collector.ErrFeatureUnavailable)) &&
+		(feedsErr == nil || errors.Is(feedsErr, collector.ErrFeatureUnavailable)):
+		results = append(results, analyzer.MLFeatureUnavailable())
+	default:
+		err := jobsErr
+		if err == nil || errors.Is(err, collector.ErrFeatureUnavailable) {
+			err = feedsErr
+		}
+		results = append(results, unknownf(analyzer.MLHealth(nil, nil), err))
+	}
+	if shutdowns, e := client.PlannedShutdowns(); e == nil {
+		results = append(results, analyzer.PlannedShutdownHealth(shutdowns))
+	} else if status, ok := collector.HTTPStatus(e); ok && (status == 403 || status == 404) {
+		results = append(results, analyzer.PlannedShutdownUnavailable(status))
+	} else {
+		results = append(results, unknownf(analyzer.PlannedShutdownHealth(nil), e))
+	}
+	if exclusions, e := client.VotingExclusions(); e == nil {
+		results = append(results, analyzer.VotingExclusionsHealth(exclusions))
+	} else {
+		results = append(results, unknownf(analyzer.VotingExclusionsHealth(nil), e))
 	}
 
 	var pools []collector.WritePoolRow

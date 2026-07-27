@@ -98,6 +98,7 @@ elk-diagnostics：連上 ES、跑一輪唯讀診斷、輸出一份中文健康�
 | [spec-management.md](./spec-management.md) | #27,28,33,34,35 | management.go |
 | [spec-write-bottleneck.md](./spec-write-bottleneck.md) | #16 | write_bottleneck.go |
 | [spec-static-health.md](./spec-static-health.md) | ES-GAP-01～06 單次快照覆蓋擴充 | static_health.go |
+| [spec-extended-health.md](./spec-extended-health.md) | ES-GAP-07～12 單次快照與選配功能覆蓋擴充 | extended_health.go + node_context.go |
 | [spec-report.md](./spec-report.md) | 最終報告（結果契約 / JSON / 離線 HTML / 收斂規則 / check vs diagnose） | reporter/json.go, html.go + internal/diagnostic |
 
 > **所有 analyzer 一律產出 spec-report.md §1 的 `DiagnosticResult`，不自行輸出文字。** 報告的組裝、收斂、渲染全在 reporter，與診斷邏輯解耦。

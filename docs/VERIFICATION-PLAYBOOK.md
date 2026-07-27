@@ -7,7 +7,7 @@
 | A：Live 直連 | Binary 直接連 ES 時能否抓到真實故障 | [`VERIFICATION-LIVE-PLAYBOOK.md`](./VERIFICATION-LIVE-PLAYBOOK.md) |
 | B：Bundle 客戶流程 | 客戶只執行 `collect.sh`，離線分析能否抓到故障 | [`VERIFICATION-BUNDLE-PLAYBOOK.md`](./VERIFICATION-BUNDLE-PLAYBOOK.md) |
 
-兩條路線都使用同一份 [`fault-scenarios.sh`](../dev/phase0/fault-scenarios.sh) 製造、確認與復原 P01～P15，避免故障配方漂移。
+兩條路線都使用同一份 [`fault-scenarios.sh`](../dev/phase0/fault-scenarios.sh) 製造、確認與復原 P01～P16，避免故障配方漂移。
 
 ## 執行順序
 

@@ -8,7 +8,7 @@
 | # | 項目 | 說明 | 出處 |
 |---|---|---|---|
 | 1 | `--redact` | bundle 含 index/node/host 名與 mapping 欄位名。做在**採集端**（collect.sh 或 bundle 後處理），客戶審的是「什麼東西離開機房」；`_manifest.json` 的 host 欄位一併處理 | spec-bundle §5.2、討論總結 §13.4 |
-| 2 | 重錄 golden fixture | 從真機健康／異常兩態各錄一份完整 bundle 當 fixture，讓 golden test 覆蓋全部 33 個固定端點（現有 fixture 缺新端點，靠 404 跳過）。collect.sh 產出即 fixture 格式，成本低 | VERIFICATION §6.2 |
+| 2 | 重錄 golden fixture | 從真機健康／異常兩態各錄一份完整 bundle 當 fixture，讓 golden test 覆蓋全部 39 個固定端點（現有 fixture 缺新端點，靠 404 跳過）。collect.sh 產出即 fixture 格式，成本低 | VERIFICATION §6.2 |
 | 3 | diagnose 定位決策 | 二選一：補 `--from-bundle` 支援（規格需先定「症狀樹在離線資料下哪些節點降級」），或在 README/spec 明文「diagnose 僅供可直連時使用」。決策前不再對症狀樹投資 | 2026-07-15 通盤檢視 |
 | 4 | #28 findings 補 ES reason | transform failed 時把 `_stats.reason` 截斷後放入 findings，現在只有 `state=failed`，現場不可行動 | VERIFICATION §3.1 Group A 批次註記 |
 

@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>elk-diagnostics ES8 Manual Verification</title>
+<style>
+body{font-family:-apple-system,BlinkMacSystemFont,"PingFang TC",sans-serif;margin:40px;color:#111}
+h1{font-size:32px}p{color:#555}table{border-collapse:collapse;width:100%;margin-top:24px}
+th,td{border:1px solid #bbb;padding:10px;text-align:left}th{background:#ededed}
+a{color:#1769aa}
+</style>
+</head>
+<body>
+<h1>elk-diagnostics ES 8 人工驗證報告索引</h1>
+<p>基線：Elasticsearch 8.14.3，green，1 node，Basic license，HTTPS + Basic Auth。</p>
+<table>
+<thead><tr><th>案例</th><th>情境</th><th>目標規則</th><th>Fault</th><th>Post</th><th>驗證等級</th><th colspan="2">報告</th></tr></thead>
+<tbody><tr>
+      <td>P01</td>
+      <td>叢集層 Allocation 封鎖</td>
+      <td>cluster_health</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P01-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P01/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P02</td>
+      <td>Index 層 Allocation 封鎖</td>
+      <td>cluster_health</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P02-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P02/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P03</td>
+      <td>Replica 無法配置</td>
+      <td>cluster_health</td>
+      <td>warning</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P03-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P03/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P04</td>
+      <td>Index Shards-per-node 超限</td>
+      <td>cluster_health</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P04-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P04/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P05</td>
+      <td>叢集 Shard 容量達上限</td>
+      <td>shards_capacity</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Conditional</td>
+      <td><a href="./P05-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P05/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P06</td>
+      <td>磁碟 Watermark 超限</td>
+      <td>disk</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P06-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P06/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P07</td>
+      <td>ILM 被停止</td>
+      <td>ilm_slm_status</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P07-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P07/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P08</td>
+      <td>ILM 進入 ERROR Step</td>
+      <td>ilm_slm_status</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P08-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P08/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P09</td>
+      <td>Mapping 欄位膨脹</td>
+      <td>mapping_explosion</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P09-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P09/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P10</td>
+      <td>Search Slow Log 設定盤點</td>
+      <td>search_slow_log</td>
+      <td>pass</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P10-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P10/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P11</td>
+      <td>Watcher 被手動停止</td>
+      <td>watcher</td>
+      <td>warning</td>
+      <td>pass</td>
+      <td>Partial</td>
+      <td><a href="./P11-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P11/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P12</td>
+      <td>Transform 因欄位型別衝突失敗</td>
+      <td>transforms</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P12-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P12/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P13</td>
+      <td>Legacy Monitoring 設定已棄用</td>
+      <td>upgrade_deprecations</td>
+      <td>warning</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P13-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P13/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P14</td>
+      <td>Remote Cluster 無法連線</td>
+      <td>remote_clusters</td>
+      <td>warning</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P14-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P14/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P15</td>
+      <td>Ingest Pipeline 持續失敗</td>
+      <td>ingest_pipeline_errors</td>
+      <td>warning</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P15-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P15/bundle-report.html">Post HTML</a></td>
+    </tr>
+<tr>
+      <td>P16</td>
+      <td>Index Write Block</td>
+      <td>index_read_write_blocks</td>
+      <td>critical</td>
+      <td>pass</td>
+      <td>Pass</td>
+      <td><a href="./P16-fault/bundle-report.html">Fault HTML</a></td>
+      <td><a href="./post-P16/bundle-report.html">Post HTML</a></td>
+    </tr></tbody>
+</table>
+</body>
+</html>

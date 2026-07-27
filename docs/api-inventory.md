@@ -44,8 +44,14 @@
 | GET | `/_ssl/certificates` | 回應節點載入的 TLS 憑證與到期日（單節點視角） |
 | GET | `/_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis` | 叢集 License 狀態、類型與到期日 |
 | GET | `/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes` | 節點角色與 allocation awareness attributes |
+| GET | `/_nodes/stats/indexing_pressure?filter_path=_nodes,nodes.*.name,nodes.*.indexing_pressure.memory.current.combined_coordinating_and_primary_in_bytes,nodes.*.indexing_pressure.memory.current.replica_in_bytes,nodes.*.indexing_pressure.memory.current.all_in_bytes,nodes.*.indexing_pressure.memory.limit_in_bytes` | 各節點當下 indexing pressure 記憶體使用量與限制（不使用累積 rejection 下趨勢結論） |
+| GET | `/_ccr/stats?filter_path=auto_follow_stats.number_of_failed_follow_indices,auto_follow_stats.number_of_failed_remote_cluster_state_requests,auto_follow_stats.recent_auto_follow_errors,follow_stats.indices.index,follow_stats.indices.total_global_checkpoint_lag,follow_stats.indices.shards.shard_id,follow_stats.indices.shards.leader_global_checkpoint,follow_stats.indices.shards.follower_global_checkpoint,follow_stats.indices.shards.fatal_exception,follow_stats.indices.shards.read_exceptions` | CCR follower checkpoint lag、fatal/read exception 與 auto-follow 失敗 |
+| GET | `/_ml/anomaly_detectors/_stats?allow_no_match=true&filter_path=count,jobs.job_id,jobs.state,jobs.assignment_explanation` | Machine Learning anomaly detection job 執行狀態 |
+| GET | `/_ml/datafeeds/_stats?allow_no_match=true&filter_path=count,datafeeds.datafeed_id,datafeeds.state,datafeeds.assignment_explanation,datafeeds.timing_stats.job_id` | Machine Learning datafeed 執行與 assignment 狀態 |
+| GET | `/_nodes/shutdown` | 已登記的 planned shutdown 狀態（選配高權限檢查） |
+| GET | `/_cluster/state/metadata?filter_path=metadata.cluster_coordination.voting_config_exclusions` | cluster state 中尚未清除的 voting configuration exclusions |
 
-共 33 個固定端點。
+共 39 個固定端點。
 
 另有 1 個動態端點：
 

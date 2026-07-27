@@ -92,6 +92,9 @@ wait_for_min() {
 
 baseline_verify() {
   wait_for_value '/_cluster/health' '.status' 'green' 'cluster_health'
+  # cluster health 先恢復不代表 _health_report 的各 indicator 已完成下一輪計算。
+  # 尤其 P06 移除 watermark 後，disk indicator 可能短暫保留 red；必須等報告地基也收斂。
+  wait_for_value '/_health_report' '.status' 'green' 'health_report'
   wait_for_value '/_ilm/status' '.operation_mode' 'RUNNING' 'ilm_mode'
   wait_for_value '/_watcher/stats' '.manually_stopped | tostring' 'false' 'watcher_stopped'
 
@@ -108,9 +111,9 @@ baseline_verify() {
   ' >/dev/null
 
   wait_for_value '/_all/_settings?flat_settings=true&expand_wildcards=all' \
-    '[to_entries[] | select(
-      (.value.settings["index.blocks.read_only_allow_delete"] | tostring) == "true"
-    )] | length' '0' 'read_only_indices'
+    '[to_entries[] | .key as $index | .value.settings | to_entries[] | select(
+      (.key | startswith("index.blocks.")) and (.value | tostring) == "true"
+    ) | $index] | unique | length' '0' 'blocked_indices'
 
   wait_for_value '/_remote/info' \
     'has("playbook-remote") | tostring' 'false' 'playbook_remote_exists'
@@ -195,8 +198,12 @@ p04_restore() {
 }
 
 p05_trigger() {
-  es PUT '/playbook-capacity-a' --data '{}' | jq .
-  es PUT '/playbook-capacity-b' --data '{}' | jq .
+  es PUT '/playbook-capacity-a' --data '{
+    "settings":{"number_of_replicas":0}
+  }' | jq .
+  es PUT '/playbook-capacity-b' --data '{
+    "settings":{"number_of_replicas":0}
+  }' | jq .
   active_shards=$(es GET '/_cluster/health' | jq -r '.active_shards')
   shard_limit=$((active_shards - 1))
   test "$shard_limit" -ge 1
@@ -206,6 +213,7 @@ p05_trigger() {
 }
 
 p05_verify() {
+  wait_for_value '/_cluster/health' '.status' 'green' 'cluster_health'
   wait_for_value '/_health_report' '.indicators.shards_capacity.status' 'red' 'shards_capacity'
 }
 
@@ -262,6 +270,7 @@ p07_restore() {
 p08_trigger() {
   es PUT '/playbook-ilmerr-000001' --data '{
     "settings":{
+      "number_of_replicas":0,
       "index.lifecycle.name":"playbook-policy-does-not-exist",
       "index.lifecycle.rollover_alias":"playbook-ilmerr"
     }
@@ -269,6 +278,8 @@ p08_trigger() {
 }
 
 p08_verify() {
+  wait_for_value '/_cluster/health/playbook-ilmerr-000001' \
+    '.status' 'green' 'index_health'
   wait_for_value '/playbook-ilmerr-000001/_ilm/explain' \
     '.indices[]?.step' 'ERROR' 'ilm_step'
 }
@@ -283,7 +294,10 @@ p09_trigger() {
       {
         "index_patterns":["playbook-explosion-*"],
         "data_stream":{},
-        "template":{"mappings":{"properties":{"@timestamp":{"type":"date"}}}}
+        "template":{
+          "settings":{"number_of_replicas":0},
+          "mappings":{"properties":{"@timestamp":{"type":"date"}}}
+        }
       };
       .template.mappings.properties["field_\($i)"]={"type":"keyword"}
     )')
@@ -294,6 +308,8 @@ p09_trigger() {
 }
 
 p09_verify() {
+  wait_for_value '/_cluster/health/playbook-explosion-default' \
+    '.status' 'green' 'index_health'
   wait_for_min '/playbook-explosion-default/_mapping' \
     '[.[] | .mappings.properties | length] | max // 0' 1000 'mapping_fields'
 }
@@ -305,11 +321,16 @@ p09_restore() {
 
 p10_trigger() {
   es PUT '/playbook-slowlog' --data '{
-    "settings":{"index.search.slowlog.threshold.query.warn":"10s"}
+    "settings":{
+      "number_of_replicas":0,
+      "index.search.slowlog.threshold.query.warn":"10s"
+    }
   }' | jq .
 }
 
 p10_verify() {
+  wait_for_value '/_cluster/health/playbook-slowlog' \
+    '.status' 'green' 'index_health'
   wait_for_value '/playbook-slowlog/_settings?flat_settings=true' \
     '.["playbook-slowlog"].settings["index.search.slowlog.threshold.query.warn"]' \
     '10s' 'slowlog_threshold'
@@ -334,10 +355,12 @@ p11_restore() {
 
 p12_trigger() {
   es PUT '/playbook-tf-src' --data '{
+    "settings":{"number_of_replicas":0},
     "mappings":{"properties":{"g":{"type":"keyword"}}}
   }' | jq .
   es POST '/playbook-tf-src/_doc?refresh=true' --data '{"g":"abc"}' | jq .
   es PUT '/playbook-tf-dest' --data '{
+    "settings":{"number_of_replicas":0},
     "mappings":{"properties":{"g":{"type":"long"}}}
   }' | jq .
   es PUT '/_transform/playbook-fail' --data '{
@@ -353,6 +376,8 @@ p12_trigger() {
 }
 
 p12_verify() {
+  wait_for_value '/_cluster/health/playbook-tf-src,playbook-tf-dest' \
+    '.status' 'green' 'index_health'
   wait_for_value '/_transform/playbook-fail/_stats' \
     '.transforms[0].state' 'failed' 'transform_state'
 }
@@ -405,6 +430,9 @@ p14_restore() {
 }
 
 p15_trigger() {
+  es PUT '/playbook-ingest' --data '{
+    "settings":{"number_of_replicas":0}
+  }' | jq .
   es PUT '/_ingest/pipeline/playbook-failpipe' --data '{
     "processors":[{"fail":{"message":"playbook deliberate failure"}}]
   }' | jq .
@@ -417,6 +445,8 @@ p15_trigger() {
 }
 
 p15_verify() {
+  wait_for_value '/_cluster/health/playbook-ingest' \
+    '.status' 'green' 'index_health'
   wait_for_min '/_nodes/stats/ingest?filter_path=nodes.*.ingest.pipelines.playbook-failpipe' \
     '[.nodes[].ingest.pipelines["playbook-failpipe"].failed // 0] | add // 0' \
     10 'ingest_failed'
@@ -427,9 +457,28 @@ p15_restore() {
   es_allow_404 DELETE '/playbook-ingest' | jq .
 }
 
+p16_trigger() {
+  es PUT '/playbook-write-block' --data '{
+    "settings":{"number_of_shards":1,"number_of_replicas":0}
+  }' | jq .
+  es PUT '/playbook-write-block/_settings' --data '{
+    "index.blocks.write":true
+  }' | jq .
+}
+
+p16_verify() {
+  wait_for_value '/playbook-write-block/_settings?flat_settings=true' \
+    '.["playbook-write-block"].settings["index.blocks.write"] | tostring' \
+    'true' 'index_write_block'
+}
+
+p16_restore() {
+  es_allow_404 DELETE '/playbook-write-block' | jq .
+}
+
 usage() {
   cat >&2 <<'USAGE'
-用法：./dev/phase0/fault-scenarios.sh <P01..P15|baseline> <trigger|verify|restore>
+用法：./dev/phase0/fault-scenarios.sh <P01..P16|baseline> <trigger|verify|restore>
 
 範例：
   ./dev/phase0/fault-scenarios.sh baseline verify
@@ -448,7 +497,7 @@ if [ "$scenario" = baseline ] && [ "$action" = verify ]; then
 fi
 
 case "$scenario" in
-  P01|P02|P03|P04|P05|P06|P07|P08|P09|P10|P11|P12|P13|P14|P15) ;;
+  P01|P02|P03|P04|P05|P06|P07|P08|P09|P10|P11|P12|P13|P14|P15|P16) ;;
   *) usage; exit 10 ;;
 esac
 

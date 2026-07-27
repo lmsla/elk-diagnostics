@@ -4,7 +4,7 @@
 # 由 `elk-diagnostics collect-script` 依端點清單自動產生，請勿手動編輯。
 #   工具版本：0.0.4-mvp
 #
-# 這支腳本只做一件事：對 Elasticsearch 送出 33 個唯讀 GET 請求，把原始回應存成檔案。
+# 這支腳本只做一件事：對 Elasticsearch 送出 39 個唯讀 GET 請求，把原始回應存成檔案。
 # 它不做任何判斷、不修改叢集、不對外傳送任何資料。
 #
 # 產出的目錄（bundle）可帶到別台機器離線分析，客戶環境不需要安裝或執行本工具：
@@ -110,7 +110,7 @@ cat > "$MANIFEST" <<MANIFESTEOF
   "collect_script_version": "0.0.4-mvp",
   "collected_at": "$COLLECTED_AT",
   "host": "$HOST",
-  "endpoints_total": 33
+  "endpoints_total": 39
 }
 MANIFESTEOF
 
@@ -119,7 +119,7 @@ ERRLOG="$OUT/_errors.log"
 : > "$STATUS"
 : > "$ERRLOG"
 
-TOTAL=33
+TOTAL=39
 n=0
 failed=0
 
@@ -212,6 +212,18 @@ fetch '/_ssl/certificates' 'ssl_certificates.json'
 fetch '/_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis' 'license.json'
 # 節點角色與 allocation awareness attributes
 fetch '/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes' 'nodes_topology.json'
+# 各節點當下 indexing pressure 記憶體使用量與限制（不使用累積 rejection 下趨勢結論）
+fetch '/_nodes/stats/indexing_pressure?filter_path=_nodes,nodes.*.name,nodes.*.indexing_pressure.memory.current.combined_coordinating_and_primary_in_bytes,nodes.*.indexing_pressure.memory.current.replica_in_bytes,nodes.*.indexing_pressure.memory.current.all_in_bytes,nodes.*.indexing_pressure.memory.limit_in_bytes' 'nodes_indexing_pressure.json'
+# CCR follower checkpoint lag、fatal/read exception 與 auto-follow 失敗
+fetch '/_ccr/stats?filter_path=auto_follow_stats.number_of_failed_follow_indices,auto_follow_stats.number_of_failed_remote_cluster_state_requests,auto_follow_stats.recent_auto_follow_errors,follow_stats.indices.index,follow_stats.indices.total_global_checkpoint_lag,follow_stats.indices.shards.shard_id,follow_stats.indices.shards.leader_global_checkpoint,follow_stats.indices.shards.follower_global_checkpoint,follow_stats.indices.shards.fatal_exception,follow_stats.indices.shards.read_exceptions' 'ccr_stats.json'
+# Machine Learning anomaly detection job 執行狀態
+fetch '/_ml/anomaly_detectors/_stats?allow_no_match=true&filter_path=count,jobs.job_id,jobs.state,jobs.assignment_explanation' 'ml_job_stats.json'
+# Machine Learning datafeed 執行與 assignment 狀態
+fetch '/_ml/datafeeds/_stats?allow_no_match=true&filter_path=count,datafeeds.datafeed_id,datafeeds.state,datafeeds.assignment_explanation,datafeeds.timing_stats.job_id' 'ml_datafeed_stats.json'
+# 已登記的 planned shutdown 狀態（選配高權限檢查）
+fetch '/_nodes/shutdown' 'planned_shutdown.json'
+# cluster state 中尚未清除的 voting configuration exclusions
+fetch '/_cluster/state/metadata?filter_path=metadata.cluster_coordination.voting_config_exclusions' 'voting_exclusions.json'
 
 echo
 echo "完成：$TOTAL 個端點，其中 $failed 個非 2xx。"

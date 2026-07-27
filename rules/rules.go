@@ -40,15 +40,19 @@ type Thresholds struct {
 		CgroupMemoryWarnPct int `yaml:"cgroup_memory_warn_pct"`
 	} `yaml:"node_context"`
 	StaticHealth struct {
-		PendingTaskWarnSeconds int `yaml:"pending_task_warn_seconds"`
-		PendingTaskCritSeconds int `yaml:"pending_task_crit_seconds"`
-		LongTaskWarnSeconds    int `yaml:"long_task_warn_seconds"`
-		ShardLargeWarnGB       int `yaml:"shard_large_warn_gb"`
-		ShardSmallMaxMB        int `yaml:"shard_small_max_mb"`
-		ShardSmallCountWarn    int `yaml:"shard_small_count_warn"`
-		SnapshotWarnHours      int `yaml:"snapshot_warn_hours"`
-		SnapshotCritHours      int `yaml:"snapshot_crit_hours"`
-		ExpiryWarnDays         int `yaml:"expiry_warn_days"`
+		PendingTaskWarnSeconds   int `yaml:"pending_task_warn_seconds"`
+		PendingTaskCritSeconds   int `yaml:"pending_task_crit_seconds"`
+		LongTaskWarnSeconds      int `yaml:"long_task_warn_seconds"`
+		ShardLargeWarnGB         int `yaml:"shard_large_warn_gb"`
+		ShardSmallMaxMB          int `yaml:"shard_small_max_mb"`
+		ShardSmallCountWarn      int `yaml:"shard_small_count_warn"`
+		SnapshotWarnHours        int `yaml:"snapshot_warn_hours"`
+		SnapshotCritHours        int `yaml:"snapshot_crit_hours"`
+		ExpiryWarnDays           int `yaml:"expiry_warn_days"`
+		IndexingPressureWarnPct  int `yaml:"indexing_pressure_warn_pct"`
+		IndexingPressureCritPct  int `yaml:"indexing_pressure_crit_pct"`
+		RecentRestartWarnMinutes int `yaml:"recent_restart_warn_minutes"`
+		CCRLagWarnOps            int `yaml:"ccr_lag_warn_ops"`
 	} `yaml:"static_health"`
 }
 
@@ -60,6 +64,7 @@ func Load(overridePath string) (Thresholds, []string) {
 	if err := yaml.Unmarshal(defaultYAML, &t); err != nil {
 		panic("內嵌 rules/default.yaml 解析失敗（不應發生）：" + err.Error())
 	}
+	defaults := t
 	if overridePath == "" {
 		return t, nil
 	}
@@ -96,7 +101,17 @@ func Load(overridePath string) (Thresholds, []string) {
 	mergeInt(&t.StaticHealth.SnapshotWarnHours, o.StaticHealth.SnapshotWarnHours)
 	mergeInt(&t.StaticHealth.SnapshotCritHours, o.StaticHealth.SnapshotCritHours)
 	mergeInt(&t.StaticHealth.ExpiryWarnDays, o.StaticHealth.ExpiryWarnDays)
-	return t, nil
+	mergeInt(&t.StaticHealth.IndexingPressureWarnPct, o.StaticHealth.IndexingPressureWarnPct)
+	mergeInt(&t.StaticHealth.IndexingPressureCritPct, o.StaticHealth.IndexingPressureCritPct)
+	mergeInt(&t.StaticHealth.RecentRestartWarnMinutes, o.StaticHealth.RecentRestartWarnMinutes)
+	mergeInt(&t.StaticHealth.CCRLagWarnOps, o.StaticHealth.CCRLagWarnOps)
+	var warnings []string
+	if t.StaticHealth.IndexingPressureWarnPct >= t.StaticHealth.IndexingPressureCritPct {
+		warnings = append(warnings, "indexing_pressure_warn_pct 必須小於 indexing_pressure_crit_pct，改用內建預設值")
+		t.StaticHealth.IndexingPressureWarnPct = defaults.StaticHealth.IndexingPressureWarnPct
+		t.StaticHealth.IndexingPressureCritPct = defaults.StaticHealth.IndexingPressureCritPct
+	}
+	return t, warnings
 }
 
 func mergeInt(base *int, override int) {

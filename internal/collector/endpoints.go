@@ -48,6 +48,12 @@ const (
 	EpSSLCertificates       = "/_ssl/certificates"
 	EpLicense               = "/_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis"
 	EpNodesTopology         = "/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes"
+	EpNodesIndexingPressure = "/_nodes/stats/indexing_pressure?filter_path=_nodes,nodes.*.name,nodes.*.indexing_pressure.memory.current.combined_coordinating_and_primary_in_bytes,nodes.*.indexing_pressure.memory.current.replica_in_bytes,nodes.*.indexing_pressure.memory.current.all_in_bytes,nodes.*.indexing_pressure.memory.limit_in_bytes"
+	EpCCRStats              = "/_ccr/stats?filter_path=auto_follow_stats.number_of_failed_follow_indices,auto_follow_stats.number_of_failed_remote_cluster_state_requests,auto_follow_stats.recent_auto_follow_errors,follow_stats.indices.index,follow_stats.indices.total_global_checkpoint_lag,follow_stats.indices.shards.shard_id,follow_stats.indices.shards.leader_global_checkpoint,follow_stats.indices.shards.follower_global_checkpoint,follow_stats.indices.shards.fatal_exception,follow_stats.indices.shards.read_exceptions"
+	EpMLJobStats            = "/_ml/anomaly_detectors/_stats?allow_no_match=true&filter_path=count,jobs.job_id,jobs.state,jobs.assignment_explanation"
+	EpMLDatafeedStats       = "/_ml/datafeeds/_stats?allow_no_match=true&filter_path=count,datafeeds.datafeed_id,datafeeds.state,datafeeds.assignment_explanation,datafeeds.timing_stats.job_id"
+	EpPlannedShutdown       = "/_nodes/shutdown"
+	EpVotingExclusions      = "/_cluster/state/metadata?filter_path=metadata.cluster_coordination.voting_config_exclusions"
 )
 
 // Endpoint 是 check 會呼叫的單一唯讀端點。Purpose 供 API 清單與採集腳本註解使用，
@@ -93,6 +99,12 @@ var Endpoints = []Endpoint{
 	{EpSSLCertificates, "ssl_certificates.json", "回應節點載入的 TLS 憑證與到期日（單節點視角）"},
 	{EpLicense, "license.json", "叢集 License 狀態、類型與到期日"},
 	{EpNodesTopology, "nodes_topology.json", "節點角色與 allocation awareness attributes"},
+	{EpNodesIndexingPressure, "nodes_indexing_pressure.json", "各節點當下 indexing pressure 記憶體使用量與限制（不使用累積 rejection 下趨勢結論）"},
+	{EpCCRStats, "ccr_stats.json", "CCR follower checkpoint lag、fatal/read exception 與 auto-follow 失敗"},
+	{EpMLJobStats, "ml_job_stats.json", "Machine Learning anomaly detection job 執行狀態"},
+	{EpMLDatafeedStats, "ml_datafeed_stats.json", "Machine Learning datafeed 執行與 assignment 狀態"},
+	{EpPlannedShutdown, "planned_shutdown.json", "已登記的 planned shutdown 狀態（選配高權限檢查）"},
+	{EpVotingExclusions, "voting_exclusions.json", "cluster state 中尚未清除的 voting configuration exclusions"},
 }
 
 // EpIndexSettings 組出單一 index 的 settings 端點。

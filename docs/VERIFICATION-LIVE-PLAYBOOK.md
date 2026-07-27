@@ -7,10 +7,10 @@
 ## 1. 邊界
 
 - 禁止在客戶或共用環境執行。
-- P01～P15 一次只執行一案。
+- P01～P16 一次只執行一案。
 - 故障由 [`fault-scenarios.sh`](../dev/phase0/fault-scenarios.sh) 以 curl 製造與復原。
 - `elk-diagnostics` 只做唯讀診斷。
-- 每案結束必須回到基準線：無 critical／unknown、只有預期的單節點 Master warning，且 Node Context 四項診斷皆 pass。
+- 每案結束必須回到基準線：無 critical／unknown；只允許單節點 Master 與啟動一小時內的 restart warning。
 
 ## 2. 準備 ES 8
 
@@ -31,13 +31,16 @@ export ELK_DIAGNOSTICS_CA_CERT="$CA_CERT"
 
 export TOOL_BIN="$PWD/elk-diagnostics"
 export FAULT_CMD="$PWD/dev/phase0/fault-scenarios.sh"
-export EVIDENCE_ROOT="${TMPDIR:-/tmp}/elk-diagnostics-live-${ES_LABEL}-$(date +%Y%m%d-%H%M%S)"
+export EVIDENCE_ROOT="$PWD/reports/live-playbook-${ES_LABEL}-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$EVIDENCE_ROOT"
 
 test -x "$TOOL_BIN"
 test -x "$FAULT_CMD"
 "$FAULT_CMD" baseline verify
 ```
+
+Live JSON 報告集中在 repo 根目錄的 `reports/live-playbook-*`；`reports/` 已由
+`.gitignore` 排除，不會混入待提交檔案。
 
 改驗 ES 9 時開新的 Terminal，將前兩行改為：
 
@@ -95,9 +98,17 @@ live_baseline_gate() {
 	jq -e '
 	  .summary.critical == 0 and
 	  .summary.unknown == 0 and
-	  ([.results[] | select(.status == "warning") | .id] | sort) == ["master_stability_context"] and
-	  (["node_api_coverage","node_swap_usage","node_file_descriptor_pressure","node_cgroup_memory_pressure"]
+	  ([.results[] | select(.status == "warning") | .id] - ["master_stability_context","recent_node_restart"] | length) == 0 and
+	  any(.results[]; .id == "master_stability_context" and .status == "warning") and
+	  (["node_api_coverage","node_swap_usage","node_file_descriptor_pressure","node_cgroup_memory_pressure","node_memory_lock"]
 	    - [.results[] | select(.status == "pass") | .id] | length == 0) and
+	  any(.results[]; .id == "recent_node_restart" and (.status == "pass" or .status == "warning")) and
+	  any(.results[]; .id == "indexing_pressure" and .status == "pass") and
+	  any(.results[]; .id == "index_read_write_blocks" and .status == "pass") and
+	  any(.results[]; .id == "ccr_health" and (.status == "pass" or .status == "skipped")) and
+	  any(.results[]; .id == "ml_jobs_datafeeds" and (.status == "pass" or .status == "skipped")) and
+	  any(.results[]; .id == "planned_shutdown" and (.status == "pass" or .status == "skipped")) and
+	  any(.results[]; .id == "voting_config_exclusions" and .status == "pass") and
 	  (.node_context.stats_coverage | .available and .failed == 0 and .successful == .total and .returned == .total) and
 	  (.node_context.info_coverage | .available and .failed == 0 and .successful == .total and .returned == .total)
 	' "$report" >/dev/null
@@ -142,6 +153,7 @@ assert_live_case() {
       ;;
     P14) assert_result "$report" remote_clusters warning ;;
     P15) assert_result "$report" ingest_pipeline_errors warning ;;
+    P16) assert_result "$report" index_read_write_blocks critical ;;
     *) echo "未知案例：$case_id" >&2; return 1 ;;
   esac
 }
@@ -177,9 +189,9 @@ run_live_case() {
 live_baseline_gate
 ```
 
-通過條件：無 critical／unknown；唯一 warning 是單節點 Master 結構；四項 Node Context 診斷均 pass，且 Stats／Info coverage 完整。不要鎖死 pass 總數，新增診斷時不應讓基準線誤判失敗。
+通過條件：無 critical／unknown；warning 只允許單節點 Master 與測試機剛啟動造成的 `recent_node_restart`。Node API coverage 完整，ES-GAP-07～12 的基準線結果符合函式中的明確斷言。不要鎖死 pass 總數。
 
-## 5. P01～P15
+## 5. P01～P16
 
 一次只執行一行；成功回到 prompt 後才執行下一案：
 
@@ -199,6 +211,7 @@ run_live_case P12
 run_live_case P13
 run_live_case P14
 run_live_case P15
+run_live_case P16
 ```
 
 | 案例 | 故障 | 主要驗證 |
@@ -207,17 +220,18 @@ run_live_case P15
 | P02 | Index allocation 封鎖 | #20、#32，#19 不誤報 |
 | P03 | 單節點 replica | #21、#37 `same_shard` |
 | P04 | Index shards-per-node 超限 | #22、#37 `shards_limit` |
-| P05 | 叢集 shard 容量超限 | #10、#23 |
+| P05 | 叢集 shard 容量超限；cluster 維持 green | #10、#23 |
 | P06 | 磁碟 watermark | #3、#4 |
 | P07 | ILM stopped | #5 |
-| P08 | ILM ERROR step | #5、`ilm-stuck` |
-| P09 | Mapping 欄位膨脹 | #11、data stream backing index |
-| P10 | Search slow log 開啟 | #31 雙態讀值 |
+| P08 | ILM ERROR step | 測試 Index 維持 green；#5、`ilm-stuck` |
+| P09 | Mapping 欄位膨脹；測試 index 維持 green | #11、data stream backing index |
+| P10 | Search slow log 開啟；測試 index 維持 green | #31 雙態讀值 |
 | P11 | Watcher stopped | #27 |
-| P12 | Transform failed | #28 |
+| P12 | Transform failed；source／destination index 維持 green | #28 |
 | P13 | Legacy monitoring | #33、#34 |
 | P14 | Remote cluster 斷線 | #35 |
-| P15 | Ingest pipeline 失敗 | #13 |
+| P15 | Ingest pipeline 失敗；測試 index 維持 green | #13 |
+| P16 | Index write block | ES-GAP-08 `index_read_write_blocks=critical` |
 
 ## 6. 用 Binary 顯示 Live 診斷
 

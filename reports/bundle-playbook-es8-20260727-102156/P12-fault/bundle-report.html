@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>elk-diagnostics 診斷報告</title>
+<style>
+  :root{--pass:#2e7d32;--warning:#ed6c02;--critical:#c62828;--skipped:#757575;--unknown:#455a64;}
+  *{box-sizing:border-box}
+  body{font-family:-apple-system,"Segoe UI","Microsoft JhengHei",sans-serif;margin:0;color:#1a1a1a;background:#f5f5f5;line-height:1.6}
+  .wrap{max-width:960px;margin:0 auto;padding:24px}
+  header h1{margin:0 0 4px;font-size:20px}
+  header .meta{color:#555;font-size:13px}
+  header .meta span{margin-right:16px}
+  .banner{margin:16px 0;padding:16px 20px;border-radius:8px;color:#fff;font-size:18px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
+  .banner.pass{background:var(--pass)}.banner.warning{background:var(--warning)}.banner.critical{background:var(--critical)}.banner.unknown{background:var(--unknown)}
+  .counts{font-size:13px;font-weight:400}
+  .counts b{font-weight:700}
+  .version-notice{margin:16px 0;padding:10px 16px;background:#fff8e1;border:1px solid #ffca28;border-radius:6px;color:#795548;font-size:13px}
+  .hints{margin:16px 0;padding:10px 16px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px}
+  .hints h4{margin:0 0 6px;font-size:13px;color:#795548}
+  .hints ul{margin:0;padding-left:20px}
+  .hints li{font-size:14px;margin:2px 0}
+  h2{font-size:15px;margin:24px 0 8px;padding-bottom:4px;border-bottom:2px solid #ddd}
+	.node-coverage{background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:10px 14px;font-size:13px;margin:8px 0}
+	.node-issues{color:var(--unknown);margin:6px 0 0;padding-left:20px}
+	.node-card{background:#fff;border:1px solid #d8dee4;border-radius:6px;margin:8px 0;overflow:hidden}
+	.node-card summary{background:#f8fafc}
+	.node-body{padding:10px 14px 14px;border-top:1px solid #e8e8e8}
+	.node-body h4{font-size:13px;margin:12px 0 4px}
+	.node-grid{display:grid;grid-template-columns:180px 1fr;gap:3px 12px;font-size:13px}
+	.node-grid dt{font-weight:600;color:#444}.node-grid dd{margin:0;word-break:break-word}
+	.node-table{width:100%;border-collapse:collapse;font-size:12px}.node-table th,.node-table td{border:1px solid #ddd;padding:4px 6px;text-align:left}.node-table th{background:#f5f5f5}
+  .card{background:#fff;border:1px solid #e0e0e0;border-left-width:5px;border-radius:6px;margin:8px 0;overflow:hidden}
+  .card.pass{border-left-color:var(--pass)}.card.warning{border-left-color:var(--warning)}.card.critical{border-left-color:var(--critical)}.card.skipped{border-left-color:var(--skipped)}.card.unknown{border-left-color:var(--unknown)}
+  summary{padding:10px 14px;cursor:pointer;font-weight:600;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary .sm{font-weight:400;color:#444}
+  summary .src{float:right;font-size:11px;color:#888;font-weight:400}
+  .body{padding:4px 16px 14px;border-top:1px solid #f0f0f0}
+  .body h4{margin:12px 0 4px;font-size:13px;color:#333}
+  .body ul{margin:0;padding-left:20px}
+  .body li{margin:2px 0;font-size:14px}
+  code{background:#f0f0f0;padding:1px 6px;border-radius:4px;font-size:13px}
+  .extra,.vw{font-size:13px;color:var(--warning);margin:8px 0 0}
+  a{color:#1565c0;word-break:break-all}
+  footer{margin:24px 0;padding:14px;background:#eceff1;border-radius:6px;font-size:12px;color:#555}
+  @media print{body{background:#fff}.card{break-inside:avoid}summary{cursor:default}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>elk-diagnostics 診斷報告</h1>
+  <div class="meta">
+    <span>叢集：docker-cluster</span>
+    <span>(bundle) /Users/russell.chen/workspace/lab/elk-diagnostics/bundle-playbook-es8-20260727-102156/P12-fault/bundle</span>
+    <span>ES 8.14.3</span>
+    <span>模式：check</span>
+    <span>2026-07-27T09:35:21Z</span>
+    <span>工具 0.0.4-mvp</span>
+    <span>採集時間：2026-07-27T08:32:01Z（採集腳本 0.0.4-mvp）</span>
+    
+  </div>
+</header>
+
+<div class="banner critical">
+  <span>整體狀態：嚴重</span>
+  <span class="counts">✅ <b>45</b>　⚠️ <b>2</b>　❌ <b>1</b>　⏭️ <b>4</b>　❓ <b>0</b></span>
+</div>
+
+
+
+
+
+
+<h2>節點環境（Node Context）</h2>
+<div class="node-coverage">
+  <strong>Nodes Stats：</strong>1/1 成功，0 失敗，1 回傳　<strong>Nodes Info：</strong>1/1 成功，0 失敗，1 回傳
+  
+</div>
+
+<details class="node-card">
+  <summary>es8 <span class="sm">— data, data_cold, data_content, data_frozen, data_hot, data_warm, ingest, master, ml, remote_cluster_client, transform ｜ CPU 3% ｜ RAM 98% ｜ Swap 0 B ｜ FD 609/524288（0%） ｜ Heap 31%</span></summary>
+  <div class="node-body">
+    <dl class="node-grid">
+      <dt>Node ID / 資料來源</dt><dd>uYPLn23gStSXPuN3i35Pjw ｜ Stats=true Info=true</dd>
+      <dt>OS</dt><dd>Ubuntu 20.04.6 LTS 7.0.12-201.fc44.aarch64 ｜ aarch64 ｜ processors available=5 allocated=5</dd>
+      <dt>OS CPU / load</dt><dd>3% ｜ load 1m=0.31 5m=0.29 15m=0.23</dd>
+      <dt>OS memory</dt><dd>used=7.6 GiB / total=7.7 GiB（98%）｜ swap=0 B / 0 B</dd>
+      <dt>Process</dt><dd>PID=165 ｜ memory locked=否 ｜ CPU=0% ｜ virtual=4.8 GiB ｜ FD=609/524288（0%）</dd>
+      <dt>Cgroup memory</dt><dd>— ｜ unlimited=是</dd>
+      <dt>Cgroup CPU 累積值</dt><dd>usage_ns=476383968000 ｜ throttled=0 次 / 0 ns</dd>
+      <dt>Filesystem</dt><dd>available=91.3 GiB / total=99.4 GiB</dd>
+      <dt>JVM</dt><dd>heap=161.6 MiB / 512.0 MiB（31%）｜ old=118.4 MiB / 512.0 MiB ｜ uptime_ms=19030038</dd>
+    </dl>
+    <h4>Data paths</h4><table class="node-table"><thead><tr><th>Path</th><th>Mount</th><th>Type</th><th>Available / Total</th></tr></thead><tbody><tr><td>/usr/share/elasticsearch/data</td><td>/ (overlay)</td><td>overlay</td><td>91.3 GiB / 99.4 GiB</td></tr></tbody></table>
+    
+    <h4>JVM GC 累積值</h4><table class="node-table"><thead><tr><th>Collector</th><th>Count</th><th>Time ms</th></tr></thead><tbody><tr><td>G1 Concurrent GC</td><td>118</td><td>1911</td></tr><tr><td>old</td><td>0</td><td>0</td></tr><tr><td>young</td><td>160</td><td>3368</td></tr></tbody></table>
+  </div>
+</details>
+
+
+
+
+<h2>叢集</h2>
+
+<details class="card pass">
+  <summary>✅ 叢集健康 / 未分配 shard <span class="sm">— This cluster has all shards available.</span><span class="src">health_report</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/red-yellow-cluster-status">https://www.elastic.co/docs/troubleshoot/elasticsearch/red-yellow-cluster-status</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Master 穩定性 <span class="sm">— The cluster has a stable master node</span><span class="src">health_report</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unstable-cluster">https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unstable-cluster</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ 叢集 shard 分布不均 <span class="sm">— 單節點或節點數不足，無從評估分布平衡</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unbalanced-cluster">https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unbalanced-cluster</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ 叢集層級 shard 分配封鎖 <span class="sm">— cluster.routing.allocation.enable = all，無叢集層級封鎖</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/diagnose-unassigned-shards">https://www.elastic.co/docs/troubleshoot/elasticsearch/diagnose-unassigned-shards</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Index 層級 shard 分配封鎖 <span class="sm">— 無受影響 index 需檢查（shards_availability 目前正常）</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/diagnose-unassigned-shards">https://www.elastic.co/docs/troubleshoot/elasticsearch/diagnose-unassigned-shards</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Shard 分配根因（decider 級） <span class="sm">— 無未分配 shard 可供 allocation/explain 解釋</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/cluster-allocation-api-examples">https://www.elastic.co/docs/troubleshoot/elasticsearch/cluster-allocation-api-examples</a></li></ul>
+  </div>
+</details>
+
+<details class="card warning" open>
+  <summary>⚠️ Master 穩定性結構檢查 <span class="sm">— 僅 1 個 master-eligible 節點（共 1 個節點），此節點故障將導致無法選舉，屬單點故障</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    <h4>可能根因（假設）</h4><ul><li>master-eligible 節點數建議為奇數且 ≥3，避免單點故障與 split-brain</li></ul>
+    <h4>建議（唯讀引導）</h4><ul><li>調整 master-eligible 節點數為奇數且 ≥3（小型叢集可加 dedicated master 或 voting-only 節點）</li></ul>
+    <p class="extra">⚠ 需額外條件：節點拓樸為結構性風險而非當下故障；是否曾實際發生選舉問題需查 master_is_stable indicator 與節點 log</p>
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unstable-cluster">https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unstable-cluster</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Cluster pending tasks <span class="sm">— 無 cluster task 排隊超過 30 秒</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-pending.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-pending.html</a></li></ul>
+  </div>
+</details>
+
+<details class="card warning" open>
+  <summary>⚠️ Index replica 容錯 <span class="sm">— 2 個非系統 index 沒有 replica</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    <h4>發現</h4><ul><li>playbook-tf-dest：number_of_replicas=0 auto_expand=未設定</li><li>playbook-tf-src：number_of_replicas=0 auto_expand=未設定</li></ul>
+    
+    <h4>建議（唯讀引導）</h4><ul><li>確認資料可重建性與節點數；需要高可用時設定 replica 並確保可配置到其他 failure domain</li></ul>
+    <p class="extra">⚠ 需額外條件：單節點、可重建資料或成本考量可能刻意無 replica；auto-expand 上限 all 另會忽略 allocation awareness，需依 RPO 與 failure domain 基準判斷</p>
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/red-yellow-cluster-status">https://www.elastic.co/docs/troubleshoot/elasticsearch/red-yellow-cluster-status</a></li></ul>
+  </div>
+</details>
+
+<details class="card skipped">
+  <summary>⏭️ Shard allocation awareness <span class="sm">— 未配置 allocation awareness；工具不知道此叢集是否要求跨 failure domain</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/deploy-manage/distributed-architecture/shard-allocation-relocation-recovery/shard-allocation-awareness">https://www.elastic.co/docs/deploy-manage/distributed-architecture/shard-allocation-relocation-recovery/shard-allocation-awareness</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Planned shutdown 登記狀態 <span class="sm">— 沒有已登記的 planned shutdown</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-shutdown-get-node">https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-shutdown-get-node</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Voting configuration exclusions <span class="sm">— 沒有尚未清除的 voting configuration exclusion</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-cluster-state">https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-cluster-state</a></li></ul>
+  </div>
+</details>
+
+
+<h2>容量</h2>
+
+<details class="card pass">
+  <summary>✅ 磁碟容量 / watermark <span class="sm">— The cluster has enough available disk space.</span><span class="src">health_report</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/fix-watermark-errors">https://www.elastic.co/docs/troubleshoot/elasticsearch/fix-watermark-errors</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Shard 容量上限 <span class="sm">— The cluster has enough room to add new shards.</span><span class="src">health_report</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-shards-capacity-issues">https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-shards-capacity-issues</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Shard 大小規劃 <span class="sm">— 無 primary shard ≥50 GiB，且小 shard 數量低於 100</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/size-your-shards.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/size-your-shards.html</a></li></ul>
+  </div>
+</details>
+
+
+<h2>資料</h2>
+
+<details class="card pass">
+  <summary>✅ Data stream 生命週期 / tier <span class="sm">— Data streams are executing their lifecycles without issues</span><span class="src">health_report</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier">https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Mapping 欄位膨脹 <span class="sm">— 各 index 欄位數均低於上限 1000 的 80%</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/mapping-explosion">https://www.elastic.co/docs/troubleshoot/elasticsearch/mapping-explosion</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Ingest pipeline 失敗 <span class="sm">— 各 ingest pipeline 失敗率正常</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshoot-ingest-pipelines">https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshoot-ingest-pipelines</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ 資料毀損徵兆 <span class="sm">— 無 index 處於 red 狀態</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    <p class="extra">⚠ 需額外條件：工具僅能偵測狀態異常徵兆；checksum/translog 級 corruption 需由 ES 內部於 merge/recovery/snapshot 時偵測，請留意節點 log 的 CorruptIndexException 等例外</p>
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/corruption-troubleshooting">https://www.elastic.co/docs/troubleshoot/elasticsearch/corruption-troubleshooting</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Data tier 節點分布 <span class="sm">— 所有標準 data tier 皆有對應節點</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier">https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Index read/write blocks <span class="sm">— 非系統 index 未設定 read/write/metadata block</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-blocks.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-blocks.html</a></li></ul>
+  </div>
+</details>
+
+
+<h2>管理</h2>
+
+<details class="card pass">
+  <summary>✅ ILM 生命週期 <span class="sm">— ILM RUNNING，無 ERROR step</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/start-ilm">https://www.elastic.co/docs/troubleshoot/elasticsearch/start-ilm</a></li><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors">https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Watcher <span class="sm">— Watcher 運作中</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/watcher-troubleshooting">https://www.elastic.co/docs/troubleshoot/elasticsearch/watcher-troubleshooting</a></li></ul>
+  </div>
+</details>
+
+<details class="card critical" open>
+  <summary>❌ Transforms <span class="sm">— 1 個 transform 處於 failed</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    <h4>發現</h4><ul><li>playbook-fail：state=failed</li></ul>
+    
+    <h4>建議（唯讀引導）</h4><ul><li><code>GET _transform/&lt;id&gt;/_stats</code> — 查 reason 後修正並 POST _transform/&lt;id&gt;/_start</li></ul>
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/transform-troubleshooting">https://www.elastic.co/docs/troubleshoot/elasticsearch/transform-troubleshooting</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Remote clusters <span class="sm">— 未設定 remote cluster（不適用）</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/remote-clusters">https://www.elastic.co/docs/troubleshoot/elasticsearch/remote-clusters</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ 升版 deprecation <span class="sm">— 無 deprecation 警告</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-upgrades">https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-upgrades</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Stack monitoring 收集 <span class="sm">— stack monitoring 收集未啟用（巡檢工具本身不需，但無歷史監控資料可回溯時間序列）</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/monitoring-troubleshooting">https://www.elastic.co/docs/troubleshoot/elasticsearch/monitoring-troubleshooting</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ ILM Tier 遷移狀態 <span class="sm">— 無 index 處於 tier 遷移中</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors">https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ License 狀態與到期 <span class="sm">— License status=active type=basic，無到期日</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/get-license.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/get-license.html</a></li></ul>
+  </div>
+</details>
+
+
+<h2>效能</h2>
+
+<details class="card pass">
+  <summary>✅ 請求拒絕 (thread pool) <span class="sm">— search / write thread pool 無拒絕</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/rejected-requests">https://www.elastic.co/docs/troubleshoot/elasticsearch/rejected-requests</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Thread pool 佇列積壓 <span class="sm">— 各 thread pool queue &lt;50</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/task-queue-backlog">https://www.elastic.co/docs/troubleshoot/elasticsearch/task-queue-backlog</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ JVM 記憶體壓力 <span class="sm">— 各節點 JVM old pool 壓力 &lt;85%</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/high-jvm-memory-pressure">https://www.elastic.co/docs/troubleshoot/elasticsearch/high-jvm-memory-pressure</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Circuit breaker <span class="sm">— circuit breaker 無跳閘紀錄</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/circuit-breaker-errors">https://www.elastic.co/docs/troubleshoot/elasticsearch/circuit-breaker-errors</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ CPU 使用率 <span class="sm">— 各節點 CPU &lt;85%</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/high-cpu-usage">https://www.elastic.co/docs/troubleshoot/elasticsearch/high-cpu-usage</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Hot spotting（資源分布不均） <span class="sm">— 單節點或節點數不足，無從比較資源分布</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/hotspotting">https://www.elastic.co/docs/troubleshoot/elasticsearch/hotspotting</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Search slow log <span class="sm">— 未開啟 search slow log，無法回溯慢查詢</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    <h4>建議（唯讀引導）</h4><ul><li><code>PUT &lt;index&gt;/_settings {&#34;index.search.slowlog.threshold.query.warn&#34;:&#34;10s&#34;,&#34;index.search.slowlog.threshold.query.info&#34;:&#34;5s&#34;}</code> — 對目標 index 設定查詢門檻以開啟 slow log，之後再回頭分析</li></ul>
+    <p class="extra">⚠ 需額外條件：slow log 需事先開啟才能記錄慢查詢；工具無法回溯歷史請求</p>
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-searches">https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-searches</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ 長時間執行 task <span class="sm">— 無 task 執行超過 300 秒</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-tasks-list">https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-tasks-list</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Indexing pressure 當下使用量 <span class="sm">— 各節點當下 indexing pressure 均 &lt;80%</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    <h4>發現</h4><ul><li>Nodes Stats: successful=1/1 failed=0 returned=1</li></ul>
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-indexing-pressure.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-indexing-pressure.html</a></li></ul>
+  </div>
+</details>
+
+
+<h2>快照</h2>
+
+<details class="card pass">
+  <summary>✅ Snapshot repository 完整性 <span class="sm">— No snapshot repositories configured.</span><span class="src">health_report</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/add-repository">https://www.elastic.co/docs/troubleshoot/elasticsearch/add-repository</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ SLM 快照政策 <span class="sm">— No Snapshot Lifecycle Management policies configured</span><span class="src">health_report</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/repeated-snapshot-failures">https://www.elastic.co/docs/troubleshoot/elasticsearch/repeated-snapshot-failures</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Snapshot 還原狀態 <span class="sm">— 無進行中的 snapshot 還原操作</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/troubleshoot/elasticsearch/restore-from-snapshot">https://www.elastic.co/docs/troubleshoot/elasticsearch/restore-from-snapshot</a></li></ul>
+  </div>
+</details>
+
+<details class="card skipped">
+  <summary>⏭️ Snapshot 新鮮度 / RPO <span class="sm">— 未設定 SLM policy；無法由 SLM API 判斷外部或手動備份</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-slm-get-lifecycle">https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-slm-get-lifecycle</a></li></ul>
+  </div>
+</details>
+
+
+<h2>節點環境診斷</h2>
+
+<details class="card pass">
+  <summary>✅ 節點資料完整性 <span class="sm">— Nodes Stats 與 Nodes Info 均完整回應 1 個節點</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    <h4>發現</h4><ul><li>Nodes Stats: successful=1/1 failed=0 returned=1</li><li>Nodes Info: successful=1/1 failed=0 returned=1</li></ul>
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html</a></li><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ 節點 Swap 使用 <span class="sm">— 各節點 swap used=0</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory">https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ File descriptor 使用率 <span class="sm">— 各節點 file descriptor 使用率 &lt;80%</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/file-descriptors.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/file-descriptors.html</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Cgroup memory 餘裕 <span class="sm">— 未偵測到有限 cgroup memory limit，本門檻不適用</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ 節點近期重啟 <span class="sm">— 所有節點 uptime 均 ≥60 分鐘</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Memory lock / swap 設定 <span class="sm">— 所有節點已鎖定記憶體，或在 mlockall=false 時確認 swap total=0</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html</a></li><li><a href="https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory">https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory</a></li></ul>
+  </div>
+</details>
+
+<details class="card pass">
+  <summary>✅ Node runtime 一致性 <span class="sm">— 1 個節點版本一致；相同角色節點的 JDK/heap/plugin 無漂移</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    <h4>發現</h4><ul><li>Nodes Info: successful=1/1 failed=0 returned=1</li></ul>
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html</a></li></ul>
+  </div>
+</details>
+
+
+<h2>machine_learning</h2>
+
+<details class="card skipped">
+  <summary>⏭️ ML jobs / datafeeds 狀態 <span class="sm">— 未設定 anomaly detection job 或 datafeed</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ml-get-job-stats">https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ml-get-job-stats</a></li><li><a href="https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ml-get-datafeed-stats">https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ml-get-datafeed-stats</a></li></ul>
+  </div>
+</details>
+
+
+<h2>security</h2>
+
+<details class="card pass">
+  <summary>✅ TLS 憑證到期 <span class="sm">— 回應節點 certificate 均超過 30 天後到期</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    <h4>建議（唯讀引導）</h4><ul><li>在到期前更新 HTTP/transport/realm 憑證，並確認所有節點已載入新憑證</li></ul>
+    <p class="extra">⚠ 需額外條件：/_ssl/certificates 只回報收到請求的 Elasticsearch 節點；完整叢集需逐節點採集</p>
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-ssl.html">https://www.elastic.co/guide/en/elasticsearch/reference/current/security-api-ssl.html</a></li></ul>
+  </div>
+</details>
+
+
+<h2>replication</h2>
+
+<details class="card skipped">
+  <summary>⏭️ CCR follower / auto-follow 健康 <span class="sm">— 目前 license 未啟用 CCR，本項不適用</span><span class="src">raw_api</span></summary>
+  <div class="body">
+    
+    
+    
+    
+    
+    <h4>官方文件</h4><ul><li><a href="https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ccr-stats">https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ccr-stats</a></li></ul>
+  </div>
+</details>
+
+
+
+<footer>本工具提供診斷引導，非根因確認。結論基於單次唯讀快照與預設閾值，請結合現場日誌、時間序列監控與業務脈絡綜合判斷。工具僅執行唯讀操作，任何修復指令均需人工確認後手動執行。</footer>
+</div>
+</body>
+</html>
+

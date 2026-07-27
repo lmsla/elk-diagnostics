@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,24 @@ import (
 	"sync"
 	"time"
 )
+
+// HTTPStatusError 保留端點與狀態碼，讓選配功能能區分「此 API 不可用」和一般採集失敗。
+// Error() 維持既有文字契約，避免報告與測試因型別化而改變措辭。
+type HTTPStatusError struct {
+	Status int
+	Path   string
+}
+
+func (e *HTTPStatusError) Error() string { return fmt.Sprintf("ES 回應 %d: %s", e.Status, e.Path) }
+
+// HTTPStatus 從 collector 錯誤取出 HTTP status；網路、解析與 bundle 缺檔回 false。
+func HTTPStatus(err error) (int, bool) {
+	var statusErr *HTTPStatusError
+	if errors.As(err, &statusErr) {
+		return statusErr.Status, true
+	}
+	return 0, false
+}
 
 // Options 由 main 從 config 翻譯而來，避免 collector 依賴 config 套件。
 type Options struct {
@@ -54,7 +73,7 @@ type Client struct {
 	nodeResourceStatsErr  error
 
 	// fetch 是取得單一端點原始 bytes 的傳輸層：連線模式為 HTTP，bundle 模式為讀檔。
-	// 抽成欄位是為了讓兩種模式共用 get() 的重試與錯誤語意——所有 24 個端點、
+	// 抽成欄位是為了讓兩種模式共用 get() 的重試與錯誤語意——所有固定端點、
 	// 所有 analyzer 的行為都完全一致，差別只在 bytes 從哪來。
 	fetch func(path string) (body []byte, status int, err error)
 }
@@ -279,11 +298,11 @@ func (c *Client) get(path string) ([]byte, error) {
 			return body, nil
 		}
 		if err == nil && status < 500 {
-			return body, fmt.Errorf("ES 回應 %d: %s", status, path)
+			return body, &HTTPStatusError{Status: status, Path: path}
 		}
 		lastBody, lastErr = body, err
 		if lastErr == nil {
-			lastErr = fmt.Errorf("ES 回應 %d: %s", status, path)
+			lastErr = &HTTPStatusError{Status: status, Path: path}
 		}
 		if attempt < c.retries {
 			time.Sleep(retryDelay)

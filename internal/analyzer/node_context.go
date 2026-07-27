@@ -28,7 +28,84 @@ func NodeContextResults(snapshot *nodecontext.Snapshot, t rules.Thresholds) []di
 		NodeSwapUsage(nodes),
 		NodeFileDescriptorPressure(nodes, t),
 		NodeCgroupMemoryPressure(nodes, t),
+		RecentNodeRestart(snapshot, t),
+		NodeMemoryLock(snapshot),
 	}
+}
+
+func RecentNodeRestart(snapshot *nodecontext.Snapshot, t rules.Thresholds) diagnostic.Result {
+	res := diagnostic.Result{ID: "recent_node_restart", Title: "節點近期重啟", Category: "node", Source: "raw_api", Docs: []string{docNodeStats}}
+	if snapshot == nil || len(snapshot.Nodes) == 0 {
+		return unknownNodeContext(res, "Nodes Stats 不可用，無法判定節點 uptime", nil)
+	}
+	if !snapshot.StatsCoverage.Complete() {
+		return unknownNodeContext(res, "Nodes Stats 回應不完整，無法判定所有節點 uptime", snapshot.Issues)
+	}
+	warnMillis := int64(t.StaticHealth.RecentRestartWarnMinutes) * 60 * 1000
+	var hits, missing []string
+	for _, node := range snapshot.Nodes {
+		if node.JVM.UptimeMillis == nil {
+			missing = append(missing, nodeName(node)+"：JVM uptime 不可得")
+			continue
+		}
+		if *node.JVM.UptimeMillis < warnMillis {
+			hits = append(hits, fmt.Sprintf("%s：uptime=%s", nodeName(node), formatDurationMillis(*node.JVM.UptimeMillis)))
+		}
+	}
+	if len(hits) > 0 {
+		res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
+		res.Summary = fmt.Sprintf("%d 個節點在最近 %d 分鐘內啟動", len(hits), t.StaticHealth.RecentRestartWarnMinutes)
+		res.Findings = append(hits, missing...)
+		res.RequiresExtra = true
+		res.ExtraReason = "uptime 只能證明啟動時間，不能區分正常維護、crash 或主機重啟"
+		res.Recommendations = []diagnostic.Recommendation{{Desc: "對照變更窗口、Elasticsearch 日誌與主機事件確認重啟原因及是否反覆發生"}}
+		return res
+	}
+	if len(missing) > 0 {
+		return unknownNodeContext(res, "部分節點缺少 JVM uptime，無法完整判定", missing)
+	}
+	return pass(res, fmt.Sprintf("所有節點 uptime 均 ≥%d 分鐘", t.StaticHealth.RecentRestartWarnMinutes))
+}
+
+func NodeMemoryLock(snapshot *nodecontext.Snapshot) diagnostic.Result {
+	res := diagnostic.Result{ID: "node_memory_lock", Title: "Memory lock / swap 設定", Category: "node", Source: "raw_api", Docs: []string{docNodeInfo, docSwap}}
+	if snapshot == nil || len(snapshot.Nodes) == 0 {
+		return unknownNodeContext(res, "Nodes Info 不可用，無法判定 memory lock", nil)
+	}
+	if !snapshot.InfoCoverage.Complete() || !snapshot.StatsCoverage.Complete() {
+		return unknownNodeContext(res, "Nodes Info／Stats 回應不完整，無法交叉判讀 memory lock 與 swap", snapshot.Issues)
+	}
+	var risks, missing []string
+	for _, node := range snapshot.Nodes {
+		name := nodeName(node)
+		if node.Process.MemoryLocked == nil {
+			missing = append(missing, name+"：mlockall 不可得")
+			continue
+		}
+		if *node.Process.MemoryLocked {
+			continue
+		}
+		if node.OS.Swap.TotalBytes == nil {
+			missing = append(missing, name+"：mlockall=false 且 swap total 不可得")
+			continue
+		}
+		if *node.OS.Swap.TotalBytes > 0 {
+			risks = append(risks, fmt.Sprintf("%s：mlockall=false swap_total=%s swap_used=%s", name, formatBytes(*node.OS.Swap.TotalBytes), formatOptionalBytes(node.OS.Swap.UsedBytes)))
+		}
+	}
+	if len(risks) > 0 {
+		res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
+		res.Summary = fmt.Sprintf("%d 個節點未鎖定記憶體且主機配置了 swap", len(risks))
+		res.Findings = append(risks, missing...)
+		res.RequiresExtra = true
+		res.ExtraReason = "Elastic 支援停用 swap 或啟用 memory lock；mlockall=false 單獨不代表故障"
+		res.Recommendations = []diagnostic.Recommendation{{Desc: "依部署方式選擇完全停用 swap，或設定 bootstrap.memory_lock=true 並正確配置系統 memlock 上限"}}
+		return res
+	}
+	if len(missing) > 0 {
+		return unknownNodeContext(res, "部分節點缺少 memory lock／swap 欄位，無法完整判定", missing)
+	}
+	return pass(res, "所有節點已鎖定記憶體，或在 mlockall=false 時確認 swap total=0")
 }
 
 func NodeAPICoverage(snapshot *nodecontext.Snapshot) diagnostic.Result {

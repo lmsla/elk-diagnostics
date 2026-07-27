@@ -12,10 +12,10 @@
   "overall_status": "warning",
   "summary": {
     "pass": 23,
-    "warning": 1,
+    "warning": 2,
     "critical": 0,
-    "skipped": 0,
-    "unknown": 20
+    "skipped": 1,
+    "unknown": 26
   },
   "results": [
     {
@@ -267,6 +267,50 @@
       "recommendations": null,
       "docs": [
         "https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "recent_node_restart",
+      "title": "節點近期重啟",
+      "category": "node",
+      "status": "warning",
+      "conclusion": "suspected",
+      "summary": "1 個節點在最近 60 分鐘內啟動",
+      "findings": [
+        "587513524e34：uptime=1m20s"
+      ],
+      "root_causes": null,
+      "recommendations": [
+        {
+          "cmd": "",
+          "desc": "對照變更窗口、Elasticsearch 日誌與主機事件確認重啟原因及是否反覆發生"
+        }
+      ],
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-stats.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": true,
+      "extra_reason": "uptime 只能證明啟動時間，不能區分正常維護、crash 或主機重啟"
+    },
+    {
+      "id": "node_memory_lock",
+      "title": "Memory lock / swap 設定",
+      "category": "node",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "Nodes Info／Stats 回應不完整，無法交叉判讀 memory lock 與 swap",
+      "findings": [
+        "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall",
+        "Nodes Info 缺少 _nodes coverage"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html",
+        "https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory"
       ],
       "source": "raw_api",
       "requires_extra": false
@@ -772,6 +816,113 @@
       "recommendations": null,
       "docs": [
         "https://www.elastic.co/docs/deploy-manage/distributed-architecture/shard-allocation-relocation-recovery/shard-allocation-awareness"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "indexing_pressure",
+      "title": "Indexing pressure 當下使用量",
+      "category": "performance",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_nodes/stats/indexing_pressure?filter_path=_nodes,nodes.*.name,nodes.*.indexing_pressure.memory.current.combined_coordinating_and_primary_in_bytes,nodes.*.indexing_pressure.memory.current.replica_in_bytes,nodes.*.indexing_pressure.memory.current.all_in_bytes,nodes.*.indexing_pressure.memory.limit_in_bytes"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-indexing-pressure.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "index_read_write_blocks",
+      "title": "Index read/write blocks",
+      "category": "data",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_settings?flat_settings=true"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-blocks.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "ccr_health",
+      "title": "CCR follower / auto-follow 健康",
+      "category": "replication",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_ccr/stats?filter_path=auto_follow_stats.number_of_failed_follow_indices,auto_follow_stats.number_of_failed_remote_cluster_state_requests,auto_follow_stats.recent_auto_follow_errors,follow_stats.indices.index,follow_stats.indices.total_global_checkpoint_lag,follow_stats.indices.shards.shard_id,follow_stats.indices.shards.leader_global_checkpoint,follow_stats.indices.shards.follower_global_checkpoint,follow_stats.indices.shards.fatal_exception,follow_stats.indices.shards.read_exceptions"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ccr-stats"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "ml_jobs_datafeeds",
+      "title": "ML jobs / datafeeds 狀態",
+      "category": "machine_learning",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_ml/anomaly_detectors/_stats?allow_no_match=true\u0026filter_path=count,jobs.job_id,jobs.state,jobs.assignment_explanation"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ml-get-job-stats",
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ml-get-datafeed-stats"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "planned_shutdown",
+      "title": "Planned shutdown 登記狀態",
+      "category": "cluster",
+      "status": "skipped",
+      "conclusion": "normal",
+      "summary": "Planned shutdown API 不可用（HTTP 404）；此選配檢查需要 manage／operator 權限",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-shutdown-get-node"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "voting_config_exclusions",
+      "title": "Voting configuration exclusions",
+      "category": "cluster",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "資料抓取失敗，無法判定",
+      "findings": [
+        "ES 回應 404: /_cluster/state/metadata?filter_path=metadata.cluster_coordination.voting_config_exclusions"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-cluster-state"
       ],
       "source": "raw_api",
       "requires_extra": false

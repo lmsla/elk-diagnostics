@@ -118,6 +118,57 @@ func TestCheckStaticHealthFromBundle(t *testing.T) {
 	}
 }
 
+// TestCheckExtendedHealthFromBundle 驗證 ES-GAP-07～12 的分析階段只讀 bundle，且
+// optional feature「未使用」不會污染 overall health。
+func TestCheckExtendedHealthFromBundle(t *testing.T) {
+	bundle := copyFixtureBundle(t, "es8-health")
+	writeJSON(t, filepath.Join(bundle, "nodes_stats_jvm.json"), map[string]any{
+		"_nodes": map[string]any{"total": 1, "successful": 1, "failed": 0},
+		"nodes": map[string]any{"a": map[string]any{
+			"name": "n1", "roles": []string{"data_hot"},
+			"os":  map[string]any{"swap": map[string]any{"total_in_bytes": 0, "used_in_bytes": 0, "free_in_bytes": 0}},
+			"jvm": map[string]any{"uptime_in_millis": 7200000},
+		}},
+	})
+	writeJSON(t, filepath.Join(bundle, "nodes_info_os_process.json"), map[string]any{
+		"_nodes": map[string]any{"total": 1, "successful": 1, "failed": 0},
+		"nodes": map[string]any{"a": map[string]any{
+			"name": "n1", "roles": []string{"data_hot"}, "os": map[string]any{"name": "Linux", "available_processors": 2, "allocated_processors": 2},
+			"process": map[string]any{"id": 1, "mlockall": false},
+		}},
+	})
+	writeJSON(t, filepath.Join(bundle, "nodes_indexing_pressure.json"), map[string]any{
+		"_nodes": map[string]any{"total": 1, "successful": 1, "failed": 0},
+		"nodes": map[string]any{"a": map[string]any{"name": "n1", "indexing_pressure": map[string]any{"memory": map[string]any{
+			"current": map[string]any{"combined_coordinating_and_primary_in_bytes": 10, "replica_in_bytes": 0, "all_in_bytes": 10}, "limit_in_bytes": 1000,
+		}}}},
+	})
+	writeJSON(t, filepath.Join(bundle, "all_settings.json"), map[string]any{"logs": map[string]any{"settings": map[string]any{"index.number_of_replicas": "1"}}})
+	writeJSON(t, filepath.Join(bundle, "ccr_stats.json"), map[string]any{"auto_follow_stats": map[string]any{}, "follow_stats": map[string]any{"indices": []any{}}})
+	writeJSON(t, filepath.Join(bundle, "ml_job_stats.json"), map[string]any{"count": 0, "jobs": []any{}})
+	writeJSON(t, filepath.Join(bundle, "ml_datafeed_stats.json"), map[string]any{"count": 0, "datafeeds": []any{}})
+	writeJSON(t, filepath.Join(bundle, "planned_shutdown.json"), map[string]any{"nodes": []any{}})
+	writeJSON(t, filepath.Join(bundle, "voting_exclusions.json"), map[string]any{"metadata": map[string]any{"cluster_coordination": map[string]any{"voting_config_exclusions": []any{}}}})
+
+	report, _ := runBundleCheck(t, bundle)
+	byID := resultsByID(report.Results)
+	want := map[string]diagnostic.Status{
+		"indexing_pressure":        diagnostic.StatusPass,
+		"index_read_write_blocks":  diagnostic.StatusPass,
+		"recent_node_restart":      diagnostic.StatusPass,
+		"node_memory_lock":         diagnostic.StatusPass,
+		"ccr_health":               diagnostic.StatusSkipped,
+		"ml_jobs_datafeeds":        diagnostic.StatusSkipped,
+		"planned_shutdown":         diagnostic.StatusPass,
+		"voting_config_exclusions": diagnostic.StatusPass,
+	}
+	for id, status := range want {
+		if got, ok := byID[id]; !ok || got.Status != status {
+			t.Errorf("%s = %+v, want status=%s", id, got, status)
+		}
+	}
+}
+
 // TestCheckFromBundleAndFileMutuallyExclusive 兩個離線來源同時給是使用者錯誤，
 // 應明確拒絕而不是默默只用其中一個。
 func TestCheckFromBundleAndFileMutuallyExclusive(t *testing.T) {

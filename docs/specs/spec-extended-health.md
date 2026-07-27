@@ -1,0 +1,94 @@
+# 第二批單次快照覆蓋擴充（ES-GAP-07～12）
+
+## 1. 邊界
+
+本批仍只使用 Elasticsearch 唯讀 GET API，不導入 SSH、agent、雙取樣或主機命令。
+單次快照只能直接證明「採集當下」的狀態；累積 counter 與變化趨勢不得被解讀成持續性故障。
+
+所有端點必須登記在 `collector.Endpoints`，Live、`collect.sh`、Bundle、API inventory 與 golden
+回放共用同一份資料契約。端點缺檔、解析失敗、權限不足或 Nodes API partial response 不得回 `pass`。
+
+## 2. 診斷項目
+
+### ES-GAP-07：Indexing pressure
+
+- 採集：`GET /_nodes/stats/indexing_pressure`，只保存 `_nodes` coverage、node name、
+  `memory.current` 與 `memory.limit_in_bytes`。
+- coordinating + primary bytes 以 `limit_in_bytes` 為拒絕上限；replica bytes 依官方機制以
+  `1.5 × limit` 為拒絕上限。任一比率達 80% 為 warning，達 95% 為 critical，結論皆為 suspected。
+- Nodes API 回應不完整或判定欄位缺失：`unknown`。
+- 不使用累積 rejection counter 下持續性結論；告警固定標 `requires_extra=true`。
+
+### ES-GAP-08：Index read/write block
+
+- 重用 `GET /_settings?flat_settings=true`；排除系統 index，檢查明確為 true 的
+  `index.blocks.read_only`、`read_only_allow_delete`、`read`、`write`、`metadata`。
+- 任一 block 為 critical/confirmed，因為限制本身已由設定直證；但必須標示需要維護脈絡。
+- `read_only_allow_delete` 常由 flood-stage watermark 自動設定；工具不得輸出盲目解除指令，
+  應先處理磁碟水位並讓 Elasticsearch 自動移除。
+
+### ES-GAP-09：近期重啟與 memory lock
+
+- 重用 Node Context 的 Nodes Stats／Info，不增加 API：JVM uptime、`process.mlockall`、OS swap。
+- uptime 小於 60 分鐘標 warning/suspected；只證明近期啟動，不推斷 crash、維護或主機重啟。
+- `mlockall=false` 只有在 `swap.total_in_bytes > 0` 時標 warning；swap total=0 視為已採用官方允許的
+  「完全停用 swap」路線。任一必要欄位或 coverage 不完整時 `unknown`。
+
+### ES-GAP-10：CCR 健康
+
+- 採集：`GET /_ccr/stats`，只保存 follower index、checkpoint lag、fatal/read exception，及
+  auto-follow 失敗數與 recent errors；不保存 stack trace。
+- 未使用 CCR 或 license 未啟用：`skipped`。缺少 `monitor` 權限：`unknown`，不可誤稱未使用。
+- follower fatal/read exception 為 critical/confirmed；global checkpoint lag 達 10,000，或
+  auto-follow 累積失敗／recent error 為 warning/suspected。
+- lag 是單次絕對值、failed counter 是累積值；告警固定要求時間序列佐證。
+
+### ES-GAP-11：ML job／datafeed
+
+- 採集：`GET /_ml/anomaly_detectors/_stats?allow_no_match=true` 與
+  `GET /_ml/datafeeds/_stats?allow_no_match=true`，只保存 ID、state、assignment explanation。
+- 未設定 job/datafeed 或 license 未啟用：`skipped`。缺少 `monitor_ml` 權限或任一端點缺檔：`unknown`。
+- job `failed` 為 critical/confirmed；assignment explanation 為 warning/suspected。
+- job `closed`、datafeed `stopped` 本身可為正常操作，不得告警。
+
+### ES-GAP-12：Planned shutdown／voting exclusion
+
+- Planned shutdown：`GET /_nodes/shutdown`。官方標示直接使用不受支援，且需要 `manage`，
+  啟用 operator privileges 時還需 operator；因此定義為高權限選配檢查。HTTP 403/404 為 `skipped`，
+  401、網路錯誤、bundle 缺檔或無法解析仍為 `unknown`。
+- shutdown `stalled` 為 critical/confirmed；其他仍存在的登記為 warning/suspected，需先對照維護窗口。
+- Voting exclusion：以單一窄化請求
+  `GET /_cluster/state/metadata?filter_path=metadata.cluster_coordination.voting_config_exclusions` 讀取。
+  有殘留標 warning/suspected；正常維護中可能合理，工具不自動清除。
+- Cluster State API 是內部、格式可能變動且可能昂貴；不得擴大到完整 cluster state，parser 必須容錯，
+  任一 schema 不符回 `unknown`。
+
+## 3. 規則欄位
+
+```yaml
+static_health:
+  indexing_pressure_warn_pct: 80
+  indexing_pressure_crit_pct: 95
+  recent_restart_warn_minutes: 60
+  ccr_lag_warn_ops: 10000
+```
+
+所有門檻必須大於 0；覆寫為 0 或負值時沿用內建值。warning 必須低於 critical，否則兩者
+一併退回內建值並輸出規則警告。
+
+## 4. 官方來源
+
+- [Nodes stats／indexing pressure](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-nodes-stats)
+- [Indexing pressure 記憶體限制](https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-indexing-pressure.html)
+- [Index blocks](https://www.elastic.co/guide/en/elasticsearch/reference/current/index-modules-blocks.html)
+- [Memory lock／swap](https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory)
+- [CCR stats](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ccr-stats)
+- [ML job stats](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ml-get-job-stats)
+- [ML datafeed stats](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ml-get-datafeed-stats)
+- [Planned shutdown](https://www.elastic.co/docs/api/doc/elasticsearch/v8/operation/operation-shutdown-get-node)
+- [Cluster state](https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-cluster-state)
+- [Voting exclusions](https://www.elastic.co/docs/api/doc/elasticsearch/v8/operation/operation-cluster-post-voting-config-exclusions)
+
+`tested_versions`：ES 8.14.3、ES 9.0.0 的 Live／Bundle 基準線與 P16 已驗；ES 8 另驗近期
+重啟 warning。高 indexing pressure、memory lock 風險、真實 CCR／ML 異常與維護中狀態尚未
+建立專用情境，不得因基準線通過而標成已完整驗證。
