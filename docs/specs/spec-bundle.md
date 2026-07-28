@@ -62,7 +62,9 @@ checked in 而非只留在 `dist/`（gitignore）的理由：新增端點時，d
 
 因此實作上**只換傳輸層**：`Client.fetch` 是可抽換的欄位，連線模式走 HTTP、bundle 模式走讀檔，其上的 `get()`（重試、錯誤語意）與所有 analyzer 完全共用。bundle 與連線模式的差別僅止於 bytes 從哪來。
 
-> 歷史真機驗證（2026-07-15，es8=8.14.3 健康叢集）：當時 bundle 模式與連線模式 31 條診斷判定逐條一致。2026-07-22 已用現行 39 端點在 ES 8.14.3／9.0.0 重驗 52 項結果，Live／Bundle status 完全一致，並完成 P01～P16，見 [`VERIFICATION.md`](../VERIFICATION.md) §3.6。
+> 架構驗收紀錄：2026-07-15 的 31 項與 2026-07-22 的現行 52 項均確認
+> Live／Bundle status parity；後者另完成 P01～P16 腳本化斷言。這段只證明兩條路線共用契約，
+> 不代表所有異常分支完整驗證；目前分級見 [`VERIFICATION.md`](../VERIFICATION.md) §0／§3.6／§3.7。
 
 ## 4. Bundle 格式
 

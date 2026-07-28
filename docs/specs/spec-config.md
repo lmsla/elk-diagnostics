@@ -21,8 +21,8 @@ cluster:
     - "https://es-2.example.com:9200"
   auth:
     type: api_key                 # none | basic | api_key | bearer
-    username: ""                  # type=basic 時用
-    password: ""                  # type=basic 時用
+    username: ""                  # type=basic 時用；密碼預設由終端安全詢問
+    password: ""                  # 僅向下相容；正式環境不得將密碼寫入檔案
     api_key: ""                   # type=api_key 時用（id:key 的 base64，或明文 encoded）
     token: ""                     # type=bearer 時用
   tls:
@@ -45,7 +45,7 @@ cluster:
 | `ELK_DIAGNOSTICS_TOKEN` | bearer |
 | `ELK_DIAGNOSTICS_CA_CERT` | tls.ca_cert |
 
-對應 flag：`--config`、`--host`（可重複）、`--username/--password`、`--api-key`、`--ca-cert`、`--insecure`、`--timeout`。
+對應 flag：`--config`、`--host`（可重複）、`--username`、`--api-key`、`--ca-cert`、`--insecure`、`--timeout`。`--password` 僅為向下相容而保留，已棄用。
 
 ## 4. 連線行為（client.go）
 
@@ -57,6 +57,7 @@ cluster:
 
 - **唯讀**：client 只允許 GET/HEAD；實作層應封死寫入方法，杜絕誤送。
 - **不落 log**：username/password/api_key/token 不得寫入任何 log 或報告；報告中 host 可顯示，認證資訊一律遮蔽。
+- **密碼輸入**：互動式 Basic Auth 缺少密碼時由 binary 關閉終端回顯後詢問。非互動式執行才允許秘密管理系統注入 `ELK_DIAGNOSTICS_PASSWORD`；正式環境不得把密碼放入命令列或設定檔。
 - `insecure_skip_verify: true` 時，報告頁首與 log 強制顯示安全警告。
 
 ## 6. 邊界

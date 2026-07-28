@@ -14,15 +14,24 @@ ELK 系統快速診斷 CLI 工具。單一二進位、零依賴、可離線執�
 
 ## 狀態
 
-實作進度勾稽見 **[`docs/PROGRESS.md`](./docs/PROGRESS.md)**。
-人工真機驗證從 **[`docs/VERIFICATION-PLAYBOOK.md`](./docs/VERIFICATION-PLAYBOOK.md)** 開始；
-結果成熟度記錄在 **[`docs/VERIFICATION.md`](./docs/VERIFICATION.md)**。
+各文件只維護一種狀態，避免重複敘述再次漂移：
+
+| 文件 | 唯一責任 |
+|---|---|
+| [`docs/PROGRESS.md`](./docs/PROGRESS.md) | 程式與交付物是否已實作 |
+| [`docs/VERIFICATION.md`](./docs/VERIFICATION.md) | 真機故障觸發、正常路徑與能力邊界 |
+| [`docs/ES-COVERAGE-BACKLOG.md`](./docs/ES-COVERAGE-BACKLOG.md) | ES 後續覆蓋缺口及 `implemented`／`verified` 狀態 |
+| [`docs/specs/`](./docs/specs/) | 需求與判定契約，不維護目前驗證進度 |
+
+人工真機驗證從 **[`docs/VERIFICATION-PLAYBOOK.md`](./docs/VERIFICATION-PLAYBOOK.md)** 開始。
 
 | 項目 | 狀態 |
 |---|---|
-| 規格（14 份，輸入→診斷→報告→平台） | ✅ 完成 |
-| Phase 0 前置驗證（取真實 `_health_report` 驗顆粒度） | ✅ 核心已驗（部分項目待造壓補測，見 PROGRESS） |
-| 程式實作（MVP + v0.2 + v0.3 + v0.4 + B 類加深診斷、規則引擎、cobra CLI、完整症狀樹） | 🟡 進行中，詳見 PROGRESS（B 類與症狀樹的真機端到端驗證仍待補） |
+| 規格（15 份，輸入→診斷→報告→平台） | ✅ 完成 |
+| 程式實作（原 37 條診斷、ES-GAP-01～12、CLI、JSON/HTML、Live/Bundle） | ✅ 完成；目前基準報告輸出 52 項結果 |
+| ES 8.14.3／9.0.0 Live-Bundle 基準線 parity | ✅ 39 個固定端點、52 項 status 一致 |
+| P01～P16 最新人工 ES8 Bundle Route B | 🟡 14 項完整通過；P05 條件式、P11 部分驗證 |
+| 異常分支收斂 | 🟡 多節點、真實負載、CCR／ML／維護情境仍待專用環境 |
 
 ## 目錄結構
 

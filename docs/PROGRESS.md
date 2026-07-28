@@ -5,6 +5,8 @@
 **規格**：實作依據，見 [`specs/`](./specs/)。所有診斷項一律產出 `DiagnosticResult`（spec-report §1）。
 
 後續 Elasticsearch 覆蓋缺口與優先級以 [`ES-COVERAGE-BACKLOG.md`](./ES-COVERAGE-BACKLOG.md) 為單一追蹤來源；本檔不複製其狀態。
+本檔只回答「是否已實作」。表格內保留的日期與真機結果僅供追溯；目前驗證等級一律以
+[`VERIFICATION.md`](./VERIFICATION.md) 為準。
 
 > ⚠️ **本文的 ✅ 只代表「已實作、跑得起來」，不代表「已證明會抓到問題」。**
 > 兩者是不同的事——2026-07-15 真機驗證找出 4 條結構上永遠回報綠燈的診斷，它們在本文長期標著 ✅。
@@ -18,7 +20,7 @@
 |---|---|---|
 | ✅ | 備妥多版本測試叢集（docker-compose 8.14.3 / 9.0.0） | `dev/phase0/`，fixture 已產 |
 | ✅ | 取真實 `_health_report` 輸出驗 diagnosis 顆粒度 | 已驗 shards_availability（足夠）、ilm（需補 explain）；**2026-07-15 造壓驗證補齊 disk/shards_capacity/repository_integrity**（見 §4「造壓驗證」記錄），顆粒度皆足夠、diagnosis/action/help_url/affected_resources 完整。slm 未能在本次手動測試中重現（見 §4 說明），列為已知殘留缺口 |
-| ✅ | 顆粒度不足項目標記改走 raw API | spec-health-report「Phase 0 實測結果」：#5 ilm 須搭 `_ilm/explain`；解析器須容忍未知 indicator（9.x 多 file_settings） |
+| ✅ | 顆粒度不足項目標記改走 raw API | spec-health-report「Phase 0 架構決策紀錄」：#5 ilm 須搭 `_ilm/explain`；解析器須容忍未知 indicator（9.x 多 file_settings） |
 
 ---
 
@@ -37,7 +39,8 @@
 | ✅ | reporter：離線 HTML（內嵌 CSS、零 CDN、<details> 折疊、可列印） | spec-report §5 | reporter/html.go |（真機產檔驗證：9 卡、0 外部資源）
 | ✅ | 結束碼對映 overall_status | spec-cli §3 | internal/diagnostic |
 
-> 切片狀態：程式已寫，沙箱無 Go 工具鏈未編譯；邏輯已用真實 fixture 重播驗證（green→exit0、yellow→exit1，根因/受影響 index/建議正確）。待本機 `go build` 確認編譯 + 連 8.14 實跑。
+> 平台層已完成實作；編譯、真機與故障觸發結果不在本檔重複維護，見
+> [`VERIFICATION.md`](./VERIFICATION.md)。
 
 ---
 
@@ -52,7 +55,7 @@
 | ✅ | 29 | `_health_report` 整合（基座） | 基座 | spec-health-report | collector |（真機驗證）
 | ✅ | 1 | Red/Yellow cluster health | A | spec-health-report | cluster |（真機 8.14.3 驗證通過）
 | ✅ | 2 | Unassigned shards 根因 | A | spec-health-report | cluster |（併入 shards_availability）
-| ✅ | 3 | Watermark errors | A | spec-health-report | capacity |（disk indicator，green 已驗；異常情境待補測）
+| ✅ | 3 | Watermark errors | A | spec-health-report | capacity |（已實作；驗證等級見 VERIFICATION）
 | ✅ | 4 | Data nodes out of disk | A | spec-health-report | capacity |（disk indicator）
 | ✅ | 5 | ILM stopped / errors | A→raw | spec-health-report | management |（ilm_status+explain，真機驗證）
 | ✅ | 10 | Shard capacity issues | A | spec-health-report | capacity |（shards_capacity）
@@ -64,8 +67,8 @@
 | ✅ | 26 | Broken snapshot repositories | A | spec-health-report | snapshot |（repository_integrity）
 | ✅ | 6 | Rejected requests（thread pool） | C | spec-performance | performance |（真機驗證）
 
-> MVP 診斷層真機驗證通過（8.14.3）：9 條結果、overall=warning、exit=1，編譯零錯誤。
-> 待補測（非阻斷）：disk / shards_capacity / slm / repository_integrity 這次皆 green，其「非 green 時的 diagnosis 顆粒度」尚未觀察，建議用 seed 製造該類故障再驗一次。
+> MVP 診斷層已完成實作。disk、shards_capacity、repository_integrity 的異常路徑後續已觸發驗證；
+> SLM indicator 仍有未解條件。現況與證據統一見 VERIFICATION §3。
 
 ### v0.2
 
@@ -87,14 +90,15 @@
 | ✅ | 18 | Unbalanced cluster | C | spec-performance | cluster |（真機驗證；單節點正確跳過）
 | ✅ | 32 | Data corruption 偵測 | C | spec-data | data |（真機驗證；red 徵兆 + 導向查 log。2026-07-15 隨 #11 同批修正：`_cat/indices` 也排除系統 index，避免系統 index 短暫 red 被誤判客戶資料毀損）
 | ✅ | 19 | Data allocation blocked | B | spec-health-report | analyzer/allocation.go |（**2026-07-15 造壓驗證抓到真 bug**：`filter_path`+`flat_settings` 語意衝突，本條長期不論實際設定為何都只回報「無封鎖」——先前記錄的「真機驗證正確判定 pass」正是這個 bug，不是正確判定。已修正並以 `allocation.enable=none` 造壓確認會正確報 critical，見 [VERIFICATION.md](./VERIFICATION.md) §3.1）
-| ✅ | 20 | Index allocation blocked | B | spec-health-report | analyzer/allocation.go |（同 #19 的 bug 與修正；**但 blocked 分支尚未造壓驗證**，僅驗過 pass 分支，見 [VERIFICATION.md](./VERIFICATION.md) §3.2 Group A）
+| ✅ | 20 | Index allocation blocked | B | spec-health-report | analyzer/allocation.go |（已實作；blocked 分支後續已觸發驗證，見 VERIFICATION §3.1）
 | ✅ | 24 | Preferred data tier missing | B | spec-health-report | analyzer/data.go |（單元測試通過；設計為資訊性，不臆測缺 tier＝異常；2026-07-15 真機驗證：單節點叢集正確判定所有 tier 皆有節點）
 | ✅ | 25 | Incomplete migration to tiers | B | spec-health-report | analyzer/management.go |（單元測試通過；單次快照只能列候選，卡住判定需重複觀測；2026-07-15 真機驗證：正確判定無遷移中 index）
 | ✅ | 30 | Unstable cluster | B | spec-health-report | analyzer/cluster.go |（單元測試通過；用 master-eligible 節點數/奇偶佐證，非直接偵測選舉事件；2026-07-15 真機驗證：單節點叢集正確判定「僅 1 個 master-eligible，單點故障」為 warning）
 | ✅ | 36 | Restore from snapshot 狀態 | B | spec-health-report | analyzer/snapshot.go |（單元測試通過；改用 recovery API 而非 spec 原列的 _snapshot/_status，見 spec-health-report.md 修正說明；2026-07-15 真機驗證：正確判定無進行中還原）
 | ✅ | 37 | Cluster allocation 引導 | B | spec-health-report | analyzer/allocation.go |（單元測試通過；真機 fixture 驗證 decider 解析正確；僅代表性抽查 1 個 shard，非規格原定的上限 20 逐一查；2026-07-15 真機驗證：正確判定無未分配 shard 可解釋）
 
-> **2026-07-15 真機端到端驗證**：本機 Docker（`dev/phase0/docker-compose.yml`）起 es8=8.14.3、es9=9.0.0 單節點叢集，跑 `elk-diagnostics check` 全量對照。B 類 7 條全數執行成功、0 個 unknown（golden test 因 Phase 0 fixture 未錄製而 unknown 的端點，在真機上全部正常回應）；overall_status=warning，唯一 warning 為 `master_stability_context`（單節點叢集本就只有 1 個 master-eligible，屬正確判定非誤報）。過程中意外抓到並修正 #11/#32 的系統 index 誤報 bug（見上）。`diagnose --symptom` 5 條症狀樹（red-cluster/write-bottleneck/high-heap/ingest-lag/ilm-stuck）皆執行成功、判定合理、exit code 正確。待補：尚未對這兩台刻意造壓（塞磁碟水位、超 shard 上限、壞 repository、停 ILM 等），非 green 情境的 diagnosis 顆粒度與症狀樹「成立」路徑仍待驗。
+> 2026-07-15 的首次真機結果已被後續 2026-07-22／27 驗證取代；本檔不再保留當時的
+> 「待補」快照。歷史缺陷、觸發證據與目前未驗項目統一見 VERIFICATION。
 
 ### v0.4
 
@@ -113,12 +117,12 @@
 
 | 狀態 | symptom | 規格 |
 |---|---|---|
-| ✅ | `red-cluster` | spec-diagnose-symptoms |（#1/#2 cluster_health → #19/#20 allocation blocked → #3 disk；重組既有 analyzer；2026-07-15 真機驗證：8.14.3/9.0.0 皆執行成功、判定 pass）
-| ✅ | `write-bottleneck` | spec-diagnose-symptoms + spec-write-bottleneck |（真機驗證；diagnose 指令 + 因果鏈）
-| ✅ | `high-heap` | spec-diagnose-symptoms |（#7 jvm_pressure → #8 circuit_breaker → #6 rejected；2026-07-15 真機驗證：執行成功、判定 pass）
-| ✅ | `ingest-lag` | spec-diagnose-symptoms |（#13 ingest_pipeline → #12 task_backlog → #6 rejected(write) → #3 disk；2026-07-15 真機驗證：執行成功、判定 pass）
-| ✅ | `ilm-stuck` | spec-diagnose-symptoms |（#5 ilm → #3 disk → #10 shards_capacity；2026-07-15 真機驗證：執行成功、判定 pass）
-| 🟡 | check 反向觸發提示 | spec-diagnose-symptoms §3 |（已實作 §3 列出的 2 個範例：ILM ERROR→ilm-stuck、write-bottleneck 因果鏈成立→write-bottleneck；`Report.suggested_symptoms`＋HTML 提示區塊；純函式單元測試通過；2026-07-15 真機驗證：健康叢集正確不誤觸發（`suggested_symptoms` 為空），**造壓製造真實 ILM ERROR 後正確跳出 `ilm-stuck` 提示**——ILM 分支已完整驗證；write-bottleneck 分支需真實負載工具才能觸發，本次未驗，見 §4）
+| ✅ | `red-cluster` | spec-diagnose-symptoms |（已實作；驗證等級見 VERIFICATION §4）
+| ✅ | `write-bottleneck` | spec-diagnose-symptoms + spec-write-bottleneck |（已實作；驗證等級見 VERIFICATION §4）
+| ✅ | `high-heap` | spec-diagnose-symptoms |（已實作；驗證等級見 VERIFICATION §4）
+| ✅ | `ingest-lag` | spec-diagnose-symptoms |（已實作；驗證等級見 VERIFICATION §4）
+| ✅ | `ilm-stuck` | spec-diagnose-symptoms |（已實作；驗證等級見 VERIFICATION §4）
+| ✅ | check 反向觸發提示 | spec-diagnose-symptoms §3 |（兩個提示分支均已實作；驗證等級見 VERIFICATION §4）
 
 ---
 
@@ -147,9 +151,9 @@
 | v0.2 | #7,8,9,12,11,13 + 離線 HTML 報告 | ✅ 完成（真機） |
 | v0.3 | #16,17,18,32 | ✅ 完成（真機） |
 | v0.4 | #27,28,31,33,34,35 | ✅ 完成（真機） |
-| B 類加深 | #19,20,24,25,30,36,37 | ✅ 單元測試 + 2026-07-15 真機端到端驗證（8.14.3/9.0.0）完成 |
-| 缺口診斷 | check 24 條 + diagnose write-bottleneck | ✅ 全數真機驗證 |
-| 症狀樹擴充 | red-cluster、high-heap、ingest-lag、ilm-stuck | ✅ 已實作＋2026-07-15 真機端到端驗證完成 |
+| B 類加深 | #19,20,24,25,30,36,37 | ✅ 全數實作；各分支驗證等級見 VERIFICATION |
+| 缺口診斷 | check 24 條 + diagnose write-bottleneck | ✅ 全數實作；異常分支驗證等級見 VERIFICATION |
+| 症狀樹擴充 | red-cluster、high-heap、ingest-lag、ilm-stuck | ✅ 全數實作；觸發驗證等級見 VERIFICATION §4 |
 | CLI 框架遷移 | stdlib flag → cobra（子指令 -h、--host 可重複、-o/--output-file shorthand） | ✅ 完成（exit code 契約以手動起本機二進位驗證：check --from-file、diagnose 缺 symptom=10、連線失敗=11） |
 | 錯誤與韌性 | 逾時/重試接上、部分不可達→unknown | ✅ 完成，見 spec-resilience.md |
 | 多版本 golden test | es8/es9 × healthy/unhealthy 4 組 | 🟡 完成，覆蓋率受限於 Phase 0 錄製範圍（已誠實記錄） |
@@ -165,5 +169,6 @@
 | SBOM | `make dist` 用 CycloneDX（`cyclonedx-gomod` 版本 pin 死於 Makefile）產出 `dist/sbom.cdx.json`（module + 全部相依版本），納入既有 SHA256 清單 | ✅ 完成，見 spec-bundle §2、Makefile。導入審查清單（討論總結.md §8）最後一個缺口補齊 |
 | 2026-07-15 真機驗證 | 本機 Docker es8=8.14.3/es9=9.0.0 對 check 全量 + 5 條症狀樹 | ✅ 完成；意外抓到並修正 #11/#32 系統 index 誤報 bug（見 §2） |
 | 2026-07-15 造壓驗證 | disk/shards_capacity/repository_integrity/ILM/allocation 封鎖異常情境 | ✅ 完成；抓到並修正 2 個真 bug（#19/#20/#31/#33 的 filter_path+flat_settings 解析、#11/#32 的 data stream 誤排除），見 §4 |
-| 2026-07-22 完整手動重驗 | ES8／ES9 × Live／Bundle × P01～P16；39 端點、52 項結果 | ✅ 全數通過故障斷言與復原；修正 P06 復原時 `_health_report` 延遲刷新的基準線競態，見 VERIFICATION §3.6 |
+| 2026-07-22 腳本化重驗 | ES8／ES9 × Live／Bundle × P01～P16；39 端點、52 項結果 | ✅ 故障斷言與復原流程通過；這是腳本驗收，不取代各診斷的觸發驗證等級 |
+| 2026-07-27 人工 ES8 Bundle Route B | P00＋P01～P16，逐案採集、復原、HTML 與截圖 | 🟡 14 項完整通過；P05 多因子為條件式通過，P11 Basic License 為部分驗證，見 VERIFICATION §3.7 |
 | 待辦 | slm indicator 觸發條件（本次造壓未重現）、write-bottleneck 因果鏈真實負載驗證（需 esrally 等造壓工具） | ⬜ 未開始 |

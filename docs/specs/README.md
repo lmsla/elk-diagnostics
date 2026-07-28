@@ -2,6 +2,10 @@
 
 **這是實作的唯一依據。打開本目錄、讀完即可動工。**
 
+本目錄只定義需求、採集與判定契約；真機驗證狀態不在規格內重複維護，
+統一以 [`../VERIFICATION.md`](../VERIFICATION.md) 為準。ES 後續覆蓋缺口則以
+[`../ES-COVERAGE-BACKLOG.md`](../ES-COVERAGE-BACKLOG.md) 為準。
+
 ## 這是什麼
 
 elk-diagnostics：連上 ES、跑一輪唯讀診斷、輸出一份中文健康報告的單一二進位 CLI。

@@ -8,6 +8,22 @@
 人工執行順序、造壓指令與復原閘門統一以 [`VERIFICATION-PLAYBOOK.md`](./VERIFICATION-PLAYBOOK.md)
 為準；本文保留驗證證據與成熟度狀態，不再兼任操作 SOP。
 
+## 0. 目前狀態摘要（2026-07-27）
+
+此節是驗證狀態的目前入口；後續帶日期的章節保留歷史證據，不應單獨拿來代表現況。
+
+| 面向 | 目前狀態 |
+|---|---|
+| ES 8.14.3／9.0.0 基準線 | 39 個固定端點、52 項結果，Live／Bundle status parity 已驗 |
+| 傳輸基線 | 自簽 CA＋HTTPS＋Basic Auth＋嚴格 CA 驗證 |
+| 原 37 條診斷 | 22 條已有故障觸發證據；#24 部分驗證，其餘依 §3.2／3.3 分級 |
+| ES-GAP-01～12 | 12 項均已實作；目前只有 ES-GAP-08 正式標為 `verified` |
+| 最新人工 ES8 Bundle Route B | P01～P16：14 項完整通過、P05 條件式、P11 部分驗證 |
+| 主要未完成 | 真實多節點、負載型異常、CCR／ML／維護情境、SLM indicator、mTLS／API key／Bearer |
+
+最新人工基準 P00 為 52 項：`46 pass / 2 warning / 0 critical / 4 skipped / 0 unknown`。
+兩個 warning 為單節點 Master 結構與測試機近期重啟；不代表全部異常分支已被驗證。
+
 ---
 
 ## 1. 為什麼需要這份文件（2026-07-15 的發現）
@@ -52,7 +68,10 @@
 
 ---
 
-## 2. 成熟度判定（2026-07-15）
+## 2. 歷史成熟度判定（2026-07-15，不代表目前狀態）
+
+下表保留首次真機驗證時的決策背景。它解釋後續為何建立造壓 Playbook，但目前狀態應讀
+§0 與 §3.6／3.7。
 
 | 面向 | 評估 |
 |---|---|
@@ -180,7 +199,7 @@ Basic Auth、嚴格 CA 驗證**。HTTP／security disabled 不再算有效的端
 本機帳密固定為 `elastic / elk-diagnostics-test-only`，只綁 localhost；Kibana 為選配，
 不屬於 ES 健檢的必要依賴。
 
-### 3.6 ES-GAP-01～12 完整重驗 — 2026-07-22
+### 3.6 ES-GAP-01～12 腳本化重驗 — 2026-07-22
 
 測試環境維持自簽 CA、HTTPS、Basic Auth；ES 8.14.3 與 ES 9.0.0 各跑一次 Live 與
 Bundle，兩條路線共用同一份 Collector／Analyzer。
@@ -189,7 +208,7 @@ Bundle，兩條路線共用同一份 Collector／Analyzer。
 |---|---|
 | ES 8.14.3／ES 9.0.0 Live 基準線 | ✅ 各 52 項：`47 pass / 1 warning / 0 critical / 4 skipped / 0 unknown`；warning 僅單節點 Master |
 | 39 端點 Bundle 基準線 | ✅ 兩版本皆採集完成；`allocation/explain=400` 與未授權 CCR `=403` 為已語意化的預期回應，Live／Bundle 52 項 status 完全一致 |
-| P01～P16 Live＋Bundle | ✅ ES 8／ES 9 全數通過故障確認、診斷斷言、復原與復原後基準線 |
+| P01～P16 Live＋Bundle | ✅ ES 8／ES 9 的腳本化故障確認、診斷斷言、復原與復原後基準線皆通過；這不取代各診斷的觸發驗證分級 |
 | P16 index write block | ✅ 兩版本的 `index_read_write_blocks=critical`，Live／Bundle 一致 |
 | 最近重啟 | ✅ 重啟 ES 8 容器後，Live／Bundle 均為 `recent_node_restart=warning` |
 | Memory lock | ✅ 兩版本皆能由 Nodes Info／Stats 取得並判定，coverage `1/1` |
@@ -201,6 +220,20 @@ Bundle，兩條路線共用同一份 Collector／Analyzer。
 尚未宣稱真機驗證的異常分支：高 indexing pressure、真實 CCR follower、失敗中的 ML job／
 datafeed、卡住的 planned shutdown、殘留 voting exclusion。這些分支已有 parser／analyzer／
 Bundle 自動化測試，但需要專用負載、多叢集或維護情境，不能由單節點 P01～P16 取代。
+
+### 3.7 人工 ES8 Bundle Route B — 2026-07-27
+
+本輪從 P00 基準線開始，逐案執行 `trigger → collect → restore → collect-post`，保留故障
+Bundle、復原後 Bundle、HTML 報告與人工截圖。
+
+| 結果 | 案例 | 說明 |
+|---|---|---|
+| ✅ 完整通過 | P01～P04、P06～P10、P12～P16 | 故障目標判定符合預期，復原後目標檢查為 pass |
+| 🟡 條件式通過 | P05 | Shard capacity 判定有效，但同時存在 2 個未配置 replica，屬多因子而非純單因子驗證 |
+| 🟡 部分驗證 | P11 | Basic License、`watch_count=0`；證明 Watcher stats API 狀態可解析，不能宣稱完整 Watcher 功能故障驗證 |
+
+本輪驗證的是 ES8 Bundle Route B，不覆蓋 ES9 人工操作、Live 路線、多節點或負載型異常。
+報告索引位於 `reports/bundle-playbook-es8-20260727-102156/index.html`。
 
 ---
 

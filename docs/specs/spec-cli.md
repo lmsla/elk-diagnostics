@@ -20,7 +20,8 @@
 |---|---|---|
 | `--config <path>` | `./config.yaml` | 設定檔 |
 | `--host <url>`（可重複） | — | 覆寫 hosts |
-| `--api-key` / `--username` / `--password` / `--ca-cert` / `--insecure` | — | 連線（見 spec-config） |
+| `--api-key` / `--username` / `--ca-cert` / `--insecure` | — | 連線（見 spec-config）；Basic Auth 未提供密碼時由終端安全詢問 |
+| `--password` | — | 已棄用，僅供向下相容；正式環境不得使用 |
 | `--output <fmt>` | `json` | `json` \| `html` \| `text`（text 為終端摘要，見 spec-report §5.1） |
 | `-o, --output-file <path>` | stdout | 輸出檔；省略則印 stdout |
 | `--rules <path>` | （內建） | 覆寫規則 YAML |

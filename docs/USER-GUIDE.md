@@ -32,29 +32,100 @@ test -x ./elk-diagnostics
 
 ## 3. Route A：Live 直連 ES
 
-### 3.1 設定 HTTPS 與 Basic Auth
+### 3.1 選擇連線設定來源
 
-先將下列 ES URL、帳號、密碼與 CA 路徑替換成實際值：
+Route A 有三種設定方式，可混用；同一欄位重複設定時依下列優先序套用：
+
+```text
+flags > 環境變數 > config.yaml > 內建預設
+```
+
+| 方式 | 適用情境 | 生效範圍 |
+|---|---|---|
+| `config.yaml` | 正式環境、固定叢集（建議） | 保留於本機檔案 |
+| 環境變數 | 臨時測試或既有自動化 | 目前 Shell 與其子程序 |
+| flags | 單次覆寫或快速測試 | 只有本次指令 |
+
+三種方式都不要填入密碼；Basic Auth 密碼預設由 binary 在執行時安全詢問。
+
+#### 3.1.1 `config.yaml`（正式環境建議）
+
+複製範本：
+
+```bash
+cp config.yaml.example config.yaml
+```
+
+編輯 `config.yaml`，只保存非敏感連線資訊：
+
+```yaml
+cluster:
+  hosts:
+    - "https://es.example.local:9200"
+  auth:
+    type: basic
+    username: "elastic"
+  tls:
+    ca_cert: "/absolute/path/to/ca.crt"
+    insecure_skip_verify: false
+  timeout_seconds: 10
+  retries: 2
+```
+
+`./elk-diagnostics check` 預設讀取目前目錄的 `config.yaml`。使用其他檔名時指定：
+
+```bash
+./elk-diagnostics check --config /absolute/path/to/customer.yaml --output text
+```
+
+#### 3.1.2 環境變數（臨時操作）
+
+將 ES URL、帳號與 CA 路徑替換成實際值：
 
 ```bash
 export ELK_DIAGNOSTICS_HOSTS='https://es.example.local:9200'
 export ELK_DIAGNOSTICS_AUTH_TYPE=basic
 export ELK_DIAGNOSTICS_USERNAME='elastic'
-export ELK_DIAGNOSTICS_PASSWORD='請填入實際密碼'
 export ELK_DIAGNOSTICS_CA_CERT="$PWD/ca.crt"
+```
 
+環境變數只需設定一次，後續在同一個 Terminal 執行的 `check`／`diagnose` 都會沿用。
+
+#### 3.1.3 Flags（單次覆寫）
+
+```bash
+./elk-diagnostics check \
+  --host 'https://es.example.local:9200' \
+  --username 'elastic' \
+  --ca-cert "$PWD/ca.crt" \
+  --output text
+```
+
+上述 flags 只對這一次執行生效，不會修改 `config.yaml` 或目前 Shell 的環境變數。
+
+#### 3.1.4 密碼與 TLS 安全
+
+執行 `check` 或 `diagnose` 時，binary 會在 Terminal 詢問密碼且不回顯。密碼不會進入 shell history；每次執行結束後即不再保留於 shell 環境。
+
+非互動式自動化才使用 `ELK_DIAGNOSTICS_PASSWORD`，且必須由企業秘密管理系統或 CI/CD protected secret 注入；不要手動執行含有真實密碼的 `export`，也不要把密碼寫進 `config.yaml`、腳本或版控。
+
+`--password` 僅為向下相容而保留，已棄用。正式環境不應使用 `--password` 或 `--insecure`；應採互動輸入並提供正確 CA 憑證。
+
+### 3.2 執行全面健檢
+
+先建立本次報告目錄：
+
+```bash
 export REPORT_ROOT="$PWD/reports/live-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$REPORT_ROOT"
 ```
 
-不要把真實密碼寫進版控。正式環境不建議使用 `--insecure`；應提供正確 CA 憑證。
-
-### 3.2 執行全面健檢
-
 Terminal 文字報告：
 
 ```bash
-./elk-diagnostics check --output text
+./elk-diagnostics check \
+  --output text \
+  --output-file "$REPORT_ROOT/check-report.txt"
 ```
 
 HTML 報告：
@@ -62,7 +133,7 @@ HTML 報告：
 ```bash
 ./elk-diagnostics check \
   --output html \
-  > "$REPORT_ROOT/check-report.html"
+  --output-file "$REPORT_ROOT/check-report.html"
 ```
 
 JSON 報告：
@@ -70,7 +141,7 @@ JSON 報告：
 ```bash
 ./elk-diagnostics check \
   --output json \
-  > "$REPORT_ROOT/check-report.json"
+  --output-file "$REPORT_ROOT/check-report.json"
 ```
 
 每次執行都會重新查詢 ES。若 HTML 與 JSON 必須基於完全相同的時間點，應改走 Route B，以同一份 bundle 分別產生兩種格式。
@@ -138,11 +209,7 @@ export BUNDLE_ROOT="$PWD/bundle-$(date +%Y%m%d-%H%M%S)"
   -o "$BUNDLE_ROOT"
 ```
 
-若未設定 `ES_PASSWORD`，腳本會在 Terminal 互動詢問密碼。自動化環境可先設定：
-
-```bash
-export ES_PASSWORD='請填入實際密碼'
-```
+若未設定 `ES_PASSWORD`，腳本會在 Terminal 互動詢問密碼且不回顯。非互動式自動化才由企業秘密管理系統或 CI/CD protected secret 注入 `ES_PASSWORD`；不要手動輸入含有真實密碼的 `export` 指令。
 
 採集完成後確認：
 

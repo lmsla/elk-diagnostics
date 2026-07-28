@@ -40,17 +40,19 @@ type connFlags struct {
 // addConnFlags 掛在 check/diagnose 各自的 local flag（非 persistent），故 version 不受影響。
 func addConnFlags(cmd *cobra.Command) *connFlags {
 	fs := cmd.Flags()
-	return &connFlags{
+	cf := &connFlags{
 		cfgPath:   fs.String("config", "config.yaml", "設定檔路徑"),
 		hosts:     fs.StringSlice("host", nil, "ES base URL（可重複，或以逗號分隔，依序故障轉移）"),
 		username:  fs.String("username", "", "basic auth 帳號"),
-		password:  fs.String("password", "", "basic auth 密碼"),
+		password:  fs.String("password", "", "basic auth 密碼（已棄用；請改用互動輸入）"),
 		apiKey:    fs.String("api-key", "", "API key 認證"),
 		caCert:    fs.String("ca-cert", "", "自簽 CA 憑證路徑"),
 		insecure:  fs.Bool("insecure", false, "略過 TLS 憑證驗證（不建議）"),
 		timeout:   fs.Int("timeout", 0, "單請求逾時秒數（覆寫設定）"),
 		rulesPath: fs.String("rules", "", "覆寫 C 類診斷閾值的 YAML（僅覆寫檔案中出現的欄位；A/B 類不受影響）"),
 	}
+	_ = fs.MarkDeprecated("password", "命令列密碼可能進入 shell history 或程序清單；請省略並由終端安全輸入")
+	return cf
 }
 
 // loadThresholds 讀內建閾值，--rules 有指定時嘗試合併覆寫；失敗僅警告，不中斷執行。
@@ -75,6 +77,10 @@ func buildClient(cf *connFlags) (*collector.Client, string, int) {
 		Username: cf.username, Password: cf.password, APIKey: cf.apiKey,
 		CACert: cf.caCert, Insecure: cf.insecure, Timeout: cf.timeout,
 	})
+	if err := ensureBasicAuthPassword(&cfg); err != nil {
+		fmt.Fprintln(os.Stderr, "設定錯誤:", err)
+		return nil, "", 10
+	}
 	if err := cfg.Validate(); err != nil {
 		fmt.Fprintln(os.Stderr, "設定錯誤:", err)
 		return nil, "", 10

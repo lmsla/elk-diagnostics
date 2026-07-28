@@ -105,18 +105,22 @@ GET /_health_report
 
 ---
 
-## Phase 0 實測結果（8.14.3 / 9.0.0，2026-06）
+## Phase 0 架構決策紀錄（8.14.3 / 9.0.0，2026-06）
 
-實測 fixture：`dev/phase0/fixtures/`（es8/es9 各 healthy/unhealthy）。結論如下，據此調整 primary/fallback：
+本節只保留當時用來決定 primary／fallback 的觀察，不維護目前驗證狀態。最新真機結果與
+未驗分支統一見 [`../VERIFICATION.md`](../VERIFICATION.md)。
+
+實測 fixture：`dev/phase0/fixtures/`（es8/es9 各 healthy/unhealthy）。當時結論如下：
 
 | indicator | 實測結論 | 對 A/B 的影響 |
 |---|---|---|
 | `shards_availability` | ✅ **顆粒度足夠**。diagnosis 帶 `cause`/`action`/`help_url`/`affected_resources.indices`（直接點出受影響 index），impacts 亦具體。 | #1,2,21 確認 primary=health_report 可用；逐 shard `allocation/explain` 確定為**選配加深**（需 decider 級細節時才打）。 |
 | `ilm` | ⚠️ **會延遲**。植入必失敗的 ILM policy 後，indicator 仍為 green（ILM 輪詢未即時反映）。 | #5 **不可只信 indicator**：須一律補打 `_ilm/explain` 掃 `step=ERROR`，否則漏報剛壞掉的 ILM。primary 降為「indicator + 必要的 explain」。 |
-| `disk` / `shards_capacity` / `slm` / `repository_integrity` | ❓ **未驗**。本次只製造 shard 未分配，這四項全 green，未觀察到非 green 時的 diagnosis。 | 維持 A 類假設，但**標記待驗**：實作到該條時須先以對應 seed（塞磁碟 / 超 shard 上限 / 壞 repo）補測。 |
-| `master_is_stable` / `data_stream_lifecycle` | ❓ 未驗（同上）。 | 維持現狀。 |
+| `disk` / `shards_capacity` / `slm` / `repository_integrity` | 當時 fixture 只觀察到 green。 | 維持 A 類 primary；各異常分支的後續驗證結果不在本規格重複維護。 |
+| `master_is_stable` / `data_stream_lifecycle` | 當時 fixture 只觀察到 green。 | 維持現行 primary／fallback 契約；驗證等級見 VERIFICATION。 |
 
 **版本差異**：9.0.0 多出 `file_settings` indicator（8.14.3 無）。
 → **解析器鐵則**：以「遍歷 indicators map」處理，**容忍未知/新增 indicator**（未知者照通用規則呈現 status，不可因欄位沒見過而崩潰或漏掉）。
 
-**淨結論**：health_report-first 架構成立；唯 `ilm` 必須搭 `_ilm/explain`，且 disk/capacity/slm/repository 的顆粒度待各自實作時補測。
+**淨結論**：health_report-first 架構成立；唯 `ilm` 必須搭 `_ilm/explain`。本節結論只決定
+資料來源與 fallback，不代表目前驗證完成度。

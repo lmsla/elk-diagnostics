@@ -68,12 +68,14 @@ func (c *Config) ApplyEnv() {
 	if v := os.Getenv("ELK_DIAGNOSTICS_HOSTS"); v != "" {
 		c.Cluster.Hosts = splitCSV(v)
 	}
+	authTypeExplicit := false
 	if v := os.Getenv("ELK_DIAGNOSTICS_AUTH_TYPE"); v != "" {
 		c.Cluster.Auth.Type = v
+		authTypeExplicit = true
 	}
 	if v := os.Getenv("ELK_DIAGNOSTICS_USERNAME"); v != "" {
 		c.Cluster.Auth.Username = v
-		if c.Cluster.Auth.Type == "" || c.Cluster.Auth.Type == "none" {
+		if !authTypeExplicit {
 			c.Cluster.Auth.Type = "basic"
 		}
 	}
@@ -111,9 +113,7 @@ func (c *Config) ApplyFlags(f FlagOverrides) {
 	}
 	if f.Username != nil && *f.Username != "" {
 		c.Cluster.Auth.Username = *f.Username
-		if c.Cluster.Auth.Type == "" || c.Cluster.Auth.Type == "none" {
-			c.Cluster.Auth.Type = "basic"
-		}
+		c.Cluster.Auth.Type = "basic"
 	}
 	if f.Password != nil && *f.Password != "" {
 		c.Cluster.Auth.Password = *f.Password
@@ -137,6 +137,14 @@ func (c *Config) ApplyFlags(f FlagOverrides) {
 func (c Config) Validate() error {
 	if len(c.Cluster.Hosts) == 0 {
 		return fmt.Errorf("缺少連線資訊：請以 config.yaml 的 cluster.hosts、--host、或 ELK_DIAGNOSTICS_HOSTS 擇一提供")
+	}
+	if c.Cluster.Auth.Type == "basic" {
+		if c.Cluster.Auth.Username == "" {
+			return fmt.Errorf("Basic Auth 缺少帳號")
+		}
+		if c.Cluster.Auth.Password == "" {
+			return fmt.Errorf("Basic Auth 缺少密碼")
+		}
 	}
 	return nil
 }
