@@ -129,9 +129,14 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		}
 		results = append(results, nodeResults...)
 	} else {
-		for _, zero := range analyzer.NodeContextResults(nil, t) {
-			results = append(results, unknownf(zero, e))
+		nodeResults := analyzer.NodeContextResults(nil, t)
+		// 原始端點錯誤只放在 node_api_coverage；衍生檢查以 dependency unknown
+		// 指向完整性根因，避免同一個 403／timeout 在報告重複六次。
+		nodeResults[0] = unknownf(nodeResults[0], e)
+		if isBundle {
+			applyBundleNodeContextWording(nodeResults)
 		}
+		results = append(results, nodeResults...)
 	}
 	if brks, e := client.NodesBreakers(); e == nil {
 		results = append(results, analyzer.CircuitBreaker(brks))

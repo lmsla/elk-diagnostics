@@ -32,8 +32,16 @@
 export ES_LABEL=es8
 export ES_URL=https://localhost:9208
 export ES_USER=elastic
-export ES_PASSWORD=elk-diagnostics-test-only
 export CA_CERT="$PWD/dev/phase0/certs/ca/ca.crt"
+
+export ES_PASSWORD_FILE="$(mktemp "${TMPDIR:-/tmp}/elk-diagnostics-password.XXXXXX")"
+chmod 600 "$ES_PASSWORD_FILE"
+printf 'Elasticsearch password: ' >&2
+IFS= read -r -s ES_PASSWORD_INPUT
+printf '\n' >&2
+printf '%s' "$ES_PASSWORD_INPUT" > "$ES_PASSWORD_FILE"
+unset ES_PASSWORD_INPUT
+trap 'rm -f "${ES_PASSWORD_FILE:-}"' EXIT
 
 export COLLECT_SH="$PWD/collect.sh"
 export FAULT_CMD="$PWD/dev/phase0/fault-scenarios.sh"
@@ -48,6 +56,11 @@ test -x "$BUNDLE_CASE_CMD"
 test -f "$CA_CERT"
 "$FAULT_CMD" baseline verify
 ```
+
+密碼輸入不回顯，也不會寫入 shell history。Terminal 只保留權限 `600` 的臨時密碼檔
+路徑；控制器把認證透過 curl config 傳入，不會把密碼放進程序參數或匯出的
+`ES_PASSWORD`。離開 Terminal 時會自動刪除密碼檔；完成測試仍應依清理章節立即清除。
+此故障控制器只供可丟棄測試環境，不得用於客戶環境。
 
 這個階段不需要 `make build`、`TOOL_BIN` 或任何 binary 參數。所有採集資料都會放在 repo 根目錄下的單一 `bundle-playbook-*` 目錄，且已被 `.gitignore` 排除。
 
@@ -226,7 +239,9 @@ prepare_bundle_analysis() {
 
   export REPORT_ROOT="$PWD/reports/$(basename "$EVIDENCE_ROOT")"
   mkdir -p "$REPORT_ROOT" || return 1
-  unset ES_LABEL ES_URL ES_USER ES_PASSWORD CA_CERT COLLECT_SH FAULT_CMD BUNDLE_CASE_CMD
+  rm -f "${ES_PASSWORD_FILE:-}"
+  unset ES_LABEL ES_URL ES_USER ES_PASSWORD_FILE CA_CERT COLLECT_SH FAULT_CMD BUNDLE_CASE_CMD
+  trap - EXIT
   echo "bundle_root=$EVIDENCE_ROOT"
   echo "report_root=$REPORT_ROOT"
 }

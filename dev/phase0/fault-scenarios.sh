@@ -7,23 +7,52 @@
 
 set -eu
 
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+PODMAN_TEST_ENV_CMD=${PODMAN_TEST_ENV_CMD:-"$SCRIPT_DIR/podman-test-env.sh"}
+
 : "${ES_URL:?請先設定 ES_URL}"
 : "${ES_USER:?請先設定 ES_USER}"
-: "${ES_PASSWORD:?請先設定 ES_PASSWORD}"
+: "${ES_PASSWORD_FILE:?請先設定 ES_PASSWORD_FILE（權限 600 的密碼檔）}"
 : "${CA_CERT:?請先設定 CA_CERT}"
+
+if [ -n "${ES_PASSWORD:-}" ]; then
+  echo '不再接受 ES_PASSWORD；請改用權限 600 的 ES_PASSWORD_FILE' >&2
+  exit 10
+fi
+unset ES_PASSWORD
 
 command -v curl >/dev/null 2>&1 || { echo '缺少 curl' >&2; exit 10; }
 command -v jq >/dev/null 2>&1 || { echo '缺少 jq（僅內部故障驗證需要）' >&2; exit 10; }
 test -f "$CA_CERT" || { echo "找不到 CA：$CA_CERT" >&2; exit 10; }
+test -r "$ES_PASSWORD_FILE" || { echo "密碼檔不可讀：$ES_PASSWORD_FILE" >&2; exit 10; }
+
+PASSWORD_FILE=$ES_PASSWORD_FILE
+unset ES_PASSWORD_FILE
+
+# curl 官方明確指出：即使 --user 會嘗試遮蔽參數，認證仍可能短暫出現在 process
+# listing。故障控制器改從權限 600 的檔案讀取密碼，再經 stdin config 交給 curl；
+# curl 命令列與子程序環境都不含密碼。
+curl_auth_config() {
+  password=$(cat "$PASSWORD_FILE")
+  test -n "$password" || { echo "密碼檔為空：$PASSWORD_FILE" >&2; return 10; }
+  case "$password" in
+    *'
+'*) echo '密碼不可包含換行' >&2; return 10 ;;
+  esac
+  escaped=$(printf '%s:%s' "$ES_USER" "$password" | sed 's/\\/\\\\/g; s/"/\\"/g')
+  unset password
+  printf 'user = "%s"\n' "$escaped"
+  unset escaped
+}
 
 es() {
   method="$1"
   endpoint="$2"
   shift 2
-  curl --silent --show-error --fail \
+  curl_auth_config | curl -q --silent --show-error --fail \
     --connect-timeout 5 --max-time 30 \
+    --config - \
     --cacert "$CA_CERT" \
-    -u "$ES_USER:$ES_PASSWORD" \
     -H 'Content-Type: application/json' \
     -X "$method" "$ES_URL$endpoint" "$@"
 }
@@ -34,10 +63,10 @@ es_allow_404() {
   endpoint="$2"
   shift 2
   body_file=$(mktemp)
-  if ! status=$(curl --silent --show-error \
+  if ! status=$(curl_auth_config | curl -q --silent --show-error \
     --connect-timeout 5 --max-time 30 \
+    --config - \
     --cacert "$CA_CERT" \
-    -u "$ES_USER:$ES_PASSWORD" \
     -H 'Content-Type: application/json' \
     -X "$method" "$ES_URL$endpoint" \
     -o "$body_file" -w '%{http_code}' "$@"); then
@@ -58,7 +87,7 @@ wait_for_value() {
   expected="$3"
   label="$4"
   attempt=1
-  while [ "$attempt" -le 30 ]; do
+  while [ "$attempt" -le 60 ]; do
     actual=$(es GET "$endpoint" | jq -r "$filter")
     if [ "$actual" = "$expected" ]; then
       echo "$label=$actual"
@@ -77,7 +106,7 @@ wait_for_min() {
   minimum="$3"
   label="$4"
   attempt=1
-  while [ "$attempt" -le 30 ]; do
+  while [ "$attempt" -le 60 ]; do
     actual=$(es GET "$endpoint" | jq -r "$filter")
     if [ "$actual" -ge "$minimum" ] 2>/dev/null; then
       echo "$label=$actual"
@@ -88,6 +117,52 @@ wait_for_min() {
   done
   echo "等待逾時：$label，實際=$actual，預期>=${minimum}" >&2
   return 1
+}
+
+require_multinode_helper() {
+  command -v podman >/dev/null 2>&1 || {
+    echo '此 M 案例需要 podman 控制臨時 helper node' >&2
+    return 10
+  }
+  test -x "$PODMAN_TEST_ENV_CMD" || {
+    echo "找不到 Podman 測試環境控制器：$PODMAN_TEST_ENV_CMD" >&2
+    return 10
+  }
+}
+
+helper_up() {
+  require_multinode_helper
+  "$PODMAN_TEST_ENV_CMD" multinode-helper-up "$1"
+}
+
+helper_down() {
+  require_multinode_helper
+  "$PODMAN_TEST_ENV_CMD" multinode-helper-down
+}
+
+require_topology() {
+  expected="$1"
+  health=$(es GET '/_cluster/health')
+  node_count=$(printf '%s\n' "$health" | jq -r '.number_of_nodes')
+  case "$expected" in
+    single)
+      [ "$node_count" -eq 1 ] || {
+        echo "案例只支援 single topology；目前 number_of_nodes=$node_count" >&2
+        return 10
+      }
+      ;;
+    multi)
+      [ "$node_count" -ge 3 ] || {
+        echo "案例需要至少 3 個節點；目前 number_of_nodes=$node_count" >&2
+        return 10
+      }
+      ;;
+    *)
+      echo "未知 topology：$expected" >&2
+      return 10
+      ;;
+  esac
+  echo "topology=$expected nodes=$node_count"
 }
 
 baseline_verify() {
@@ -101,10 +176,13 @@ baseline_verify() {
   settings=$(es GET '/_cluster/settings?flat_settings=true')
   printf '%s\n' "$settings" | jq -e '
     .transient["cluster.routing.allocation.enable"] == null and
+    .transient["cluster.routing.rebalance.enable"] == null and
+    .transient["cluster.routing.allocation.exclude._name"] == null and
     .transient["cluster.max_shards_per_node"] == null and
     .transient["cluster.routing.allocation.disk.watermark.low"] == null and
     .transient["cluster.routing.allocation.disk.watermark.high"] == null and
     .transient["cluster.routing.allocation.disk.watermark.flood_stage"] == null and
+    .transient["cluster.routing.allocation.awareness.attributes"] == null and
     .persistent["xpack.monitoring.collection.enabled"] == null and
     .persistent["cluster.remote.playbook-remote.seeds"] == null and
     .persistent["cluster.remote.playbook-remote.skip_unavailable"] == null
@@ -118,6 +196,331 @@ baseline_verify() {
   wait_for_value '/_remote/info' \
     'has("playbook-remote") | tostring' 'false' 'playbook_remote_exists'
   echo 'baseline=clean'
+}
+
+m00_verify() {
+  baseline_verify
+
+  health=$(es GET '/_cluster/health')
+  printf '%s\n' "$health" | jq -e '
+    .status == "green" and
+    .number_of_nodes == 3 and
+    .number_of_data_nodes == 3
+  ' >/dev/null
+
+  topology=$(es GET '/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes')
+  printf '%s\n' "$topology" | jq -e '
+    ._nodes.failed == 0 and
+    ._nodes.successful == ._nodes.total and
+    ([.nodes[].roles | select(index("master"))] | length) >= 3 and
+    ([.nodes[] | select([.roles[] | select(startswith("data"))] | length > 0)] | length) >= 3 and
+    ([.nodes[].attributes.zone // ""] | map(select(length > 0)) | unique | length) >= 3 and
+    ([.nodes[].roles | select(index("data_hot"))] | length) >= 2 and
+    ([.nodes[].roles | select(index("data_warm"))] | length) >= 1
+  ' >/dev/null
+
+  settings=$(es GET '/_cluster/settings?flat_settings=true&include_defaults=true')
+  awareness=$(printf '%s\n' "$settings" | jq -r '
+    .transient["cluster.routing.allocation.awareness.attributes"] //
+    .persistent["cluster.routing.allocation.awareness.attributes"] //
+    .defaults["cluster.routing.allocation.awareness.attributes"] //
+    empty |
+    if type == "array" then join(",") else . end
+  ')
+  [ "$awareness" = zone ] || {
+    echo "allocation awareness 預期為 zone，實際=${awareness:-unset}" >&2
+    return 1
+  }
+
+  echo 'multi_master_eligible>=3'
+  echo 'multi_data_nodes>=3'
+  echo 'multi_zones>=3'
+  echo 'multi_hot_nodes>=2'
+  echo 'multi_warm_nodes>=1'
+  echo "allocation_awareness=$awareness"
+  echo 'multi_baseline=clean'
+}
+
+m01_verify_placement() {
+  wait_for_value '/_cluster/health/playbook-mn-awareness' '.status' 'green' 'index_health'
+  shards=$(es GET '/_cat/shards/playbook-mn-awareness?format=json&h=state,node')
+  printf '%s\n' "$shards" | jq -e '
+    length == 2 and
+    all(.state == "STARTED") and
+    ([.[].node] | unique | length) == 2
+  ' >/dev/null
+
+  topology=$(es GET '/_nodes?filter_path=nodes.*.name,nodes.*.attributes')
+  placement_zones=$(jq -nc \
+    --argjson shards "$shards" \
+    --argjson topology "$topology" '
+      [$shards[].node] as $names |
+      [$topology.nodes[] |
+        select(.name as $name | ($names | index($name))) |
+        .attributes.zone] |
+      map(select(. != null and . != "")) |
+      unique |
+      sort
+    ')
+  printf '%s\n' "$placement_zones" | jq -e 'length == 2' >/dev/null
+  echo "placement_zones=$(printf '%s\n' "$placement_zones" | jq -r 'join(",")')"
+}
+
+m01_trigger() {
+  es PUT '/playbook-mn-awareness' --data '{
+    "settings":{
+      "number_of_shards":1,
+      "number_of_replicas":1,
+      "index.routing.allocation.include._tier_preference":"data_hot"
+    }
+  }' | jq .
+  m01_verify_placement
+
+  es PUT '/_cluster/settings' --data '{
+    "transient":{
+      "cluster.routing.allocation.awareness.attributes":"playbook_zone_missing"
+    }
+  }' | jq .
+}
+
+m01_verify() {
+  wait_for_value '/_cluster/settings?flat_settings=true' \
+    '.transient["cluster.routing.allocation.awareness.attributes"] // ""' \
+    'playbook_zone_missing' 'allocation_awareness'
+  topology=$(es GET '/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes')
+  printf '%s\n' "$topology" | jq -e '
+    ._nodes.failed == 0 and
+    ([.nodes[] | select(
+      ([.roles[] | select(startswith("data"))] | length > 0) and
+      ((.attributes.playbook_zone_missing // "") == "")
+    )] | length) >= 3
+  ' >/dev/null
+  echo 'missing_awareness_attribute=confirmed'
+}
+
+m01_restore() {
+  es PUT '/_cluster/settings' --data '{
+    "transient":{
+      "cluster.routing.allocation.awareness.attributes":null
+    }
+  }' | jq .
+  es_allow_404 DELETE '/playbook-mn-awareness' | jq .
+}
+
+m02_trigger() {
+  es PUT '/_ilm/policy/playbook-mn-tier-policy' --data '{
+    "policy":{
+      "phases":{
+        "hot":{"min_age":"0ms","actions":{}},
+        "warm":{"min_age":"0ms","actions":{}}
+      }
+    }
+  }' | jq .
+  es PUT '/playbook-mn-tier' --data '{
+    "settings":{
+      "number_of_shards":1,
+      "number_of_replicas":1,
+      "index.lifecycle.name":"playbook-mn-tier-policy"
+    }
+  }' | jq .
+}
+
+m02_verify() {
+  wait_for_value '/playbook-mn-tier/_ilm/explain' \
+    '.indices[]?.action' 'migrate' 'ilm_action'
+  wait_for_value '/playbook-mn-tier/_ilm/explain' \
+    '.indices[]?.step' 'check-migration' 'ilm_step'
+  wait_for_min '/playbook-mn-tier/_ilm/explain' \
+    '.indices[]?.step_info.shards_left_to_allocate // 0' 1 'shards_left_to_allocate'
+}
+
+m02_restore() {
+  es_allow_404 DELETE '/playbook-mn-tier' | jq .
+  es_allow_404 DELETE '/_ilm/policy/playbook-mn-tier-policy' | jq .
+}
+
+m03_trigger() {
+  es PUT '/_cluster/settings' --data '{
+    "transient":{"cluster.routing.allocation.exclude._name":"es8-mn4"}
+  }' | jq .
+  helper_up runtime
+}
+
+m03_verify() {
+  runtimes=$(es GET '/_nodes/jvm,plugins?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.jvm.mem.heap_max_in_bytes')
+  printf '%s\n' "$runtimes" | jq -e '
+    ._nodes.total == 4 and
+    ._nodes.successful == 4 and
+    ._nodes.failed == 0 and
+    ([.nodes[] | select(.name == "es8-mn4")] | length) == 1 and
+    ([.nodes[] |
+      select(.roles == ["data_content","data_hot","ingest","master","remote_cluster_client","transform"]) |
+      .jvm.mem.heap_max_in_bytes] | unique | length) >= 2
+  ' >/dev/null
+  echo 'node_runtime_heap_drift=confirmed'
+}
+
+m03_restore() {
+  helper_down
+  es PUT '/_cluster/settings' --data '{
+    "transient":{"cluster.routing.allocation.exclude._name":null}
+  }' | jq .
+}
+
+m04_trigger() {
+  helper_up master-disk
+  podman exec --user 0 elk-diagnostics-es8-mn4 \
+    dd if=/dev/zero of=/usr/share/elasticsearch/data/playbook-disk-fill \
+    bs=1M count=230 status=none
+}
+
+m04_verify() {
+  wait_for_min '/_cat/nodes?format=json&h=name,node.role,disk.used_percent' \
+    '([.[] | select(.name == "es8-mn4")][0]["disk.used_percent"] | tonumber | floor)' \
+    75 'master_only_disk_percent'
+  topology=$(es GET '/_nodes/es8-mn4?filter_path=_nodes,nodes.*.name,nodes.*.roles')
+  printf '%s\n' "$topology" | jq -e '
+    ._nodes.successful == 1 and
+    ([.nodes[] | select(.name == "es8-mn4" and .roles == ["master"])] | length) == 1
+  ' >/dev/null
+  echo 'master_only_disk_outlier=confirmed'
+}
+
+m04_restore() {
+  helper_down
+}
+
+m05_trigger() {
+  es PUT '/_cluster/settings' --data '{
+    "transient":{"cluster.routing.allocation.exclude._name":"es8-mn4"}
+  }' | jq .
+  helper_up data-disk
+  podman exec --user 0 elk-diagnostics-es8-mn4 \
+    dd if=/dev/zero of=/usr/share/elasticsearch/data/playbook-disk-fill \
+    bs=1M count=230 status=none
+}
+
+m05_verify() {
+  wait_for_min '/_cat/nodes?format=json&h=name,node.role,disk.used_percent' \
+    '([.[] | select(.name == "es8-mn4")][0]["disk.used_percent"] | tonumber | floor)' \
+    75 'data_node_disk_percent'
+  topology=$(es GET '/_nodes/es8-mn4?filter_path=_nodes,nodes.*.name,nodes.*.roles')
+  printf '%s\n' "$topology" | jq -e '
+    ._nodes.successful == 1 and
+    ([.nodes[] | select(
+      .name == "es8-mn4" and
+      (.roles | index("master") | not) and
+      (.roles | index("data_hot")) and
+      (.roles | index("data_content"))
+    )] | length) == 1
+  ' >/dev/null
+  echo 'data_node_disk_hotspot=confirmed'
+}
+
+m05_restore() {
+  # 舊版 M05 曾建立此 index；保留可重入清理，避免升級腳本後留下測試資料。
+  es_allow_404 DELETE '/playbook-mn-hotspot' | jq .
+  helper_down
+  es PUT '/_cluster/settings' --data '{
+    "transient":{"cluster.routing.allocation.exclude._name":null}
+  }' | jq .
+}
+
+m06_trigger() {
+  es PUT '/playbook-mn-unbalanced' --data '{
+    "settings":{
+      "number_of_shards":12,
+      "number_of_replicas":0,
+      "index.routing.allocation.include._tier_preference":"data_hot",
+      "index.routing.allocation.require._name":"es8-mn1"
+    }
+  }' | jq .
+  wait_for_value '/_cluster/health/playbook-mn-unbalanced?wait_for_no_relocating_shards=true&timeout=60s' \
+    '.status' 'green' 'index_health'
+  es PUT '/_cluster/settings' --data '{
+    "transient":{"cluster.routing.allocation.enable":"none"}
+  }' | jq .
+  es PUT '/playbook-mn-unbalanced/_settings' --data '{
+    "index.routing.allocation.require._name":null
+  }' | jq .
+}
+
+m06_verify() {
+  wait_for_min '/_cat/allocation?format=json&h=node,shards,shards.undesired,disk.percent' \
+    '[.[]["shards.undesired"] | tonumber? // 0] | add // 0' \
+    1 'undesired_shards'
+}
+
+m06_restore() {
+  es PUT '/_cluster/settings' --data '{
+    "transient":{"cluster.routing.allocation.enable":null}
+  }' | jq .
+  es_allow_404 DELETE '/playbook-mn-unbalanced' | jq .
+}
+
+m07_trigger() {
+  helper_up master
+}
+
+m07_verify() {
+  topology=$(es GET '/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles')
+  printf '%s\n' "$topology" | jq -e '
+    ._nodes.total == 4 and
+    ._nodes.successful == 4 and
+    ([.nodes[].roles | select(index("master"))] | length) == 4 and
+    ([.nodes[] | select(.name == "es8-mn4" and .roles == ["master"])] | length) == 1
+  ' >/dev/null
+  echo 'master_eligible_nodes=4'
+  echo 'even_master_topology_risk=confirmed'
+}
+
+m07_restore() {
+  helper_down
+}
+
+m08_trigger() {
+  helper_up partial
+  podman pause elk-diagnostics-es8-mn4 >/dev/null
+}
+
+m08_verify() {
+  partial=$(es GET '/_nodes/stats/os,process,fs,jvm?timeout=5s&filter_path=_nodes,nodes.*.name')
+  printf '%s\n' "$partial" | jq -e '
+    ._nodes.total == 4 and
+    ._nodes.successful == 3 and
+    ._nodes.failed == 1 and
+    (.nodes | length) == 3
+  ' >/dev/null
+  echo 'nodes_api_total=4'
+  echo 'nodes_api_successful=3'
+  echo 'nodes_api_failed=1'
+}
+
+m08_restore() {
+  podman unpause elk-diagnostics-es8-mn4 >/dev/null 2>&1 || true
+  helper_down
+}
+
+m09_trigger() {
+  es PUT '/playbook-mn-no-replica' --data '{
+    "settings":{
+      "number_of_shards":1,
+      "number_of_replicas":0,
+      "index.routing.allocation.include._tier_preference":"data_hot"
+    }
+  }' | jq .
+}
+
+m09_verify() {
+  wait_for_value '/_cluster/health/playbook-mn-no-replica' \
+    '.status' 'green' 'index_health'
+  wait_for_value '/playbook-mn-no-replica/_settings?flat_settings=true' \
+    '.["playbook-mn-no-replica"].settings["index.number_of_replicas"]' \
+    '0' 'number_of_replicas'
+}
+
+m09_restore() {
+  es_allow_404 DELETE '/playbook-mn-no-replica' | jq .
 }
 
 p01_trigger() {
@@ -478,13 +881,16 @@ p16_restore() {
 
 usage() {
   cat >&2 <<'USAGE'
-用法：./dev/phase0/fault-scenarios.sh <P01..P16|baseline> <trigger|verify|restore>
+用法：./dev/phase0/fault-scenarios.sh <P01..P16|M00..M09|baseline> <trigger|verify|restore>
 
 範例：
   ./dev/phase0/fault-scenarios.sh baseline verify
   ./dev/phase0/fault-scenarios.sh P01 trigger
   ./dev/phase0/fault-scenarios.sh P01 verify
   ./dev/phase0/fault-scenarios.sh P01 restore
+  ./dev/phase0/fault-scenarios.sh M00 verify
+  ./dev/phase0/fault-scenarios.sh M01 trigger
+  ./dev/phase0/fault-scenarios.sh M03 restore
 USAGE
 }
 
@@ -497,7 +903,19 @@ if [ "$scenario" = baseline ] && [ "$action" = verify ]; then
 fi
 
 case "$scenario" in
-  P01|P02|P03|P04|P05|P06|P07|P08|P09|P10|P11|P12|P13|P14|P15|P16) ;;
+  P01|P02|P03|P04|P05|P06|P07|P08|P09|P10|P11|P12|P13|P14|P15|P16)
+    require_topology single
+    ;;
+  M00)
+    [ "$action" = verify ] || { usage; exit 10; }
+    require_topology multi
+    echo "[$scenario] $action"
+    m00_verify
+    exit 0
+    ;;
+  M01|M02|M03|M04|M05|M06|M07|M08|M09)
+    require_topology multi
+    ;;
   *) usage; exit 10 ;;
 esac
 

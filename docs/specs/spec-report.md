@@ -135,7 +135,7 @@ JSON 為穩定契約：欄位只增不改名；新增診斷項只是多一個 `r
 3. **版本警告區**（若有）：es_version 超出 tested_versions 的全域提示。
 4. **Node Context 區塊**（資料可得時）：Stats／Info coverage、每個節點的資源摘要與可折疊 raw context；I/O、GC、CPU throttling 明示為累積值。
 5. **分類區塊**：依 category 分節（叢集 / 容量 / 資料 / 管理 / 效能 / 快照 / 節點環境），節內逐項卡片：
-   - 卡片標頭：狀態 badge（色+✅/⚠️/❌）、`title`、`summary`、來源標記（health_report / raw / fallback）。
+   - 卡片標頭：狀態 badge（色彩＋圖示＋明確文字 `PASS`／`WARNING`／`CRITICAL`／`SKIPPED`／`UNKNOWN`）、`title`、`summary`、來源標記（health_report / raw / fallback）；不得只依賴色彩或圖示表達狀態。
    - 可折疊明細：findings、root_causes、recommendations（指令以等寬框、可複製）、docs 連結、version_warning。
 6. **特殊項目區**：`skipped` 與 `requires_extra` 項目集中列於獨立區塊（見 §6），不混入正常判定。
 7. **頁尾**：免責聲明。

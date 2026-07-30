@@ -91,6 +91,20 @@ export ELK_DIAGNOSTICS_CA_CERT="$PWD/ca.crt"
 
 環境變數只需設定一次，後續在同一個 Terminal 執行的 `check`／`diagnose` 都會沿用。
 
+操作完成後應立即清除，避免後續執行時意外覆寫 `config.yaml`，或連線到錯誤叢集：
+
+```bash
+unset ELK_DIAGNOSTICS_HOSTS \
+  ELK_DIAGNOSTICS_AUTH_TYPE \
+  ELK_DIAGNOSTICS_USERNAME \
+  ELK_DIAGNOSTICS_PASSWORD \
+  ELK_DIAGNOSTICS_API_KEY \
+  ELK_DIAGNOSTICS_TOKEN \
+  ELK_DIAGNOSTICS_CA_CERT
+```
+
+`unset` 只清除目前 Shell 的環境變數，不會修改 `config.yaml` 或 Elasticsearch。
+
 #### 3.1.3 Flags（單次覆寫）
 
 ```bash
@@ -155,6 +169,8 @@ JSON 報告：
 - data path、mount、容量與 filesystem I/O 累積值。
 - JVM heap／old pool、uptime 與 GC 累積值。
 
+報告中的 `OS RAM（含 cache）` 是主機／容器層的單次使用率快照，可能包含可回收的 filesystem cache；`JVM Heap` 只代表 Elasticsearch JVM heap。兩者不能互換判讀，單次 OS RAM 高值也不單獨構成記憶體壓力告警。
+
 `node_api_coverage` 會核對 Nodes Stats 與 Nodes Info 的 `_nodes.total/successful/failed`。任一節點未回應時標為 `unknown`，不會把已回應節點的正常結果當成全叢集正常。
 
 這不是完整主機健檢：不使用 SSH，不包含 kernel/OOM/NTP/網路資訊。I/O、GC 與 CPU throttling 是累積 counter，單次報告不會把它們解讀成 latency 或 rate。
@@ -209,7 +225,19 @@ export BUNDLE_ROOT="$PWD/bundle-$(date +%Y%m%d-%H%M%S)"
   -o "$BUNDLE_ROOT"
 ```
 
-若未設定 `ES_PASSWORD`，腳本會在 Terminal 互動詢問密碼且不回顯。非互動式自動化才由企業秘密管理系統或 CI/CD protected secret 注入 `ES_PASSWORD`；不要手動輸入含有真實密碼的 `export` 指令。
+若未提供密碼，腳本會在 Terminal 互動詢問且不回顯。非互動式正式採集優先由企業秘密
+管理系統掛載權限 `600` 的檔案，再只傳入檔案路徑：
+
+```bash
+ES_PASSWORD_FILE=/run/secrets/elasticsearch-password ./collect.sh \
+  -h 'https://es.example.local:9200' \
+  -u 'elastic' \
+  --ca-cert "$PWD/ca.crt" \
+  -o "$BUNDLE_ROOT"
+```
+
+`ES_PASSWORD` 僅保留給無法掛載秘密檔案的既有受控自動化；不要手動輸入含真實密碼的
+`export`，也不要把密碼寫進命令列、一般設定檔或版控。
 
 採集完成後確認：
 

@@ -20,13 +20,20 @@
 export ES_LABEL=es8
 export ES_URL=https://localhost:9208
 export ES_USER=elastic
-export ES_PASSWORD=elk-diagnostics-test-only
 export CA_CERT="$PWD/dev/phase0/certs/ca/ca.crt"
+
+export ES_PASSWORD_FILE="$(mktemp "${TMPDIR:-/tmp}/elk-diagnostics-password.XXXXXX")"
+chmod 600 "$ES_PASSWORD_FILE"
+printf 'Elasticsearch password: ' >&2
+IFS= read -r -s ES_PASSWORD_INPUT
+printf '\n' >&2
+printf '%s' "$ES_PASSWORD_INPUT" > "$ES_PASSWORD_FILE"
+unset ES_PASSWORD_INPUT
+trap 'rm -f "${ES_PASSWORD_FILE:-}"' EXIT
 
 export ELK_DIAGNOSTICS_HOSTS="$ES_URL"
 export ELK_DIAGNOSTICS_AUTH_TYPE=basic
 export ELK_DIAGNOSTICS_USERNAME="$ES_USER"
-export ELK_DIAGNOSTICS_PASSWORD="$ES_PASSWORD"
 export ELK_DIAGNOSTICS_CA_CERT="$CA_CERT"
 
 export TOOL_BIN="$PWD/elk-diagnostics"
@@ -38,6 +45,10 @@ test -x "$TOOL_BIN"
 test -x "$FAULT_CMD"
 "$FAULT_CMD" baseline verify
 ```
+
+Terminal 只保留權限 `600` 的臨時密碼檔路徑；內部故障控制器透過 curl config 使用
+認證，不會把密碼放進程序參數或匯出的 `ES_PASSWORD`。Live binary 不讀取此檔案，
+執行時會另外安全詢問密碼。
 
 Live JSON 報告集中在 repo 根目錄的 `reports/live-playbook-*`；`reports/` 已由
 `.gitignore` 排除，不會混入待提交檔案。
@@ -264,3 +275,14 @@ live_baseline_gate
 ```
 
 把 `PXX` 換成中斷的案例。基準線未恢復前不得繼續。
+
+## 8. 使用後清理
+
+```bash
+rm -f "${ES_PASSWORD_FILE:-}"
+unset ES_LABEL ES_URL ES_USER ES_PASSWORD_FILE CA_CERT
+unset ELK_DIAGNOSTICS_HOSTS ELK_DIAGNOSTICS_AUTH_TYPE
+unset ELK_DIAGNOSTICS_USERNAME ELK_DIAGNOSTICS_CA_CERT
+unset TOOL_BIN FAULT_CMD EVIDENCE_ROOT
+trap - EXIT
+```

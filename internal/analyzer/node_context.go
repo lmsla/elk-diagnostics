@@ -23,23 +23,27 @@ func NodeContextResults(snapshot *nodecontext.Snapshot, t rules.Thresholds) []di
 	if snapshot != nil {
 		nodes = snapshot.Nodes
 	}
-	return []diagnostic.Result{
-		NodeAPICoverage(snapshot),
-		NodeSwapUsage(nodes),
-		NodeFileDescriptorPressure(nodes, t),
-		NodeCgroupMemoryPressure(nodes, t),
-		RecentNodeRestart(snapshot, t),
-		NodeMemoryLock(snapshot),
+	results := []diagnostic.Result{NodeAPICoverage(snapshot)}
+	derived := []struct {
+		result    diagnostic.Result
+		needsInfo bool
+	}{
+		{result: NodeSwapUsage(nodes)},
+		{result: NodeFileDescriptorPressure(nodes, t)},
+		{result: NodeCgroupMemoryPressure(nodes, t)},
+		{result: RecentNodeRestart(snapshot, t)},
+		{result: NodeMemoryLock(snapshot), needsInfo: true},
 	}
+	for _, item := range derived {
+		results = append(results, applyNodeCoverageDependency(item.result, snapshot, item.needsInfo))
+	}
+	return results
 }
 
 func RecentNodeRestart(snapshot *nodecontext.Snapshot, t rules.Thresholds) diagnostic.Result {
 	res := diagnostic.Result{ID: "recent_node_restart", Title: "節點近期重啟", Category: "node", Source: "raw_api", Docs: []string{docNodeStats}}
 	if snapshot == nil || len(snapshot.Nodes) == 0 {
 		return unknownNodeContext(res, "Nodes Stats 不可用，無法判定節點 uptime", nil)
-	}
-	if !snapshot.StatsCoverage.Complete() {
-		return unknownNodeContext(res, "Nodes Stats 回應不完整，無法判定所有節點 uptime", snapshot.Issues)
 	}
 	warnMillis := int64(t.StaticHealth.RecentRestartWarnMinutes) * 60 * 1000
 	var hits, missing []string
@@ -61,6 +65,9 @@ func RecentNodeRestart(snapshot *nodecontext.Snapshot, t rules.Thresholds) diagn
 		res.Recommendations = []diagnostic.Recommendation{{Desc: "對照變更窗口、Elasticsearch 日誌與主機事件確認重啟原因及是否反覆發生"}}
 		return res
 	}
+	if !snapshot.StatsCoverage.Complete() {
+		return unknownNodeContext(res, "Nodes Stats 回應不完整，無法判定所有節點 uptime", nil)
+	}
 	if len(missing) > 0 {
 		return unknownNodeContext(res, "部分節點缺少 JVM uptime，無法完整判定", missing)
 	}
@@ -71,9 +78,6 @@ func NodeMemoryLock(snapshot *nodecontext.Snapshot) diagnostic.Result {
 	res := diagnostic.Result{ID: "node_memory_lock", Title: "Memory lock / swap 設定", Category: "node", Source: "raw_api", Docs: []string{docNodeInfo, docSwap}}
 	if snapshot == nil || len(snapshot.Nodes) == 0 {
 		return unknownNodeContext(res, "Nodes Info 不可用，無法判定 memory lock", nil)
-	}
-	if !snapshot.InfoCoverage.Complete() || !snapshot.StatsCoverage.Complete() {
-		return unknownNodeContext(res, "Nodes Info／Stats 回應不完整，無法交叉判讀 memory lock 與 swap", snapshot.Issues)
 	}
 	var risks, missing []string
 	for _, node := range snapshot.Nodes {
@@ -102,6 +106,9 @@ func NodeMemoryLock(snapshot *nodecontext.Snapshot) diagnostic.Result {
 		res.Recommendations = []diagnostic.Recommendation{{Desc: "依部署方式選擇完全停用 swap，或設定 bootstrap.memory_lock=true 並正確配置系統 memlock 上限"}}
 		return res
 	}
+	if !snapshot.InfoCoverage.Complete() || !snapshot.StatsCoverage.Complete() {
+		return unknownNodeContext(res, "Nodes Info／Stats 回應不完整，無法交叉判讀 memory lock 與 swap", nil)
+	}
 	if len(missing) > 0 {
 		return unknownNodeContext(res, "部分節點缺少 memory lock／swap 欄位，無法完整判定", missing)
 	}
@@ -115,10 +122,14 @@ func NodeAPICoverage(snapshot *nodecontext.Snapshot) diagnostic.Result {
 	}
 	stats, info := snapshot.StatsCoverage, snapshot.InfoCoverage
 	findings := []string{
-		fmt.Sprintf("Nodes Stats: successful=%d/%d failed=%d returned=%d", stats.Successful, stats.Total, stats.Failed, stats.Returned),
-		fmt.Sprintf("Nodes Info: successful=%d/%d failed=%d returned=%d", info.Successful, info.Total, info.Failed, info.Returned),
+		formatNodeCoverage("Nodes Stats", stats),
+		formatNodeCoverage("Nodes Info", info),
 	}
-	findings = append(findings, snapshot.Issues...)
+	for _, issue := range snapshot.Issues {
+		if !generatedNodeCoverageIssue(issue) {
+			findings = append(findings, issue)
+		}
+	}
 	if stats.Complete() && info.Complete() && len(snapshot.Issues) == 0 {
 		res = pass(res, fmt.Sprintf("Nodes Stats 與 Nodes Info 均完整回應 %d 個節點", stats.Total))
 		res.Findings = findings
@@ -238,6 +249,60 @@ func NodeCgroupMemoryPressure(nodes []nodecontext.Node, t rules.Thresholds) diag
 		return pass(res, "未偵測到有限 cgroup memory limit，本門檻不適用")
 	}
 	return pass(res, fmt.Sprintf("有限 cgroup 的 memory usage 均 <%d%%", warnPct))
+}
+
+// applyNodeCoverageDependency 收斂 Node Context 的 partial response：
+// node_api_coverage 是完整性根因，衍生診斷不重複貼出相同 coverage findings。
+// 已觀測到的 warning/critical 仍保留，但明示未回應節點可能讓異常數量被低估；
+// 只有「看起來正常」或原本無法判定的結果會統一降為 dependency unknown。
+func applyNodeCoverageDependency(res diagnostic.Result, snapshot *nodecontext.Snapshot, needsInfo bool) diagnostic.Result {
+	statsComplete := snapshot != nil && snapshot.StatsCoverage.Complete()
+	infoComplete := !needsInfo || (snapshot != nil && snapshot.InfoCoverage.Complete())
+	if statsComplete && infoComplete {
+		return res
+	}
+
+	dependency := "Nodes Stats"
+	if needsInfo {
+		dependency = "Nodes Stats／Info"
+	}
+	if res.Status == diagnostic.StatusWarning || res.Status == diagnostic.StatusCritical {
+		res.RequiresExtra = true
+		coverageReason := "node_api_coverage=unknown；仍有節點未回應，目前異常數量可能低估"
+		if res.ExtraReason == "" {
+			res.ExtraReason = coverageReason
+		} else {
+			res.ExtraReason += "；" + coverageReason
+		}
+		return res
+	}
+
+	res.Status, res.Conclusion = diagnostic.StatusUnknown, diagnostic.ConclusionNormal
+	res.Summary = fmt.Sprintf("受 node_api_coverage 影響：%s 回應不完整，無法判定所有節點", dependency)
+	res.Findings = nil
+	res.RootCauses = nil
+	res.Recommendations = nil
+	res.RequiresExtra = false
+	res.ExtraReason = ""
+	return res
+}
+
+func formatNodeCoverage(name string, coverage nodecontext.Coverage) string {
+	if !coverage.Available {
+		return fmt.Sprintf("%s: coverage unavailable returned=%d", name, coverage.Returned)
+	}
+	return fmt.Sprintf("%s: successful=%d/%d failed=%d returned=%d",
+		name, coverage.Successful, coverage.Total, coverage.Failed, coverage.Returned)
+}
+
+func generatedNodeCoverageIssue(issue string) bool {
+	for _, name := range []string{"Nodes Stats", "Nodes Info"} {
+		if strings.HasPrefix(issue, name+" 部分回應:") ||
+			issue == name+" 缺少 _nodes coverage" {
+			return true
+		}
+	}
+	return false
 }
 
 func unknownNodeContext(res diagnostic.Result, summary string, findings []string) diagnostic.Result {

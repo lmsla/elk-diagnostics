@@ -21,6 +21,9 @@ usage() {
   ./dev/phase0/bundle-case.sh P01 restore
   ./dev/phase0/bundle-case.sh P01 collect-post
   ./dev/phase0/bundle-case.sh P01 run
+  ./dev/phase0/bundle-case.sh M00 collect
+  ./dev/phase0/bundle-case.sh M01 run
+  ./dev/phase0/bundle-case.sh M09 run
 
 動作：
   trigger       確認基準線後製造並確認故障；故障保持生效
@@ -30,7 +33,9 @@ usage() {
   run           trigger → collect → restore → collect-post
 
 必要環境變數：
-  ES_URL ES_USER ES_PASSWORD CA_CERT EVIDENCE_ROOT
+  ES_URL ES_USER ES_PASSWORD_FILE CA_CERT EVIDENCE_ROOT
+
+ES_PASSWORD_FILE 必須指向權限 600 的密碼檔；本控制器拒絕直接接收 ES_PASSWORD。
 USAGE
 }
 
@@ -46,7 +51,7 @@ require_env() {
 
 validate_case() {
   case "$1" in
-    P00|P01|P02|P03|P04|P05|P06|P07|P08|P09|P10|P11|P12|P13|P14|P15|P16) ;;
+    P00|P01|P02|P03|P04|P05|P06|P07|P08|P09|P10|P11|P12|P13|P14|P15|P16|M00|M01|M02|M03|M04|M05|M06|M07|M08|M09) ;;
     *) usage; return 10 ;;
   esac
 }
@@ -54,14 +59,23 @@ validate_case() {
 prepare() {
   require_env ES_URL
   require_env ES_USER
-  require_env ES_PASSWORD
+  [[ -z "${ES_PASSWORD:-}" ]] ||
+    fail "不再接受 ES_PASSWORD；請改用權限 600 的 ES_PASSWORD_FILE"
+  require_env ES_PASSWORD_FILE
   require_env CA_CERT
   require_env EVIDENCE_ROOT
   [[ -x "$FAULT_CMD" ]] || fail "找不到故障控制器：${FAULT_CMD}"
   [[ -x "$COLLECT_SH" ]] || fail "找不到採集腳本：${COLLECT_SH}"
   [[ -f "$CA_CERT" ]] || fail "找不到 CA：${CA_CERT}"
+  [[ -r "$ES_PASSWORD_FILE" ]] || fail "密碼檔不可讀：${ES_PASSWORD_FILE}"
+  PASSWORD_FILE="$ES_PASSWORD_FILE"
+  unset ES_PASSWORD_FILE
   mkdir -p "$EVIDENCE_ROOT"
   ACTIVE_FILE="${EVIDENCE_ROOT}/.bundle-case-active"
+}
+
+fault_case() {
+  ES_PASSWORD_FILE="$PASSWORD_FILE" "$FAULT_CMD" "$@"
 }
 
 active_case() {
@@ -72,7 +86,7 @@ collect_bundle() {
   local label="$1"
   local dir="${EVIDENCE_ROOT}/${label}/bundle"
   mkdir -p "${EVIDENCE_ROOT}/${label}"
-  ES_PASSWORD="$ES_PASSWORD" "$COLLECT_SH" \
+  ES_PASSWORD_FILE="$PASSWORD_FILE" "$COLLECT_SH" \
     -h "$ES_URL" -u "$ES_USER" --ca-cert "$CA_CERT" -o "$dir"
   [[ -f "${dir}/_manifest.json" ]] || fail "Bundle 缺少 _manifest.json：${dir}"
   [[ -f "${dir}/_status.txt" ]] || fail "Bundle 缺少 _status.txt：${dir}"
@@ -80,8 +94,22 @@ collect_bundle() {
 }
 
 collect_baseline() {
-  "$FAULT_CMD" baseline verify
-  collect_bundle P00
+  local case_id="$1"
+  if [[ "$case_id" == M00 ]]; then
+    fault_case M00 verify
+  else
+    fault_case baseline verify
+  fi
+  collect_bundle "$case_id"
+}
+
+verify_case_baseline() {
+  local case_id="$1"
+  if [[ "$case_id" == M* ]]; then
+    fault_case M00 verify
+  else
+    fault_case baseline verify
+  fi
 }
 
 trigger_case() {
@@ -89,21 +117,21 @@ trigger_case() {
   local current
   current="$(active_case || true)"
   [[ -z "$current" ]] || fail "已有未復原案例 ${current}；請先執行 bundle_case ${current} restore"
-  "$FAULT_CMD" baseline verify
+  verify_case_baseline "$case_id"
 
-  if ! "$FAULT_CMD" "$case_id" trigger; then
-    "$FAULT_CMD" "$case_id" restore || true
-    "$FAULT_CMD" baseline verify || true
+  if ! fault_case "$case_id" trigger; then
+    fault_case "$case_id" restore || true
+    verify_case_baseline "$case_id" || true
     return 1
   fi
-  if ! "$FAULT_CMD" "$case_id" verify; then
-    "$FAULT_CMD" "$case_id" restore || true
-    "$FAULT_CMD" baseline verify || true
+  if ! fault_case "$case_id" verify; then
+    fault_case "$case_id" restore || true
+    verify_case_baseline "$case_id" || true
     return 1
   fi
   if ! printf '%s\n' "$case_id" >"$ACTIVE_FILE"; then
-    "$FAULT_CMD" "$case_id" restore || true
-    "$FAULT_CMD" baseline verify || true
+    fault_case "$case_id" restore || true
+    verify_case_baseline "$case_id" || true
     return 1
   fi
   echo "active_case=${case_id}"
@@ -116,7 +144,7 @@ collect_fault() {
   current="$(active_case || true)"
   [[ "$current" == "$case_id" ]] ||
     fail "目前記錄的 active case=${current:-none}，不是 ${case_id}；不得採集未確認狀態"
-  "$FAULT_CMD" "$case_id" verify
+  fault_case "$case_id" verify
   collect_bundle "${case_id}-fault"
 }
 
@@ -127,8 +155,8 @@ restore_case() {
   if [[ -n "$current" && "$current" != "$case_id" ]]; then
     fail "目前記錄的 active case=${current}，拒絕用 ${case_id} 的配方還原"
   fi
-  "$FAULT_CMD" "$case_id" restore
-  "$FAULT_CMD" baseline verify
+  fault_case "$case_id" restore
+  verify_case_baseline "$case_id"
   rm -f "$ACTIVE_FILE"
   echo "restored_case=${case_id}"
 }
@@ -138,7 +166,7 @@ collect_post() {
   local current
   current="$(active_case || true)"
   [[ -z "$current" ]] || fail "${current} 尚未復原，不得採集 post bundle"
-  "$FAULT_CMD" baseline verify
+  verify_case_baseline "$case_id"
   collect_bundle "post-${case_id}"
 }
 
@@ -174,12 +202,12 @@ action="${2:-}"
 validate_case "$case_id"
 prepare
 
-if [[ "$case_id" == P00 ]]; then
+if [[ "$case_id" == P00 || "$case_id" == M00 ]]; then
   [[ "$action" == collect ]] || {
     usage
     exit 10
   }
-  collect_baseline
+  collect_baseline "$case_id"
   exit 0
 fi
 

@@ -15,6 +15,16 @@ import (
 //go:embed collect.sh.tmpl
 var collectTmpl string
 
+const (
+	defaultCollectMaxTimeSeconds = 30
+	fanOutCollectMaxTimeSeconds  = 10
+)
+
+type collectScriptEndpoint struct {
+	collector.Endpoint
+	MaxTimeSeconds int
+}
+
 func newCollectScriptCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "collect-script",
@@ -48,6 +58,14 @@ func renderCollectScript() (string, error) {
 		}
 	}
 
+	endpoints := make([]collectScriptEndpoint, 0, len(collector.Endpoints))
+	for _, e := range collector.Endpoints {
+		endpoints = append(endpoints, collectScriptEndpoint{
+			Endpoint:       e,
+			MaxTimeSeconds: collectMaxTimeSeconds(e.Path),
+		})
+	}
+
 	t, err := template.New("collect").Parse(collectTmpl)
 	if err != nil {
 		return "", err
@@ -58,16 +76,41 @@ func renderCollectScript() (string, error) {
 		Total        int
 		StatusFile   string
 		ManifestFile string
-		Endpoints    []collector.Endpoint
+		Endpoints    []collectScriptEndpoint
 	}{
 		ToolVersion:  toolVersion,
 		Total:        len(collector.Endpoints),
 		StatusFile:   collector.BundleStatusFile,
 		ManifestFile: collector.BundleManifestFile,
-		Endpoints:    collector.Endpoints,
+		Endpoints:    endpoints,
 	})
 	if err != nil {
 		return "", err
 	}
 	return b.String(), nil
+}
+
+// collectMaxTimeSeconds 對節點 fan-out 端點設定較短的外層上限。
+//
+// 部分 Nodes API 會等待無回應節點直到逾時；若每個端點都沿用 30 秒，單一故障
+// 節點會把整份 bundle 的採集時間放大。使用明確白名單，避免把其他 `/_nodes/*`
+// 管理端點（例如 planned shutdown）意外納入同一策略。
+func collectMaxTimeSeconds(path string) int {
+	switch path {
+	case collector.EpCatThreadPool,
+		collector.EpNodesResourceStats,
+		collector.EpNodesResourceInfo,
+		collector.EpNodesBreakers,
+		collector.EpCatNodes,
+		collector.EpNodesIngest,
+		collector.EpNodesRoles,
+		collector.EpCatThreadPoolWrite,
+		collector.EpRunningTasks,
+		collector.EpNodesRuntime,
+		collector.EpNodesTopology,
+		collector.EpNodesIndexingPressure:
+		return fanOutCollectMaxTimeSeconds
+	default:
+		return defaultCollectMaxTimeSeconds
+	}
 }

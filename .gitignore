@@ -2,6 +2,8 @@
 /elk-diagnostics
 /elk-diagnostics-*
 /dist/
+/.cache/
+/.tmp/
 
 # macOS
 .DS_Store
@@ -9,6 +11,7 @@
 # 實測產出的診斷報告（可能含客戶叢集資訊）
 /report*.html
 /reports/
+/check-report.*
 
 # collect.sh 的預設輸出目錄
 /elk-bundle-*/
@@ -17,6 +20,7 @@
 
 # 本機 ES 測試環境產生的自簽 CA、憑證與私鑰
 /dev/phase0/certs/
+/dev/phase0/runtime/
 
 # 連線設定（含認證憑證，僅保留 .example 範本）
 config.yaml

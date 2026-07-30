@@ -43,6 +43,32 @@ if [ ! -f es8/es8.crt ] || [ ! -f es9/es9.crt ] || [ ! -f kibana8/kibana8.crt ] 
   rm -f "$CERTS/certs.zip" "$CERTS/instances.yml"
 fi
 
+if [ ! -f es8-mn1/es8-mn1.crt ] || [ ! -f es8-mn2/es8-mn2.crt ] ||
+   [ ! -f es8-mn3/es8-mn3.crt ] || [ ! -f es8-mn4/es8-mn4.crt ]; then
+  rm -rf es8-mn1 es8-mn2 es8-mn3 es8-mn4
+  printf "%s\n" \
+    "instances:" \
+    "  - name: es8-mn1" \
+    "    dns: [es8-mn1, elk-diagnostics-es8-mn1, localhost]" \
+    "    ip: [127.0.0.1]" \
+    "  - name: es8-mn2" \
+    "    dns: [es8-mn2, elk-diagnostics-es8-mn2, localhost]" \
+    "    ip: [127.0.0.1]" \
+    "  - name: es8-mn3" \
+    "    dns: [es8-mn3, elk-diagnostics-es8-mn3, localhost]" \
+    "    ip: [127.0.0.1]" \
+    "  - name: es8-mn4" \
+    "    dns: [es8-mn4, elk-diagnostics-es8-mn4, localhost]" \
+    "    ip: [127.0.0.1]" > "$CERTS/instances-multinode.yml"
+  /usr/share/elasticsearch/bin/elasticsearch-certutil cert --silent --pem \
+    --in "$CERTS/instances-multinode.yml" \
+    --out "$CERTS/certs-multinode.zip" \
+    --ca-cert "$CERTS/ca/ca.crt" \
+    --ca-key "$CERTS/ca/ca.key"
+  unzip -q "$CERTS/certs-multinode.zip" -d "$CERTS"
+  rm -f "$CERTS/certs-multinode.zip" "$CERTS/instances-multinode.yml"
+fi
+
 # elastic 官方映像的程序以 uid 1000、gid 0 執行：key 給 640 + root 群組即可讀，
 # 其他使用者不可讀。
 chown -R root:root .

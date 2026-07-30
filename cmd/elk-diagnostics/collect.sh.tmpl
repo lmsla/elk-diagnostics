@@ -15,10 +15,11 @@
 # 用法：
 #     ./collect.sh -h https://es.example.local:9200 [-o 輸出目錄] [-u 帳號] [--ca-cert 檔案] [--insecure]
 #
-# 認證（擇一；一律從環境變數讀取，避免出現在 ps 輸出與 shell 歷史）：
-#     ES_PASSWORD='...' ./collect.sh -h https://... -u elastic
+# 認證（擇一；密碼檔優先，避免密碼出現在 ps 輸出、環境變數與 shell 歷史）：
+#     ES_PASSWORD_FILE=/path/to/mode-600-file ./collect.sh -h https://... -u elastic
 #     ES_API_KEY='...'  ./collect.sh -h https://...
-#   -u 未給 ES_PASSWORD 時會互動詢問（不回顯）。
+#   既有受控自動化仍可由秘密管理系統注入 ES_PASSWORD；不要手動輸入含密碼的指令。
+#   -u 未給密碼檔或 ES_PASSWORD 時會互動詢問（不回顯）。
 #
 # 產出內容（交付前請確認）：
 #   - 全部為叢集／節點層級的中繼資料，不含任何文件（document）內容
@@ -41,12 +42,12 @@ usage() {
 
   -h, --host      ES base URL，例如 https://es.example.local:9200（必填）
   -o, --output    輸出目錄（預設 elk-bundle-<時間戳>）
-  -u, --username  basic auth 帳號（密碼取自 ES_PASSWORD，未設則互動詢問）
+  -u, --username  basic auth 帳號（密碼取自 ES_PASSWORD_FILE／ES_PASSWORD，未設則互動詢問）
       --ca-cert   自簽 CA 憑證檔
       --insecure  略過 TLS 憑證驗證（不建議）
       --help      顯示本說明
 
-環境變數: ES_PASSWORD / ES_API_KEY
+環境變數: ES_PASSWORD_FILE / ES_PASSWORD / ES_API_KEY
 USAGE
 }
 
@@ -81,14 +82,26 @@ trap 'rm -f "$CURL_CFG"' EXIT INT TERM
 if [ -n "${ES_API_KEY:-}" ]; then
     printf 'header = "Authorization: ApiKey %s"\n' "$ES_API_KEY" >> "$CURL_CFG"
 elif [ -n "$USERNAME" ]; then
-    if [ -z "${ES_PASSWORD:-}" ]; then
+    if [ -n "${ES_PASSWORD_FILE:-}" ]; then
+        if [ ! -r "$ES_PASSWORD_FILE" ]; then
+            echo "密碼檔不可讀：$ES_PASSWORD_FILE" >&2
+            exit 2
+        fi
+        ES_PASSWORD="$(cat "$ES_PASSWORD_FILE")"
+    elif [ -z "${ES_PASSWORD:-}" ]; then
         printf '%s 的密碼: ' "$USERNAME" >&2
         stty -echo 2>/dev/null || true
         read -r ES_PASSWORD
         stty echo 2>/dev/null || true
         echo >&2
     fi
-    printf 'user = "%s:%s"\n' "$USERNAME" "$ES_PASSWORD" >> "$CURL_CFG"
+    case "$ES_PASSWORD" in
+        *'
+'*) echo "密碼不可包含換行" >&2; exit 2 ;;
+    esac
+    CURL_USER="$(printf '%s:%s' "$USERNAME" "$ES_PASSWORD" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    printf 'user = "%s"\n' "$CURL_USER" >> "$CURL_CFG"
+    unset ES_PASSWORD CURL_USER
 fi
 if [ -n "$CA_CERT" ]; then
     printf 'cacert = "%s"\n' "$CA_CERT" >> "$CURL_CFG"
@@ -123,14 +136,21 @@ TOTAL={{.Total}}
 n=0
 failed=0
 
-# fetch <端點> <檔名>
+# fetch <端點> <檔名> <curl 最長秒數>
 #
 # 不使用 curl -f：部分端點以 4xx 表達語意而非錯誤（例如叢集健康時，
 # allocation/explain 會回 400「沒有未分配的 shard 可解釋」——那個回應本身就是答案）。
 # 因此一律保留 body，並把真實狀態碼記進 _status.txt 交給分析端判讀。
 fetch() {
     n=$((n + 1))
-    code="$(curl -sS --max-time 30 -K "$CURL_CFG" -o "$OUT/$2" -w '%{http_code}' "$HOST$1" 2>>"$ERRLOG" || echo 000)"
+    request_timeout="${3:-30}"
+    if code="$(curl -q -sS --max-time "$request_timeout" -K "$CURL_CFG" -o "$OUT/$2" -w '%{http_code}' "$HOST$1" 2>>"$ERRLOG")"; then
+        :
+    else
+        # curl 在 DNS／連線／逾時失敗時，可能先由 -w 輸出 000 再以非零狀態退出。
+        # 不可再串接 echo 000，否則 command substitution 會得到 000000。
+        code=000
+    fi
     printf '%s %s\n' "$2" "$code" >> "$STATUS"
     case "$code" in
         2*)  printf '  [%2d/%2d] %s\n' "$n" "$TOTAL" "$2" ;;
@@ -147,7 +167,7 @@ echo "輸出目錄：$OUT"
 echo
 {{range .Endpoints}}
 # {{.Purpose}}
-fetch '{{.Path}}' '{{.File}}'
+fetch '{{.Path}}' '{{.File}}' '{{.MaxTimeSeconds}}'
 {{- end}}
 
 echo

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,40 @@ func TestBundleCaseScriptSyntaxAndExecutable(t *testing.T) {
 	}
 	if out, err := exec.Command(bash, "-n", bundleCaseScript).CombinedOutput(); err != nil {
 		t.Fatalf("bash -n 失敗: %v\n%s", err, out)
+	}
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("本機未安裝 sh")
+	}
+	if out, err := exec.Command(sh, "-n", faultScenariosScript).CombinedOutput(); err != nil {
+		t.Fatalf("sh -n 失敗: %v\n%s", err, out)
+	}
+}
+
+func TestFaultScenariosDoesNotExposePasswordInProcessArguments(t *testing.T) {
+	b, err := os.ReadFile(faultScenariosScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(b)
+	for _, forbidden := range []string{
+		`-u "$ES_USER:$ES_PASSWORD"`,
+		`--user "$ES_USER:$ES_PASSWORD"`,
+		`ES_PASSWORD:?`,
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Errorf("故障控制器仍可能以明文傳遞密碼: %s", forbidden)
+		}
+	}
+	for _, required := range []string{
+		"ES_PASSWORD_FILE",
+		"--config -",
+		"curl -q",
+		"unset ES_PASSWORD_FILE",
+	} {
+		if !strings.Contains(script, required) {
+			t.Errorf("故障控制器缺少安全認證機制: %s", required)
+		}
 	}
 }
 
@@ -89,6 +124,22 @@ func TestFaultScenariosNonAllocationCasesKeepSingleNodeIndicesGreen(t *testing.T
 	}
 }
 
+func TestFaultScenariosHasCompleteMultinodeCases(t *testing.T) {
+	b, err := os.ReadFile(faultScenariosScript)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(b)
+	for i := 1; i <= 9; i++ {
+		id := strings.ToLower("M" + fmt.Sprintf("%02d", i))
+		for _, action := range []string{"trigger", "verify", "restore"} {
+			if !strings.Contains(script, id+"_"+action+"() {") {
+				t.Errorf("缺少 %s_%s", id, action)
+			}
+		}
+	}
+}
+
 func TestBundleCaseScriptStagesAndRunCleanup(t *testing.T) {
 	bash, err := exec.LookPath("bash")
 	if err != nil {
@@ -100,21 +151,27 @@ func TestBundleCaseScriptStagesAndRunCleanup(t *testing.T) {
 	state := filepath.Join(tmp, "fault-state")
 	logFile := filepath.Join(tmp, "calls.log")
 	ca := filepath.Join(tmp, "ca.crt")
+	passwordFile := filepath.Join(tmp, "es-password")
 	evidence := filepath.Join(tmp, "evidence")
 
 	writeExecutable(t, fault, `#!/usr/bin/env bash
 set -euo pipefail
+[[ -r "${ES_PASSWORD_FILE:?}" ]]
+[[ -z "${ES_PASSWORD:-}" ]]
 printf '%s %s\n' "$1" "$2" >> "$FAKE_LOG"
 case "$1:$2" in
   baseline:verify) [[ ! -s "$FAKE_STATE" ]] ;;
-  P*:trigger) printf '%s\n' "$1" > "$FAKE_STATE" ;;
-  P*:verify) grep -qx "$1" "$FAKE_STATE" ;;
-  P*:restore) : > "$FAKE_STATE" ;;
+  M00:verify) [[ ! -s "$FAKE_STATE" ]] ;;
+  P*:trigger|M*:trigger) printf '%s\n' "$1" > "$FAKE_STATE" ;;
+  P*:verify|M*:verify) grep -qx "$1" "$FAKE_STATE" ;;
+  P*:restore|M*:restore) : > "$FAKE_STATE" ;;
   *) exit 10 ;;
 esac
 `)
 	writeExecutable(t, collect, `#!/usr/bin/env bash
 set -euo pipefail
+[[ -r "${ES_PASSWORD_FILE:?}" ]]
+[[ -z "${ES_PASSWORD:-}" ]]
 if [[ "${FAKE_COLLECT_FAIL:-0}" == 1 ]]; then
   exit 23
 fi
@@ -135,11 +192,14 @@ printf '%s\n' "$out" >> "$FAKE_LOG"
 	if err := os.WriteFile(ca, []byte("test-ca"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	if err := os.WriteFile(passwordFile, []byte("test-only"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 
-	baseEnv := append(os.Environ(),
+	baseEnv := append(withoutEnv(os.Environ(), "ES_PASSWORD", "ES_PASSWORD_FILE"),
 		"ES_URL=https://localhost:9208",
 		"ES_USER=elastic",
-		"ES_PASSWORD=test-only",
+		"ES_PASSWORD_FILE="+passwordFile,
 		"CA_CERT="+ca,
 		"EVIDENCE_ROOT="+evidence,
 		"FAULT_CMD="+fault,
@@ -157,6 +217,11 @@ printf '%s\n' "$out" >> "$FAKE_LOG"
 		t.Fatalf("P00 collect 失敗: %v\n%s", err, out)
 	}
 	assertFile(t, filepath.Join(evidence, "P00", "bundle", "_manifest.json"))
+
+	if out, err := run("M00", "collect"); err != nil {
+		t.Fatalf("M00 collect 失敗: %v\n%s", err, out)
+	}
+	assertFile(t, filepath.Join(evidence, "M00", "bundle", "_manifest.json"))
 
 	if out, err := run("P01", "trigger"); err != nil {
 		t.Fatalf("P01 trigger 失敗: %v\n%s", err, out)
@@ -186,6 +251,18 @@ printf '%s\n' "$out" >> "$FAKE_LOG"
 	assertFile(t, filepath.Join(evidence, "P02-fault", "bundle", "_status.txt"))
 	assertFile(t, filepath.Join(evidence, "post-P02", "bundle", "_status.txt"))
 
+	if out, err := run("M01", "run"); err != nil {
+		t.Fatalf("M01 run 失敗: %v\n%s", err, out)
+	}
+	assertFile(t, filepath.Join(evidence, "M01-fault", "bundle", "_status.txt"))
+	assertFile(t, filepath.Join(evidence, "post-M01", "bundle", "_status.txt"))
+
+	if out, err := run("M09", "run"); err != nil {
+		t.Fatalf("M09 run 失敗: %v\n%s", err, out)
+	}
+	assertFile(t, filepath.Join(evidence, "M09-fault", "bundle", "_status.txt"))
+	assertFile(t, filepath.Join(evidence, "post-M09", "bundle", "_status.txt"))
+
 	failEnv := append([]string{}, baseEnv...)
 	failEnv = append(failEnv, "FAKE_COLLECT_FAIL=1")
 	cmd := exec.Command(bash, bundleCaseScript, "P03", "run")
@@ -201,6 +278,54 @@ printf '%s\n' "$out" >> "$FAKE_LOG"
 	if _, err := os.Stat(filepath.Join(evidence, ".bundle-case-active")); !os.IsNotExist(err) {
 		t.Fatalf("run 失敗後 active marker 仍存在: %v", err)
 	}
+}
+
+func TestBundleCaseScriptRejectsLegacyPasswordEnvironment(t *testing.T) {
+	bash, err := exec.LookPath("bash")
+	if err != nil {
+		t.Skip("本機未安裝 bash")
+	}
+	tmp := t.TempDir()
+	ca := filepath.Join(tmp, "ca.crt")
+	if err := os.WriteFile(ca, []byte("test-ca"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(bash, bundleCaseScript, "P00", "collect")
+	cmd.Env = append(withoutEnv(os.Environ(), "ES_PASSWORD", "ES_PASSWORD_FILE"),
+		"ES_URL=https://localhost:9208",
+		"ES_USER=elastic",
+		"ES_PASSWORD=test-only",
+		"CA_CERT="+ca,
+		"EVIDENCE_ROOT="+filepath.Join(tmp, "evidence"),
+	)
+	out, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("控制器應拒絕 ES_PASSWORD 明文環境變數\n%s", out)
+	}
+	if !strings.Contains(string(out), "不再接受 ES_PASSWORD") {
+		t.Fatalf("錯誤訊息未指出安全替代方案:\n%s", out)
+	}
+}
+
+func withoutEnv(env []string, names ...string) []string {
+	blocked := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		blocked[name+"="] = struct{}{}
+	}
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		remove := false
+		for prefix := range blocked {
+			if strings.HasPrefix(entry, prefix) {
+				remove = true
+				break
+			}
+		}
+		if !remove {
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }
 
 func writeExecutable(t *testing.T, path, content string) {

@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -23,6 +24,29 @@ func TestEndpoints_NoDuplicates(t *testing.T) {
 		}
 		seenPath[e.Path] = true
 		seenFile[e.File] = true
+	}
+}
+
+func TestNodeFanOutEndpointsHaveServerSideTimeout(t *testing.T) {
+	paths := []string{
+		EpNodesRoles,
+		EpNodesResourceStats,
+		EpNodesResourceInfo,
+		EpNodesBreakers,
+		EpNodesIngest,
+		EpRunningTasks,
+		EpNodesRuntime,
+		EpNodesTopology,
+		EpNodesIndexingPressure,
+	}
+	for _, path := range paths {
+		u, err := url.Parse(path)
+		if err != nil {
+			t.Fatalf("解析端點失敗 %q: %v", path, err)
+		}
+		if got := u.Query().Get("timeout"); got != "5s" {
+			t.Errorf("%s timeout=%q, want 5s", path, got)
+		}
 	}
 }
 

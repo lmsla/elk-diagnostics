@@ -57,6 +57,12 @@
 
 完整性是獨立診斷 `node_api_coverage`；已成功取得的 node context 仍保留，不因另一端點失敗而全部丟棄。
 
+報告必須把 `node_api_coverage` 當成完整性根因：
+
+- `_nodes` coverage 明細只在 `node_api_coverage` 顯示一次，不得在衍生診斷重複貼出。
+- 衍生診斷若未觀測到異常，但所依賴的 Nodes API 回應不完整，必須回 `unknown` 並明確指向 `node_api_coverage`，不得只用已回應節點宣稱 `pass`。
+- 已回應節點若已觀測到 warning／critical，保留該異常；同時標明尚有節點未回應，實際異常數量可能被低估。
+
 ## 5. MVP 診斷
 
 只對單次快照足以支持的狀態下結論：
@@ -72,7 +78,7 @@
 - [Disable swapping](https://www.elastic.co/docs/deploy-manage/deploy/self-managed/setup-configuration-memory)
 - [Increase the file descriptor limit](https://www.elastic.co/guide/en/elasticsearch/reference/current/file-descriptors.html)
 
-OS memory 使用率、`mlockall`、filesystem I/O、cgroup throttling 與 JVM GC 在 MVP 只做 context，不單獨告警。理由是它們可能是 page cache、部署選擇或自啟動以來的累積值；單次取樣不足以證明持續性問題。
+HTML 必須把 OS memory 顯示為 `OS RAM（含 cache）`，把 JVM heap 顯示為 `JVM Heap`，並提示兩者不可互換判讀。OS memory 使用率、`mlockall`、filesystem I/O、cgroup throttling 與 JVM GC 在 MVP 只做 context，不單獨告警。理由是 OS memory 可能包含可回收的 filesystem cache，其餘資料也可能是部署選擇或自啟動以來的累積值；單次取樣不足以證明持續性問題。
 
 ## 6. 相容性與安全
 

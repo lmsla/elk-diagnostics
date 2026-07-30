@@ -15,10 +15,11 @@
 # 用法：
 #     ./collect.sh -h https://es.example.local:9200 [-o 輸出目錄] [-u 帳號] [--ca-cert 檔案] [--insecure]
 #
-# 認證（擇一；一律從環境變數讀取，避免出現在 ps 輸出與 shell 歷史）：
-#     ES_PASSWORD='...' ./collect.sh -h https://... -u elastic
+# 認證（擇一；密碼檔優先，避免密碼出現在 ps 輸出、環境變數與 shell 歷史）：
+#     ES_PASSWORD_FILE=/path/to/mode-600-file ./collect.sh -h https://... -u elastic
 #     ES_API_KEY='...'  ./collect.sh -h https://...
-#   -u 未給 ES_PASSWORD 時會互動詢問（不回顯）。
+#   既有受控自動化仍可由秘密管理系統注入 ES_PASSWORD；不要手動輸入含密碼的指令。
+#   -u 未給密碼檔或 ES_PASSWORD 時會互動詢問（不回顯）。
 #
 # 產出內容（交付前請確認）：
 #   - 全部為叢集／節點層級的中繼資料，不含任何文件（document）內容
@@ -41,12 +42,12 @@ usage() {
 
   -h, --host      ES base URL，例如 https://es.example.local:9200（必填）
   -o, --output    輸出目錄（預設 elk-bundle-<時間戳>）
-  -u, --username  basic auth 帳號（密碼取自 ES_PASSWORD，未設則互動詢問）
+  -u, --username  basic auth 帳號（密碼取自 ES_PASSWORD_FILE／ES_PASSWORD，未設則互動詢問）
       --ca-cert   自簽 CA 憑證檔
       --insecure  略過 TLS 憑證驗證（不建議）
       --help      顯示本說明
 
-環境變數: ES_PASSWORD / ES_API_KEY
+環境變數: ES_PASSWORD_FILE / ES_PASSWORD / ES_API_KEY
 USAGE
 }
 
@@ -81,14 +82,26 @@ trap 'rm -f "$CURL_CFG"' EXIT INT TERM
 if [ -n "${ES_API_KEY:-}" ]; then
     printf 'header = "Authorization: ApiKey %s"\n' "$ES_API_KEY" >> "$CURL_CFG"
 elif [ -n "$USERNAME" ]; then
-    if [ -z "${ES_PASSWORD:-}" ]; then
+    if [ -n "${ES_PASSWORD_FILE:-}" ]; then
+        if [ ! -r "$ES_PASSWORD_FILE" ]; then
+            echo "密碼檔不可讀：$ES_PASSWORD_FILE" >&2
+            exit 2
+        fi
+        ES_PASSWORD="$(cat "$ES_PASSWORD_FILE")"
+    elif [ -z "${ES_PASSWORD:-}" ]; then
         printf '%s 的密碼: ' "$USERNAME" >&2
         stty -echo 2>/dev/null || true
         read -r ES_PASSWORD
         stty echo 2>/dev/null || true
         echo >&2
     fi
-    printf 'user = "%s:%s"\n' "$USERNAME" "$ES_PASSWORD" >> "$CURL_CFG"
+    case "$ES_PASSWORD" in
+        *'
+'*) echo "密碼不可包含換行" >&2; exit 2 ;;
+    esac
+    CURL_USER="$(printf '%s:%s' "$USERNAME" "$ES_PASSWORD" | sed 's/\\/\\\\/g; s/"/\\"/g')"
+    printf 'user = "%s"\n' "$CURL_USER" >> "$CURL_CFG"
+    unset ES_PASSWORD CURL_USER
 fi
 if [ -n "$CA_CERT" ]; then
     printf 'cacert = "%s"\n' "$CA_CERT" >> "$CURL_CFG"
@@ -123,14 +136,21 @@ TOTAL=39
 n=0
 failed=0
 
-# fetch <端點> <檔名>
+# fetch <端點> <檔名> <curl 最長秒數>
 #
 # 不使用 curl -f：部分端點以 4xx 表達語意而非錯誤（例如叢集健康時，
 # allocation/explain 會回 400「沒有未分配的 shard 可解釋」——那個回應本身就是答案）。
 # 因此一律保留 body，並把真實狀態碼記進 _status.txt 交給分析端判讀。
 fetch() {
     n=$((n + 1))
-    code="$(curl -sS --max-time 30 -K "$CURL_CFG" -o "$OUT/$2" -w '%{http_code}' "$HOST$1" 2>>"$ERRLOG" || echo 000)"
+    request_timeout="${3:-30}"
+    if code="$(curl -q -sS --max-time "$request_timeout" -K "$CURL_CFG" -o "$OUT/$2" -w '%{http_code}' "$HOST$1" 2>>"$ERRLOG")"; then
+        :
+    else
+        # curl 在 DNS／連線／逾時失敗時，可能先由 -w 輸出 000 再以非零狀態退出。
+        # 不可再串接 echo 000，否則 command substitution 會得到 000000。
+        code=000
+    fi
     printf '%s %s\n' "$2" "$code" >> "$STATUS"
     case "$code" in
         2*)  printf '  [%2d/%2d] %s\n' "$n" "$TOTAL" "$2" ;;
@@ -147,83 +167,83 @@ echo "輸出目錄：$OUT"
 echo
 
 # 版本偵測與 cluster_name（決定走 health_report 或 fallback）
-fetch '/' 'version.json'
+fetch '/' 'version.json' '30'
 # 叢集健康總表，A/B 類診斷的地基
-fetch '/_health_report' 'health_report.json'
+fetch '/_health_report' 'health_report.json' '30'
 # ILM 服務狀態（RUNNING/STOPPING/STOPPED）
-fetch '/_ilm/status' 'ilm_status.json'
+fetch '/_ilm/status' 'ilm_status.json' '30'
 # 卡在 ERROR step 的 index（health_report 的 ilm indicator 會延遲，須直接問）
-fetch '/_all/_ilm/explain?only_errors=true&only_managed=true' 'ilm_explain_errors.json'
+fetch '/_all/_ilm/explain?only_errors=true&only_managed=true' 'ilm_explain_errors.json' '30'
 # thread pool 佇列與拒絕數
-fetch '/_cat/thread_pool?format=json&h=node_name,name,active,queue,rejected,completed' 'cat_thread_pool.json'
+fetch '/_cat/thread_pool?format=json&h=node_name,name,active,queue,rejected,completed' 'cat_thread_pool.json' '10'
 # 各節點 OS／process／filesystem／JVM 快照與 JVM old pool 記憶體壓力
-fetch '/_nodes/stats/os,process,fs,jvm?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.cpu,nodes.*.os.load_average,nodes.*.os.mem,nodes.*.os.swap,nodes.*.os.cgroup,nodes.*.process.cpu,nodes.*.process.mem,nodes.*.process.open_file_descriptors,nodes.*.process.max_file_descriptors,nodes.*.fs.total,nodes.*.fs.data,nodes.*.fs.io_stats,nodes.*.jvm.uptime_in_millis,nodes.*.jvm.mem,nodes.*.jvm.gc' 'nodes_stats_jvm.json'
+fetch '/_nodes/stats/os,process,fs,jvm?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.cpu,nodes.*.os.load_average,nodes.*.os.mem,nodes.*.os.swap,nodes.*.os.cgroup,nodes.*.process.cpu,nodes.*.process.mem,nodes.*.process.open_file_descriptors,nodes.*.process.max_file_descriptors,nodes.*.fs.total,nodes.*.fs.data,nodes.*.fs.io_stats,nodes.*.jvm.uptime_in_millis,nodes.*.jvm.mem,nodes.*.jvm.gc' 'nodes_stats_jvm.json' '10'
 # 各節點 OS 版本／架構／processors、PID 與 memory lock 狀態
-fetch '/_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall' 'nodes_info_os_process.json'
+fetch '/_nodes/os,process?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall' 'nodes_info_os_process.json' '10'
 # circuit breaker 跳閘累積次數
-fetch '/_nodes/stats/breaker?filter_path=nodes.*.name,nodes.*.breakers' 'nodes_stats_breaker.json'
+fetch '/_nodes/stats/breaker?timeout=5s&filter_path=nodes.*.name,nodes.*.breakers' 'nodes_stats_breaker.json' '10'
 # 各節點 CPU／heap／disk 使用率與 allocated_processors
-fetch '/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent' 'cat_nodes.json'
+fetch '/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent' 'cat_nodes.json' '10'
 # 各節點 shard 分布與待搬移數
-fetch '/_cat/allocation?format=json&h=node,shards,shards.undesired,disk.percent' 'cat_allocation.json'
+fetch '/_cat/allocation?format=json&h=node,shards,shards.undesired,disk.percent' 'cat_allocation.json' '30'
 # 各 index 的 mapping（僅欄位結構，不含文件內容）
-fetch '/_mapping' 'mapping.json'
+fetch '/_mapping' 'mapping.json' '30'
 # ingest pipeline 處理數與失敗數
-fetch '/_nodes/stats/ingest?filter_path=nodes.*.ingest.pipelines' 'nodes_stats_ingest.json'
+fetch '/_nodes/stats/ingest?timeout=5s&filter_path=nodes.*.ingest.pipelines' 'nodes_stats_ingest.json' '10'
 # 各 index 健康與開關狀態
-fetch '/_cat/indices?format=json&h=index,health,status' 'cat_indices.json'
+fetch '/_cat/indices?format=json&h=index,health,status' 'cat_indices.json' '30'
 # Watcher 服務是否被手動停止
-fetch '/_watcher/stats' 'watcher_stats.json'
+fetch '/_watcher/stats' 'watcher_stats.json' '30'
 # transform 執行狀態
-fetch '/_transform/_stats' 'transform_stats.json'
+fetch '/_transform/_stats' 'transform_stats.json' '30'
 # remote cluster 連線狀態
-fetch '/_remote/info' 'remote_info.json'
+fetch '/_remote/info' 'remote_info.json' '30'
 # 升版 deprecation 警告
-fetch '/_migration/deprecations' 'migration_deprecations.json'
+fetch '/_migration/deprecations' 'migration_deprecations.json' '30'
 # 叢集層級設定（allocation.enable、monitoring collection 等生效值）
-fetch '/_cluster/settings?include_defaults=true&flat_settings=true' 'cluster_settings.json'
+fetch '/_cluster/settings?include_defaults=true&flat_settings=true' 'cluster_settings.json' '30'
 # 各 index 設定（search slow log 門檻）
-fetch '/_settings?flat_settings=true' 'all_settings.json'
+fetch '/_settings?flat_settings=true' 'all_settings.json' '30'
 # 未分配 shard 的 decider 級根因
-fetch '/_cluster/allocation/explain' 'allocation_explain.json'
+fetch '/_cluster/allocation/explain' 'allocation_explain.json' '30'
 # 受管理 index 的 ILM 階段（tier 遷移候選）
-fetch '/_all/_ilm/explain?only_managed=true' 'ilm_explain_managed.json'
+fetch '/_all/_ilm/explain?only_managed=true' 'ilm_explain_managed.json' '30'
 # 叢集節點數（master 穩定性佐證）
-fetch '/_cluster/health' 'cluster_health.json'
+fetch '/_cluster/health' 'cluster_health.json' '30'
 # 各節點角色（master-eligible 數、data tier 分布）
-fetch '/_nodes?filter_path=nodes.*.roles' 'nodes_roles.json'
+fetch '/_nodes?timeout=5s&filter_path=nodes.*.roles' 'nodes_roles.json' '10'
 # 進行中的 snapshot 還原進度
-fetch '/_recovery?active_only=true' 'recovery.json'
+fetch '/_recovery?active_only=true' 'recovery.json' '30'
 # write thread pool 大小與積壓（寫入瓶頸因果鏈）
-fetch '/_cat/thread_pool/write?format=json&h=node_name,name,size,active,queue,rejected' 'cat_thread_pool_write.json'
+fetch '/_cat/thread_pool/write?format=json&h=node_name,name,size,active,queue,rejected' 'cat_thread_pool_write.json' '10'
 # 尚未套用的 cluster state task 與排隊時間
-fetch '/_cluster/pending_tasks' 'cluster_pending_tasks.json'
+fetch '/_cluster/pending_tasks' 'cluster_pending_tasks.json' '30'
 # 目前執行中的 task 與執行時間（不採集 request body/header）
-fetch '/_tasks?detailed=true&group_by=none&filter_path=tasks.*.node,tasks.*.type,tasks.*.action,tasks.*.description,tasks.*.running_time_in_nanos,tasks.*.cancellable' 'running_tasks.json'
+fetch '/_tasks?timeout=5s&detailed=true&group_by=none&filter_path=tasks.*.node,tasks.*.type,tasks.*.action,tasks.*.description,tasks.*.running_time_in_nanos,tasks.*.cancellable' 'running_tasks.json' '10'
 # 各 shard 大小、文件數與配置節點（shard sizing）
-fetch '/_cat/shards?format=json&bytes=b&h=index,shard,prirep,state,node,store,docs' 'cat_shards_sizing.json'
+fetch '/_cat/shards?format=json&bytes=b&h=index,shard,prirep,state,node,store,docs' 'cat_shards_sizing.json' '30'
 # SLM policy 最近成功／失敗時間與下次執行時間
-fetch '/_slm/policy?filter_path=*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed' 'slm_policies.json'
+fetch '/_slm/policy?filter_path=*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed' 'slm_policies.json' '30'
 # 各節點 ES/JDK/heap/plugin 一致性與 Nodes API coverage
-fetch '/_nodes/jvm,plugins?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.version,nodes.*.build_hash,nodes.*.jvm.version,nodes.*.jvm.vm_version,nodes.*.jvm.mem.heap_init_in_bytes,nodes.*.jvm.mem.heap_max_in_bytes,nodes.*.plugins.name,nodes.*.plugins.version' 'nodes_runtime.json'
+fetch '/_nodes/jvm,plugins?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.version,nodes.*.build_hash,nodes.*.jvm.version,nodes.*.jvm.vm_version,nodes.*.jvm.mem.heap_init_in_bytes,nodes.*.jvm.mem.heap_max_in_bytes,nodes.*.plugins.name,nodes.*.plugins.version' 'nodes_runtime.json' '10'
 # 回應節點載入的 TLS 憑證與到期日（單節點視角）
-fetch '/_ssl/certificates' 'ssl_certificates.json'
+fetch '/_ssl/certificates' 'ssl_certificates.json' '30'
 # 叢集 License 狀態、類型與到期日
-fetch '/_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis' 'license.json'
+fetch '/_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis' 'license.json' '30'
 # 節點角色與 allocation awareness attributes
-fetch '/_nodes?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes' 'nodes_topology.json'
+fetch '/_nodes?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes' 'nodes_topology.json' '10'
 # 各節點當下 indexing pressure 記憶體使用量與限制（不使用累積 rejection 下趨勢結論）
-fetch '/_nodes/stats/indexing_pressure?filter_path=_nodes,nodes.*.name,nodes.*.indexing_pressure.memory.current.combined_coordinating_and_primary_in_bytes,nodes.*.indexing_pressure.memory.current.replica_in_bytes,nodes.*.indexing_pressure.memory.current.all_in_bytes,nodes.*.indexing_pressure.memory.limit_in_bytes' 'nodes_indexing_pressure.json'
+fetch '/_nodes/stats/indexing_pressure?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.indexing_pressure.memory.current.combined_coordinating_and_primary_in_bytes,nodes.*.indexing_pressure.memory.current.replica_in_bytes,nodes.*.indexing_pressure.memory.current.all_in_bytes,nodes.*.indexing_pressure.memory.limit_in_bytes' 'nodes_indexing_pressure.json' '10'
 # CCR follower checkpoint lag、fatal/read exception 與 auto-follow 失敗
-fetch '/_ccr/stats?filter_path=auto_follow_stats.number_of_failed_follow_indices,auto_follow_stats.number_of_failed_remote_cluster_state_requests,auto_follow_stats.recent_auto_follow_errors,follow_stats.indices.index,follow_stats.indices.total_global_checkpoint_lag,follow_stats.indices.shards.shard_id,follow_stats.indices.shards.leader_global_checkpoint,follow_stats.indices.shards.follower_global_checkpoint,follow_stats.indices.shards.fatal_exception,follow_stats.indices.shards.read_exceptions' 'ccr_stats.json'
+fetch '/_ccr/stats?filter_path=auto_follow_stats.number_of_failed_follow_indices,auto_follow_stats.number_of_failed_remote_cluster_state_requests,auto_follow_stats.recent_auto_follow_errors,follow_stats.indices.index,follow_stats.indices.total_global_checkpoint_lag,follow_stats.indices.shards.shard_id,follow_stats.indices.shards.leader_global_checkpoint,follow_stats.indices.shards.follower_global_checkpoint,follow_stats.indices.shards.fatal_exception,follow_stats.indices.shards.read_exceptions' 'ccr_stats.json' '30'
 # Machine Learning anomaly detection job 執行狀態
-fetch '/_ml/anomaly_detectors/_stats?allow_no_match=true&filter_path=count,jobs.job_id,jobs.state,jobs.assignment_explanation' 'ml_job_stats.json'
+fetch '/_ml/anomaly_detectors/_stats?allow_no_match=true&filter_path=count,jobs.job_id,jobs.state,jobs.assignment_explanation' 'ml_job_stats.json' '30'
 # Machine Learning datafeed 執行與 assignment 狀態
-fetch '/_ml/datafeeds/_stats?allow_no_match=true&filter_path=count,datafeeds.datafeed_id,datafeeds.state,datafeeds.assignment_explanation,datafeeds.timing_stats.job_id' 'ml_datafeed_stats.json'
+fetch '/_ml/datafeeds/_stats?allow_no_match=true&filter_path=count,datafeeds.datafeed_id,datafeeds.state,datafeeds.assignment_explanation,datafeeds.timing_stats.job_id' 'ml_datafeed_stats.json' '30'
 # 已登記的 planned shutdown 狀態（選配高權限檢查）
-fetch '/_nodes/shutdown' 'planned_shutdown.json'
+fetch '/_nodes/shutdown' 'planned_shutdown.json' '30'
 # cluster state 中尚未清除的 voting configuration exclusions
-fetch '/_cluster/state/metadata?filter_path=metadata.cluster_coordination.voting_config_exclusions' 'voting_exclusions.json'
+fetch '/_cluster/state/metadata?filter_path=metadata.cluster_coordination.voting_config_exclusions' 'voting_exclusions.json' '30'
 
 echo
 echo "完成：$TOTAL 個端點，其中 $failed 個非 2xx。"

@@ -1,6 +1,9 @@
 package collector
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strconv"
+)
 
 // NodeJVM：JVM old pool 記憶體壓力（官方建議用 old pool used/max，比瞬時 heap% 準）。
 type NodeJVM struct {
@@ -107,7 +110,7 @@ func (c *Client) CatNodesCPU() ([]NodeCPU, error) {
 			Role:                m["node.role"],
 			CPU:                 atoi(m["cpu"]),
 			HeapPercent:         atoi(m["heap.percent"]),
-			DiskPercent:         atoi(m["disk.used_percent"]),
+			DiskPercent:         percentInt(m["disk.used_percent"]),
 			Load1m:              m["load_1m"],
 			AllocatedProcessors: atoi(m["allocated_processors"]),
 		})
@@ -143,8 +146,18 @@ func (c *Client) CatAllocation() ([]AllocationRow, error) {
 			Node:            node,
 			Shards:          atoi(m["shards"]),
 			ShardsUndesired: atoi(m["shards.undesired"]),
-			DiskPercent:     atoi(m["disk.percent"]),
+			DiskPercent:     percentInt(m["disk.percent"]),
 		})
 	}
 	return out, nil
+}
+
+// CAT APIs 的 disk percent 在不同版本／檔案系統可能回傳 "89" 或 "89.90"。
+// 直接 strconv.Atoi 會把小數格式靜默吃成 0，導致 hot spotting 假綠燈。
+func percentInt(s string) int {
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil || v < 0 {
+		return 0
+	}
+	return int(v)
 }

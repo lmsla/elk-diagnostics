@@ -17,14 +17,14 @@
 | ES-GAP-01 | P0 | implemented | Cluster pending tasks／長時間 task | `GET /_cluster/pending_tasks`、`GET /_tasks?detailed=true&group_by=none` | 依 queue/running age 判定；合法的長任務只標疑似並列出 action | `monitor` | ES8／ES9 基準線與 Live-Bundle parity 完成；長時間異常與 403 仍以自動化測試驗證 |
 | ES-GAP-02 | P0 | implemented | Shard 大小與小 shard 增生 | `GET /_cat/shards?...store,docs` | 排除系統 index；大 shard 與大量小 primary shard 使用可覆寫 heuristic，不宣稱官方硬限制 | cluster/index `monitor` | ES8／ES9 基準線與 Live-Bundle parity 完成；大／小 shard 門檻異常仍以自動化測試驗證 |
 | ES-GAP-03 | P0 | implemented | Snapshot 新鮮度／RPO | `GET /_slm/policy` | 依每個 policy 的 last success age、last failure 與尚未成功執行判定；無 SLM 不等於無備份，標 `skipped` | `read_slm` | ES8／ES9 無 policy 基準線與 Live-Bundle parity 完成；過期／失敗與 403 仍以自動化測試驗證 |
-| ES-GAP-04 | P0 | implemented | Node 版本／JDK／plugin／heap 漂移 | `GET /_nodes/jvm,plugins` | 比對所有成功回應節點；Nodes API 不完整時不得回 pass | `monitor` | ES8／ES9 單節點基準線與 Live-Bundle parity 完成；真實多節點漂移／partial response 待驗 |
+| ES-GAP-04 | P0 | verified | Node 版本／JDK／plugin／heap 漂移 | `GET /_nodes/jvm,plugins` | 比對所有成功回應節點；Nodes API 不完整時不得回 pass | `monitor` | ES8 M03 heap drift 正確 warning；M08 Nodes Stats／Info `3/4` 正確 unknown。ES9 多節點與跨主機仍未驗 |
 | ES-GAP-05 | P0 | implemented | TLS 憑證與 License 到期 | `GET /_ssl/certificates`、`GET /_license` | License 為 cluster 視角；SSL API 只代表回應節點，未逐節點採集前不得宣稱全叢集憑證正常 | `monitor` | ES8／ES9 自簽 TLS／license 基準線與 Live-Bundle parity 完成；到期與 403 仍以自動化測試驗證 |
-| ES-GAP-06 | P0 | implemented | 高可用結構（第一階段） | `GET /_settings`、`GET /_cluster/settings`、Nodes Info | 檢查非系統 index replica=0、allocation awareness 設定與節點屬性；partial response 不得 pass | cluster/index `monitor` | replica／awareness／partial response 完成；實際 shard 跨 zone placement 留第二階段 |
+| ES-GAP-06 | P0 | verified | 高可用結構（第一階段） | `GET /_settings`、`GET /_cluster/settings`、Nodes Info | 檢查非系統 index replica=0、allocation awareness 設定與節點屬性；partial response 不得 pass | cluster/index `monitor` | ES8 M00/M01 驗證 awareness 與跨 zone placement；M09 驗證 replica=0 warning。工具尚未逐 shard 驗證 placement，留第二階段 |
 
 本批新增報告 ID：`cluster_pending_tasks`、`long_running_tasks`、`shard_sizing`、
 `snapshot_freshness`、`node_runtime_consistency`、`tls_certificate_expiry`、
 `license_expiry`、`replica_resilience`、`allocation_awareness`。`implemented` 僅代表程式與自動化測試完成；
-升為 `verified` 前仍需 ES8／ES9、多節點與權限不足的真機驗證。
+除已標為 `verified` 的項目外，升級狀態前仍需 ES8／ES9、多節點與權限不足的真機驗證。
 
 ## 第二批：單次快照次要或功能相依項目
 

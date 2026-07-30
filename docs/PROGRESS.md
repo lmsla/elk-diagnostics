@@ -163,12 +163,14 @@
 | bundle 遮罩 | `--redact`：index/node/host 名稱 | ⬜ 未開始，見 spec-bundle §5.2 |
 | `--output text` 終端摘要 | check/diagnose 皆支援；非 pass 逐項、pass/skipped 壓縮彙總、`--no-color`/`NO_COLOR`/寫檔一律純文字 | ✅ 完成，見 spec-report §5.1、reporter/text.go。不合法 `--output` 值現在回報清楚錯誤（exit 10）而非靜默退回 json |
 | bundle 採集時間可追溯 | `collect.sh` 開始時寫 `_manifest.json`（collect_script_version/collected_at UTC/host/endpoints_total）；`--from-bundle` 讀出後帶進報告 meta（JSON 新增 2 個 omitempty 欄位）、HTML 頁首顯示；無 manifest 的舊 bundle 欄位省略、HTML 註明「舊版採集腳本」，不猜測 | ✅ 完成，見 spec-bundle §4.2、internal/collector/client.go、cmd/elk-diagnostics/collect.sh.tmpl |
-| 多節點 Node Context | Nodes Stats／Info coverage + 所有回應節點的 OS/process/filesystem/JVM context；swap、FD、有限 cgroup memory 快照診斷 | 🟡 程式、單元／2-node fixture、ES8/ES9 單節點 Live-Bundle parity 已驗；真實 2+ node 叢集仍待獨立環境驗證，見 spec-node-context |
-| ES 單次快照覆蓋 ES-GAP-01～06 | task 壅塞、shard sizing、snapshot RPO、runtime drift、TLS／License、HA 結構 | 🟡 Collector／Analyzer／Live-Bundle 共用流程、自動化測試與 ES8／ES9 單節點基準線已驗；多節點、權限不足及各異常分支仍待專用環境，見 ES-COVERAGE-BACKLOG |
+| 多節點 Node Context | Nodes Stats／Info coverage + 所有回應節點的 OS/process/filesystem/JVM context；swap、FD、有限 cgroup memory 快照診斷 | 🟡 ES8 M00 完整 `3/3`、M03 heap drift、M08 Stats/Info partial `3/4` 已驗；ES9 多節點與跨主機仍待驗，見 spec-node-context |
+| ES 單次快照覆蓋 ES-GAP-01～06 | task 壅塞、shard sizing、snapshot RPO、runtime drift、TLS／License、HA 結構 | 🟡 Collector／Analyzer／Live-Bundle 共用流程已完成；ES-GAP-04、06 已由 ES8 M 系列驗證，其他權限不足與異常分支仍待專用情境，見 ES-COVERAGE-BACKLOG |
 | ES 單次快照覆蓋 ES-GAP-07～12 | indexing pressure、index block、restart／memory lock、CCR、ML、planned shutdown／voting exclusion | 🟡 實作與自動化測試完成；ES8／ES9 Live-Bundle 基準線、P16 block、ES8 restart 已真機驗。高壓、真實 CCR／ML 與維護中狀態仍待專用環境，見 ES-COVERAGE-BACKLOG |
 | SBOM | `make dist` 用 CycloneDX（`cyclonedx-gomod` 版本 pin 死於 Makefile）產出 `dist/sbom.cdx.json`（module + 全部相依版本），納入既有 SHA256 清單 | ✅ 完成，見 spec-bundle §2、Makefile。導入審查清單（討論總結.md §8）最後一個缺口補齊 |
 | 2026-07-15 真機驗證 | 本機 Docker es8=8.14.3/es9=9.0.0 對 check 全量 + 5 條症狀樹 | ✅ 完成；意外抓到並修正 #11/#32 系統 index 誤報 bug（見 §2） |
 | 2026-07-15 造壓驗證 | disk/shards_capacity/repository_integrity/ILM/allocation 封鎖異常情境 | ✅ 完成；抓到並修正 2 個真 bug（#19/#20/#31/#33 的 filter_path+flat_settings 解析、#11/#32 的 data stream 誤排除），見 §4 |
 | 2026-07-22 腳本化重驗 | ES8／ES9 × Live／Bundle × P01～P16；39 端點、52 項結果 | ✅ 故障斷言與復原流程通過；這是腳本驗收，不取代各診斷的觸發驗證等級 |
 | 2026-07-27 人工 ES8 Bundle Route B | P00＋P01～P16，逐案採集、復原、HTML 與截圖 | 🟡 14 項完整通過；P05 多因子為條件式通過，P11 Basic License 為部分驗證，見 VERIFICATION §3.7 |
+| 2026-07-28 ES8 三節點 M00～M01 | 3 master／3 data／3 zone、hot/warm、跨 zone replica、awareness 缺失 | ✅ Live／Bundle／restore 後 parity 通過；ES-GAP-06 第一階段升為 verified，見 VERIFICATION §3.8 |
+| 2026-07-28～30 ES8 三節點 M02～M09 | tier migration、runtime drift、磁碟 hotspot、undesired shards、偶數 master、partial Nodes API、0 replica | 🟡 Live 與人工 Bundle Route B 均已完成；M02～M09 fault Bundle、HTML 與截圖齊全。M05／M08 post Bundle 為延後補採，M08 timeout 修正後真機重驗仍待完成，見 VERIFICATION §3.9 |
 | 待辦 | slm indicator 觸發條件（本次造壓未重現）、write-bottleneck 因果鏈真實負載驗證（需 esrally 等造壓工具） | ⬜ 未開始 |

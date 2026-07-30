@@ -8,7 +8,7 @@
 人工執行順序、造壓指令與復原閘門統一以 [`VERIFICATION-PLAYBOOK.md`](./VERIFICATION-PLAYBOOK.md)
 為準；本文保留驗證證據與成熟度狀態，不再兼任操作 SOP。
 
-## 0. 目前狀態摘要（2026-07-27）
+## 0. 目前狀態摘要（2026-07-30）
 
 此節是驗證狀態的目前入口；後續帶日期的章節保留歷史證據，不應單獨拿來代表現況。
 
@@ -17,9 +17,10 @@
 | ES 8.14.3／9.0.0 基準線 | 39 個固定端點、52 項結果，Live／Bundle status parity 已驗 |
 | 傳輸基線 | 自簽 CA＋HTTPS＋Basic Auth＋嚴格 CA 驗證 |
 | 原 37 條診斷 | 22 條已有故障觸發證據；#24 部分驗證，其餘依 §3.2／3.3 分級 |
-| ES-GAP-01～12 | 12 項均已實作；目前只有 ES-GAP-08 正式標為 `verified` |
-| 最新人工 ES8 Bundle Route B | P01～P16：14 項完整通過、P05 條件式、P11 部分驗證 |
-| 主要未完成 | 真實多節點、負載型異常、CCR／ML／維護情境、SLM indicator、mTLS／API key／Bearer |
+| ES-GAP-01～12 | 12 項均已實作；ES-GAP-06、ES-GAP-08 正式標為 `verified` |
+| 最新人工 ES8 Bundle Route B | P01～P16：14 項完整通過、P05 條件式、P11 部分驗證；M00～M09 fault Bundle／HTML／截圖完成 |
+| ES8 三節點 | M00～M09 Live／Bundle 已驗；M05／M08 post Bundle 為延後補採，M08 timeout 修正後真機重驗仍待完成 |
+| 主要未完成 | 跨主機／ES9 多節點、真實 CPU／heap 負載、CCR／ML／維護情境、SLM indicator、mTLS／API key／Bearer |
 
 最新人工基準 P00 為 52 項：`46 pass / 2 warning / 0 critical / 4 skipped / 0 unknown`。
 兩個 warning 為單節點 Master 結構與測試機近期重啟；不代表全部異常分支已被驗證。
@@ -234,6 +235,71 @@ Bundle、復原後 Bundle、HTML 報告與人工截圖。
 
 本輪驗證的是 ES8 Bundle Route B，不覆蓋 ES9 人工操作、Live 路線、多節點或負載型異常。
 報告索引位於 `reports/bundle-playbook-es8-20260727-102156/index.html`。
+
+### 3.8 ES8 三節點 M00～M01 — 2026-07-28
+
+環境為同一台 Podman VM 內的 ES 8.14.3 三節點叢集：3 個 master-eligible、
+3 個 data node、`zone-a/b/c`，其中兩個 hot/content、一個 warm。這能驗證 Elasticsearch
+多節點 API 與分配邏輯，但不等同跨主機或真實 availability zone。
+
+| 路徑 | 結果 |
+|---|---|
+| M00 topology | ✅ Master `>=3`、data `>=3`、zone `>=3`、hot `>=2`、warm `>=1`、Nodes Stats/Info `3/3` |
+| M00 Live／Bundle | ✅ 最終 `49 pass / 0 warning / 0 critical / 3 skipped / 0 unknown`；`allocation_awareness=pass` |
+| M01 placement | ✅ 1 primary＋1 replica 的 hot index 分布於 `zone-a`、`zone-b` |
+| M01 fault Live／Bundle | ✅ `48 pass / 1 warning / 0 critical / 3 skipped / 0 unknown`；缺少 `playbook_zone_missing` 時 `allocation_awareness=warning` |
+| M01 restore／post Bundle | ✅ 回到 M00；`allocation_awareness=pass` |
+| topology guard | ✅ P01 在三節點環境以 exit 10 拒絕執行，不會把 single 配方誤用於 multi |
+
+真機同時抓到 `_cluster/settings?include_defaults=true&flat_settings=true` 會把
+`cluster.routing.allocation.awareness.attributes` 的 defaults 回傳成字串陣列；
+collector 原本只接受字串而誤判 `skipped`。修正為同時接受字串／陣列後，
+M00 由 skipped 轉為 pass，M01 異常分支正確 warning。
+
+ES-GAP-06 第一階段因此升為 `verified`。目前 analyzer 驗證設定與所有 data node attributes；
+M01 controller 另行斷言實際 shard placement，但報告本身尚未逐 shard 檢查跨 zone，
+此能力仍屬第二階段。操作流程見
+[`VERIFICATION-MULTINODE-PLAYBOOK.md`](./VERIFICATION-MULTINODE-PLAYBOOK.md)。
+
+### 3.9 ES8 三節點 M02～M09 Live／Bundle — 2026-07-28～30
+
+沿用 §3.8 三節點環境，按案例建立並移除 `es8-mn4` helper node。每案都完成
+trigger、API verify、Live binary 診斷、restore 與 M00 基準線復核。
+
+2026-07-30 另完成人工 Bundle Route B：M00 基準、M01～M09 fault Bundle、10 份 HTML
+與各案例截圖均已保留；post-M01～M09 Bundle 亦存在。M05／M08 的 post Bundle 是案例結束後
+延後補採，只能證明較晚時間點的 M00 基準線通過，不能宣稱為緊接 restore 的即時快照。
+
+| 案例 | 真機結果 |
+|---|---|
+| M02 | ✅ ILM 停在 `migrate/check-migration`、`shards_left_to_allocate=1`；`ilm_tier_migration=warning` |
+| M03 | ✅ 相同角色節點 heap 512/384 MiB；`node_runtime_consistency=warning` |
+| M04 | ✅ master-only helper 磁碟 89%；`hot_spotting=warning` |
+| M05 | ✅ data-hot/content helper 磁碟 89%；`hot_spotting=warning` |
+| M06 | ✅ `shards.undesired=6`；`unbalanced_cluster=warning` |
+| M07 | ✅ 4 個 master-eligible；`master_stability_context=warning` |
+| M08 | ✅ Nodes Stats/Info `total=4 successful=3 failed=1 returned=3`；`node_api_coverage=unknown`。2026-07-30 補上報告收斂：coverage 明細只由根因卡呈現，依賴該資料的節點診斷不得以 3 個已回應節點宣稱 pass |
+| M09 | ✅ 一般 index `number_of_replicas=0`；`replica_resilience=warning` |
+
+M04 真機同時發現 `_cat/nodes` 的 `disk.used_percent` 可能是小數字串；舊 parser 使用
+`strconv.Atoi` 會靜默變成 0，導致 hotspot 假陰性。改為接受小數後，M04/M05 均正確告警。
+
+限制：
+
+- M02～M09 Route B 的故障診斷已驗；M05／M08 的 post 證據缺少緊接 restore 的時序關聯。
+- M07 只驗偶數 master 的結構風險，不是反覆 master election。
+- M08 使用 test-only 延長 follower-check 重試窗口，使 partial response 能穩定留到採集完成；
+  Nodes／Tasks API 已加 ES `timeout=5s`，採集腳本對節點 fan-out 端點另設 curl 10 秒上限；
+  因端點仍依序採集，故障情境仍可能花費數十秒。此 timeout 修正完成於本輪證據採集後，
+  尚需重新執行 M08 Route B 才能宣稱真機驗證完成。
+- partial response 報告收斂已新增 analyzer、Route A 與 Bundle 回歸測試：根因卡只保留
+  Stats／Info 各一行 coverage，衍生 unknown 只指向 `node_api_coverage`；已觀測到的
+  warning／critical 仍保留並標示可能低估。
+- 同一 Podman VM 的容器共享 host CPU 指標，無法可靠製造單一 node CPU hotspot；
+  M04/M05 因此採用 Elastic 可觀測的磁碟離群值。
+
+ES-GAP-04 的 heap drift 與 partial response 異常分支已取得 ES8 真機證據，升為
+`verified`；ES9 多節點與跨主機仍是未驗範圍。
 
 ---
 

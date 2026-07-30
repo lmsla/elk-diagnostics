@@ -390,14 +390,35 @@ func (c *Client) AllocationAwarenessAttributes() ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	value := flatSettingString(b, "cluster.routing.allocation.awareness.attributes", "")
-	var out []string
-	for _, item := range strings.Split(value, ",") {
-		if item = strings.TrimSpace(item); item != "" {
-			out = append(out, item)
-		}
+
+	var generic map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(b, &generic); err != nil {
+		return nil, err
 	}
-	return out, nil
+	for _, layer := range []string{"persistent", "transient", "defaults"} {
+		raw, ok := generic[layer]["cluster.routing.allocation.awareness.attributes"]
+		if !ok {
+			continue
+		}
+
+		var values []string
+		if json.Unmarshal(raw, &values) != nil {
+			var value string
+			if json.Unmarshal(raw, &value) != nil {
+				continue
+			}
+			values = strings.Split(value, ",")
+		}
+
+		var out []string
+		for _, item := range values {
+			if item = strings.TrimSpace(item); item != "" {
+				out = append(out, item)
+			}
+		}
+		return out, nil
+	}
+	return nil, nil
 }
 
 func rawString(raw json.RawMessage) string {

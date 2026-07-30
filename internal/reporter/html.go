@@ -86,6 +86,20 @@ var htmlFuncs = template.FuncMap{
 			return "無法判定"
 		}
 	},
+	"statusLabel": func(s diagnostic.Status) string {
+		switch s {
+		case diagnostic.StatusPass:
+			return "PASS"
+		case diagnostic.StatusWarning:
+			return "WARNING"
+		case diagnostic.StatusCritical:
+			return "CRITICAL"
+		case diagnostic.StatusSkipped:
+			return "SKIPPED"
+		default:
+			return "UNKNOWN"
+		}
+	},
 	"isOpen": func(s diagnostic.Status) bool { return s != diagnostic.StatusPass && s != diagnostic.StatusSkipped },
 	// isBundleHost 判斷本次分析是否來自 --from-bundle：Host 欄位在 bundle 模式固定帶
 	// "(bundle) " 前綴（見 check.go）。只有 bundle 模式才需要提示「未含採集時間」，
@@ -200,6 +214,7 @@ const htmlTmpl = `<!DOCTYPE html>
   .hints li{font-size:14px;margin:2px 0}
   h2{font-size:15px;margin:24px 0 8px;padding-bottom:4px;border-bottom:2px solid #ddd}
 	.node-coverage{background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:10px 14px;font-size:13px;margin:8px 0}
+	.node-memory-note{margin:6px 0 0;color:#555}
 	.node-issues{color:var(--unknown);margin:6px 0 0;padding-left:20px}
 	.node-card{background:#fff;border:1px solid #d8dee4;border-radius:6px;margin:8px 0;overflow:hidden}
 	.node-card summary{background:#f8fafc}
@@ -210,6 +225,12 @@ const htmlTmpl = `<!DOCTYPE html>
 	.node-table{width:100%;border-collapse:collapse;font-size:12px}.node-table th,.node-table td{border:1px solid #ddd;padding:4px 6px;text-align:left}.node-table th{background:#f5f5f5}
   .card{background:#fff;border:1px solid #e0e0e0;border-left-width:5px;border-radius:6px;margin:8px 0;overflow:hidden}
   .card.pass{border-left-color:var(--pass)}.card.warning{border-left-color:var(--warning)}.card.critical{border-left-color:var(--critical)}.card.skipped{border-left-color:var(--skipped)}.card.unknown{border-left-color:var(--unknown)}
+  .status-label{display:inline-block;margin-right:4px;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.04em;vertical-align:1px}
+  .card.pass .status-label{background:#e8f5e9;color:var(--pass)}
+  .card.warning .status-label{background:#fff3e0;color:#a04b00}
+  .card.critical .status-label{background:#ffebee;color:var(--critical)}
+  .card.skipped .status-label{background:#f0f0f0;color:var(--skipped)}
+  .card.unknown .status-label{background:#eceff1;color:var(--unknown)}
   summary{padding:10px 14px;cursor:pointer;font-weight:600;list-style:none}
   summary::-webkit-details-marker{display:none}
   summary .sm{font-weight:400;color:#444}
@@ -264,22 +285,23 @@ const htmlTmpl = `<!DOCTYPE html>
 <h2>節點環境（Node Context）</h2>
 <div class="node-coverage">
   <strong>Nodes Stats：</strong>{{coverage .StatsCoverage}}　<strong>Nodes Info：</strong>{{coverage .InfoCoverage}}
+  <p class="node-memory-note"><strong>記憶體判讀：</strong>OS RAM 是主機／容器層的單次使用率快照，可能包含可回收的 filesystem cache；不等於 JVM Heap，單次高值不單獨視為記憶體壓力。</p>
   {{if .Issues}}<ul class="node-issues">{{range .Issues}}<li>{{.}}</li>{{end}}</ul>{{end}}
 </div>
 {{range .Nodes}}
 <details class="node-card">
-  <summary>{{if .Name}}{{.Name}}{{else}}{{.ID}}{{end}} <span class="sm">— {{roles .Roles}} ｜ CPU {{pct .OS.CPUPercent}} ｜ RAM {{pct .OS.Memory.UsedPct}} ｜ Swap {{bytesI .OS.Swap.UsedBytes}} ｜ FD {{fdRatio .Process.OpenFileDescriptors .Process.MaxFileDescriptors}} ｜ Heap {{pct .JVM.HeapUsedPct}}</span></summary>
+  <summary>{{if .Name}}{{.Name}}{{else}}{{.ID}}{{end}} <span class="sm">— {{roles .Roles}} ｜ CPU {{pct .OS.CPUPercent}} ｜ OS RAM（含 cache） {{pct .OS.Memory.UsedPct}} ｜ Swap {{bytesI .OS.Swap.UsedBytes}} ｜ FD {{fdRatio .Process.OpenFileDescriptors .Process.MaxFileDescriptors}} ｜ JVM Heap {{pct .JVM.HeapUsedPct}}</span></summary>
   <div class="node-body">
     <dl class="node-grid">
       <dt>Node ID / 資料來源</dt><dd>{{.ID}} ｜ Stats={{.StatsAvailable}} Info={{.InfoAvailable}}</dd>
       <dt>OS</dt><dd>{{if .OS.PrettyName}}{{.OS.PrettyName}}{{else}}{{.OS.Name}}{{end}} {{.OS.Version}} ｜ {{.OS.Architecture}} ｜ processors available={{intp .OS.AvailableProcessors}} allocated={{intp .OS.AllocatedProcessors}}</dd>
       <dt>OS CPU / load</dt><dd>{{pct .OS.CPUPercent}} ｜ load 1m={{load .OS.Load1m}} 5m={{load .OS.Load5m}} 15m={{load .OS.Load15m}}</dd>
-      <dt>OS memory</dt><dd>used={{bytesI .OS.Memory.UsedBytes}} / total={{bytesI .OS.Memory.TotalBytes}}（{{pct .OS.Memory.UsedPct}}）｜ swap={{bytesI .OS.Swap.UsedBytes}} / {{bytesI .OS.Swap.TotalBytes}}</dd>
+      <dt>OS RAM（含 cache）</dt><dd>used={{bytesI .OS.Memory.UsedBytes}} / total={{bytesI .OS.Memory.TotalBytes}}（{{pct .OS.Memory.UsedPct}}）｜ swap={{bytesI .OS.Swap.UsedBytes}} / {{bytesI .OS.Swap.TotalBytes}}</dd>
       <dt>Process</dt><dd>PID={{i64p .Process.PID}} ｜ memory locked={{boolp .Process.MemoryLocked}} ｜ CPU={{pct .Process.CPUPercent}} ｜ virtual={{bytesI .Process.TotalVirtualMemoryBytes}} ｜ FD={{fdRatio .Process.OpenFileDescriptors .Process.MaxFileDescriptors}}</dd>
       <dt>Cgroup memory</dt><dd>{{memoryRatio .OS.Cgroup.Memory.UsageBytes .OS.Cgroup.Memory.LimitBytes}} ｜ unlimited={{boolp .OS.Cgroup.Memory.LimitUnlimited}}</dd>
       <dt>Cgroup CPU 累積值</dt><dd>usage_ns={{i64p .OS.Cgroup.CPU.UsageNanos}} ｜ throttled={{i64p .OS.Cgroup.CPU.TimesThrottled}} 次 / {{i64p .OS.Cgroup.CPU.TimeThrottledNanos}} ns</dd>
       <dt>Filesystem</dt><dd>available={{bytesI .Filesystem.AvailableBytes}} / total={{bytesI .Filesystem.TotalBytes}}</dd>
-      <dt>JVM</dt><dd>heap={{bytesI .JVM.HeapUsedBytes}} / {{bytesI .JVM.HeapMaxBytes}}（{{pct .JVM.HeapUsedPct}}）｜ old={{bytesI .JVM.OldUsedBytes}} / {{bytesI .JVM.OldMaxBytes}} ｜ uptime_ms={{i64p .JVM.UptimeMillis}}</dd>
+      <dt>JVM Heap</dt><dd>used={{bytesI .JVM.HeapUsedBytes}} / max={{bytesI .JVM.HeapMaxBytes}}（{{pct .JVM.HeapUsedPct}}）｜ old={{bytesI .JVM.OldUsedBytes}} / {{bytesI .JVM.OldMaxBytes}} ｜ uptime_ms={{i64p .JVM.UptimeMillis}}</dd>
     </dl>
     {{if .Filesystem.DataPaths}}<h4>Data paths</h4><table class="node-table"><thead><tr><th>Path</th><th>Mount</th><th>Type</th><th>Available / Total</th></tr></thead><tbody>{{range .Filesystem.DataPaths}}<tr><td>{{.Path}}</td><td>{{.Mount}}</td><td>{{.Type}}</td><td>{{bytesI .AvailableBytes}} / {{bytesI .TotalBytes}}</td></tr>{{end}}</tbody></table>{{end}}
     {{if .Filesystem.Devices}}<h4>Filesystem I/O 累積值</h4><table class="node-table"><thead><tr><th>Device</th><th>Operations</th><th>Read ops / KiB</th><th>Write ops / KiB</th><th>I/O time ms</th></tr></thead><tbody>{{range .Filesystem.Devices}}<tr><td>{{.Name}}</td><td>{{i64p .Operations}}</td><td>{{i64p .ReadOperations}} / {{i64p .ReadKilobytes}}</td><td>{{i64p .WriteOperations}} / {{i64p .WriteKilobytes}}</td><td>{{i64p .IOTimeMillis}}</td></tr>{{end}}</tbody></table>{{end}}
@@ -293,7 +315,7 @@ const htmlTmpl = `<!DOCTYPE html>
 <h2>{{.Name}}</h2>
 {{range .Results}}
 <details class="card {{cls .Status}}"{{if isOpen .Status}} open{{end}}>
-  <summary>{{badge .Status}} {{.Title}} <span class="sm">— {{.Summary}}</span><span class="src">{{.Source}}</span></summary>
+  <summary>{{badge .Status}} <span class="status-label">{{statusLabel .Status}}</span> {{.Title}} <span class="sm">— {{.Summary}}</span><span class="src">{{.Source}}</span></summary>
   <div class="body">
     {{if .Findings}}<h4>發現</h4><ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}
     {{if .RootCauses}}<h4>可能根因（假設）</h4><ul>{{range .RootCauses}}<li>{{.}}</li>{{end}}</ul>{{end}}

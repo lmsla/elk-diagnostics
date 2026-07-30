@@ -31,7 +31,8 @@ ELK 系統快速診斷 CLI 工具。單一二進位、零依賴、可離線執�
 | 程式實作（原 37 條診斷、ES-GAP-01～12、CLI、JSON/HTML、Live/Bundle） | ✅ 完成；目前基準報告輸出 52 項結果 |
 | ES 8.14.3／9.0.0 Live-Bundle 基準線 parity | ✅ 39 個固定端點、52 項 status 一致 |
 | P01～P16 最新人工 ES8 Bundle Route B | 🟡 14 項完整通過；P05 條件式、P11 部分驗證 |
-| 異常分支收斂 | 🟡 多節點、真實負載、CCR／ML／維護情境仍待專用環境 |
+| ES8 三節點 M00～M09 | 🟡 Live 與人工 Bundle Route B 已完成；M05／M08 post Bundle 為延後補採，M08 timeout 修正後真機重驗仍待完成 |
+| 異常分支收斂 | 🟡 ES9／跨主機多節點、真實 CPU／heap 負載、CCR／ML／維護情境仍待驗 |
 
 ## 目錄結構
 

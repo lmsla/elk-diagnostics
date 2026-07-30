@@ -6,15 +6,19 @@
 |---|---|---|
 | A：Live 直連 | Binary 直接連 ES 時能否抓到真實故障 | [`VERIFICATION-LIVE-PLAYBOOK.md`](./VERIFICATION-LIVE-PLAYBOOK.md) |
 | B：Bundle 客戶流程 | 客戶只執行 `collect.sh`，離線分析能否抓到故障 | [`VERIFICATION-BUNDLE-PLAYBOOK.md`](./VERIFICATION-BUNDLE-PLAYBOOK.md) |
+| Multi-node | ES 8 三節點 topology／awareness／runtime 驗證 | [`VERIFICATION-MULTINODE-PLAYBOOK.md`](./VERIFICATION-MULTINODE-PLAYBOOK.md) |
 
-兩條路線都使用同一份 [`fault-scenarios.sh`](../dev/phase0/fault-scenarios.sh) 製造、確認與復原 P01～P16，避免故障配方漂移。
+所有路線都使用同一份 [`fault-scenarios.sh`](../dev/phase0/fault-scenarios.sh)。
+P01～P16 僅支援 single topology；M00 之後的 M 系列僅支援 multi topology，
+控制器會在執行前拒絕不相容的環境。
 
 ## 執行順序
 
 1. 先完成 ES 8 的 Live Playbook。
 2. 另開 Terminal，完成 ES 8 的 Bundle Playbook。
 3. 確認 ES 8 全部通過後，分別重跑 ES 9。
-4. 將驗證結論更新到 [`VERIFICATION.md`](./VERIFICATION.md)。
+4. 使用獨立 ES 8 三節點環境執行 Multi-node Playbook。
+5. 將驗證結論更新到 [`VERIFICATION.md`](./VERIFICATION.md)。
 
 ## 不可混淆的邊界
 

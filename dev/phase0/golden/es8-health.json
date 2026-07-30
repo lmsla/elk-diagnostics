@@ -204,9 +204,8 @@
       "summary": "Nodes API 回應不完整，無法宣稱已涵蓋所有節點",
       "findings": [
         "Nodes Stats: successful=1/1 failed=0 returned=1",
-        "Nodes Info: successful=0/0 failed=0 returned=0",
-        "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall",
-        "Nodes Info 缺少 _nodes coverage"
+        "Nodes Info: coverage unavailable returned=0",
+        "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?timeout=5s\u0026filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall"
       ],
       "root_causes": null,
       "recommendations": null,
@@ -301,11 +300,8 @@
       "category": "node",
       "status": "unknown",
       "conclusion": "normal",
-      "summary": "Nodes Info／Stats 回應不完整，無法交叉判讀 memory lock 與 swap",
-      "findings": [
-        "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall",
-        "Nodes Info 缺少 _nodes coverage"
-      ],
+      "summary": "受 node_api_coverage 影響：Nodes Stats／Info 回應不完整，無法判定所有節點",
+      "findings": null,
       "root_causes": null,
       "recommendations": null,
       "docs": [
@@ -684,7 +680,7 @@
       "conclusion": "normal",
       "summary": "資料抓取失敗，無法判定",
       "findings": [
-        "ES 回應 404: /_tasks?detailed=true\u0026group_by=none\u0026filter_path=tasks.*.node,tasks.*.type,tasks.*.action,tasks.*.description,tasks.*.running_time_in_nanos,tasks.*.cancellable"
+        "ES 回應 404: /_tasks?timeout=5s\u0026detailed=true\u0026group_by=none\u0026filter_path=tasks.*.node,tasks.*.type,tasks.*.action,tasks.*.description,tasks.*.running_time_in_nanos,tasks.*.cancellable"
       ],
       "root_causes": null,
       "recommendations": null,
@@ -738,7 +734,7 @@
       "conclusion": "normal",
       "summary": "資料抓取失敗，無法判定",
       "findings": [
-        "ES 回應 404: /_nodes/jvm,plugins?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.version,nodes.*.build_hash,nodes.*.jvm.version,nodes.*.jvm.vm_version,nodes.*.jvm.mem.heap_init_in_bytes,nodes.*.jvm.mem.heap_max_in_bytes,nodes.*.plugins.name,nodes.*.plugins.version"
+        "ES 回應 404: /_nodes/jvm,plugins?timeout=5s\u0026filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.version,nodes.*.build_hash,nodes.*.jvm.version,nodes.*.jvm.vm_version,nodes.*.jvm.mem.heap_init_in_bytes,nodes.*.jvm.mem.heap_max_in_bytes,nodes.*.plugins.name,nodes.*.plugins.version"
       ],
       "root_causes": null,
       "recommendations": null,
@@ -828,7 +824,7 @@
       "conclusion": "normal",
       "summary": "資料抓取失敗，無法判定",
       "findings": [
-        "ES 回應 404: /_nodes/stats/indexing_pressure?filter_path=_nodes,nodes.*.name,nodes.*.indexing_pressure.memory.current.combined_coordinating_and_primary_in_bytes,nodes.*.indexing_pressure.memory.current.replica_in_bytes,nodes.*.indexing_pressure.memory.current.all_in_bytes,nodes.*.indexing_pressure.memory.limit_in_bytes"
+        "ES 回應 404: /_nodes/stats/indexing_pressure?timeout=5s\u0026filter_path=_nodes,nodes.*.name,nodes.*.indexing_pressure.memory.current.combined_coordinating_and_primary_in_bytes,nodes.*.indexing_pressure.memory.current.replica_in_bytes,nodes.*.indexing_pressure.memory.current.all_in_bytes,nodes.*.indexing_pressure.memory.limit_in_bytes"
       ],
       "root_causes": null,
       "recommendations": null,
@@ -1000,7 +996,7 @@
       }
     ],
     "issues": [
-      "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall",
+      "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?timeout=5s\u0026filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall",
       "Nodes Info 缺少 _nodes coverage"
     ]
   },

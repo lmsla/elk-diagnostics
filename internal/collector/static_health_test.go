@@ -94,4 +94,14 @@ func TestStaticHealthCollectors(t *testing.T) {
 			t.Fatalf("AllocationAwarenessAttributes() = %+v, %v", attrs, err)
 		}
 	})
+
+	t.Run("allocation awareness accepts defaults array", func(t *testing.T) {
+		c := newStaticBundleClient(t, map[string]string{
+			"cluster_settings.json": `{"persistent":{},"transient":{},"defaults":{"cluster.routing.allocation.awareness.attributes":["zone","rack"]}}`,
+		})
+		attrs, err := c.AllocationAwarenessAttributes()
+		if err != nil || len(attrs) != 2 || attrs[0] != "zone" || attrs[1] != "rack" {
+			t.Fatalf("AllocationAwarenessAttributes() = %+v, %v", attrs, err)
+		}
+	})
 }
