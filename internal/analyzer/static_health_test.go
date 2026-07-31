@@ -109,7 +109,7 @@ func TestNodeRuntimeConsistency(t *testing.T) {
 func TestTLSCertificateExpiry(t *testing.T) {
 	th := testThresholds()
 	future := collector.TLSCertificate{Subject: "CN=node", Expiry: staticNow.Add(31 * 24 * time.Hour).Format(time.RFC3339), HasPrivateKey: true}
-	if got := TLSCertificateExpiry([]collector.TLSCertificate{future}, th, staticNow); got.Status != diagnostic.StatusPass || !got.RequiresExtra {
+	if got := TLSCertificateExpiry([]collector.TLSCertificate{future}, th, staticNow); got.Status != diagnostic.StatusPass || !got.RequiresExtra || got.Summary != "本次 API 回傳的憑證皆距到期超過 30 天" {
 		t.Fatalf("future certificate = %+v", got)
 	}
 	expiredIdentity := future

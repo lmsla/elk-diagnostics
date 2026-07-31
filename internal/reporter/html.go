@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"path/filepath"
 	"strings"
+	"time"
 
 	"elk-diagnostics/internal/diagnostic"
 	"elk-diagnostics/internal/nodecontext"
@@ -105,17 +107,121 @@ var htmlFuncs = template.FuncMap{
 	// "(bundle) " 前綴（見 check.go）。只有 bundle 模式才需要提示「未含採集時間」，
 	// 連線模式本來就沒有採集/分析時間差的問題。
 	"isBundleHost": func(h string) bool { return strings.HasPrefix(h, "(bundle) ") },
+	"clusterName": func(v string) string {
+		if strings.TrimSpace(v) == "" {
+			return "未提供叢集名稱"
+		}
+		return v
+	},
+	"analysisMode": func(mode, host string) string {
+		switch {
+		case strings.HasPrefix(host, "(bundle) "):
+			return "Bundle 離線分析"
+		case strings.HasPrefix(host, "(from-file) "):
+			return "單一檔案分析"
+		case mode == "check":
+			return "Live 直接診斷"
+		case mode == "diagnose":
+			return "症狀診斷"
+		default:
+			return mode
+		}
+	},
+	"localTime": func(v string) string {
+		parsed, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			return v
+		}
+		local := parsed.In(time.Local)
+		_, offset := local.Zone()
+		sign := "+"
+		if offset < 0 {
+			sign = "-"
+			offset = -offset
+		}
+		return fmt.Sprintf("%s（UTC%s%02d:%02d）",
+			local.Format("2006-01-02 15:04:05"),
+			sign, offset/3600, offset%3600/60)
+	},
+	"sourcePath": func(host string) string {
+		for _, prefix := range []string{"(bundle) ", "(from-file) "} {
+			host = strings.TrimPrefix(host, prefix)
+		}
+		return host
+	},
+	"sourceShort": func(host string) string {
+		if !strings.HasPrefix(host, "(bundle) ") && !strings.HasPrefix(host, "(from-file) ") {
+			return host
+		}
+		path := filepath.ToSlash(strings.TrimSpace(strings.TrimPrefix(strings.TrimPrefix(host, "(bundle) "), "(from-file) ")))
+		parts := strings.Split(strings.TrimRight(path, "/"), "/")
+		if len(parts) >= 2 {
+			return strings.Join(parts[len(parts)-2:], "/")
+		}
+		return path
+	},
 	"coverage": func(c nodecontext.Coverage) string {
 		if !c.Available {
 			return fmt.Sprintf("不可驗證（returned=%d）", c.Returned)
 		}
 		return fmt.Sprintf("%d/%d 成功，%d 失敗，%d 回傳", c.Successful, c.Total, c.Failed, c.Returned)
 	},
+	"coverageClass": func(c nodecontext.Coverage) string {
+		if c.Complete() {
+			return "complete"
+		}
+		return "incomplete"
+	},
 	"roles": func(v []string) string {
 		if len(v) == 0 {
 			return "—"
 		}
 		return strings.Join(v, ", ")
+	},
+	"rolePreview": func(v []string) []string {
+		if len(v) <= 3 {
+			return v
+		}
+		priority := []string{
+			"master", "data_hot", "data_warm", "data_cold",
+			"data_frozen", "data_content", "data", "ingest",
+		}
+		seen := make(map[string]bool, len(v))
+		preview := make([]string, 0, 3)
+		for _, wanted := range priority {
+			for _, role := range v {
+				if role == wanted && !seen[role] {
+					preview = append(preview, role)
+					seen[role] = true
+					break
+				}
+			}
+			if len(preview) == 3 {
+				return preview
+			}
+		}
+		for _, role := range v {
+			if !seen[role] {
+				preview = append(preview, role)
+				seen[role] = true
+			}
+			if len(preview) == 3 {
+				break
+			}
+		}
+		return preview
+	},
+	"extraRoleCount": func(v []string) int {
+		if len(v) <= 3 {
+			return 0
+		}
+		return len(v) - 3
+	},
+	"nodeName": func(n nodecontext.Node) string {
+		if n.Name != "" {
+			return n.Name
+		}
+		return n.ID
 	},
 	"intp": func(v *int) string {
 		if v == nil {
@@ -168,6 +274,44 @@ var htmlFuncs = template.FuncMap{
 		}
 		return fmt.Sprintf("%d/%d（%d%%）", *open, *max, 100**open / *max)
 	},
+	"metricClass": func(kind string, value *int) string {
+		if value == nil {
+			return "metric-unknown"
+		}
+		switch kind {
+		case "cpu", "heap":
+			switch {
+			case *value >= 95:
+				return "metric-critical"
+			case *value >= 85:
+				return "metric-warning"
+			}
+		}
+		return ""
+	},
+	"swapClass": func(used *int64) string {
+		if used == nil {
+			return "metric-unknown"
+		}
+		if *used > 0 {
+			return "metric-warning"
+		}
+		return ""
+	},
+	"fdClass": func(open, max *int64) string {
+		if open == nil || max == nil || *max <= 0 {
+			return "metric-unknown"
+		}
+		pct := 100 * *open / *max
+		switch {
+		case pct >= 90:
+			return "metric-critical"
+		case pct >= 80:
+			return "metric-warning"
+		default:
+			return ""
+		}
+	},
 	"memoryRatio": func(usage, limit *uint64) string {
 		if usage == nil || limit == nil || *limit == 0 {
 			return "—"
@@ -194,15 +338,30 @@ const htmlTmpl = `<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>elk-diagnostics 診斷報告</title>
+<title>Elasticsearch 叢集健康診斷報告</title>
 <style>
   :root{--pass:#2e7d32;--warning:#ed6c02;--critical:#c62828;--skipped:#757575;--unknown:#455a64;}
   *{box-sizing:border-box}
   body{font-family:-apple-system,"Segoe UI","Microsoft JhengHei",sans-serif;margin:0;color:#1a1a1a;background:#f5f5f5;line-height:1.6}
-  .wrap{max-width:960px;margin:0 auto;padding:24px}
-  header h1{margin:0 0 4px;font-size:20px}
-  header .meta{color:#555;font-size:13px}
-  header .meta span{margin-right:16px}
+  .wrap{max-width:1180px;margin:0 auto;padding:24px}
+  header{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:20px}
+  .header-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  header h1{margin:0;font-size:24px;line-height:1.35}
+  .report-status{flex:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.03em}
+  .report-status.pass{background:#e8f5e9;color:var(--pass)}.report-status.warning{background:#fff3e0;color:#a04b00}
+  .report-status.critical{background:#ffebee;color:var(--critical)}.report-status.skipped{background:#f0f0f0;color:var(--skipped)}
+  .report-status.unknown{background:#eceff1;color:var(--unknown)}
+  .cluster-name{font-size:18px;font-weight:650;margin-top:12px}
+  .cluster-facts{display:flex;flex-wrap:wrap;gap:0;margin-top:2px;color:#555;font-size:13px}
+  .cluster-facts span+span::before{content:"·";margin:0 8px;color:#aaa}
+  .meta-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 18px;margin-top:16px;padding-top:14px;border-top:1px solid #eee}
+  .meta-item{min-width:0}
+  .meta-label{display:block;color:#777;font-size:11px}
+  .meta-value{display:block;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+  .technical-info{margin-top:12px;border-top:1px solid #eee;padding-top:8px}
+  .technical-info>summary{padding:2px 0;color:#555;font-size:12px;font-weight:600}
+  .technical-grid{display:grid;grid-template-columns:110px minmax(0,1fr);gap:4px 12px;margin:8px 0 0;font-size:12px}
+  .technical-grid dt{color:#777}.technical-grid dd{margin:0;overflow-wrap:anywhere}
   .banner{margin:16px 0;padding:16px 20px;border-radius:8px;color:#fff;font-size:18px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
   .banner.pass{background:var(--pass)}.banner.warning{background:var(--warning)}.banner.critical{background:var(--critical)}.banner.unknown{background:var(--unknown)}
   .counts{font-size:13px;font-weight:400}
@@ -212,10 +371,44 @@ const htmlTmpl = `<!DOCTYPE html>
   .hints h4{margin:0 0 6px;font-size:13px;color:#795548}
   .hints ul{margin:0;padding-left:20px}
   .hints li{font-size:14px;margin:2px 0}
-  h2{font-size:15px;margin:24px 0 8px;padding-bottom:4px;border-bottom:2px solid #ddd}
-	.node-coverage{background:#fff;border:1px solid #e0e0e0;border-radius:6px;padding:10px 14px;font-size:13px;margin:8px 0}
-	.node-memory-note{margin:6px 0 0;color:#555}
+	h2{font-size:17px;margin:24px 0 8px;padding-bottom:4px;border-bottom:2px solid #ddd}
+  .section-en{font-size:12px;font-weight:400;color:#777}
+	.node-coverage{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:12px 14px;font-size:13px;margin:8px 0}
+  .coverage-line{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+  .coverage-title{font-weight:700}
+  .coverage-badge{border-radius:999px;padding:2px 9px;font-size:12px;background:#f5f5f5}
+  .coverage-badge.complete{background:#e8f5e9;color:var(--pass)}
+  .coverage-badge.incomplete{background:#eceff1;color:var(--unknown)}
+	.node-memory-help{margin:8px 0 0;border-top:1px solid #eee;padding-top:6px}
+  .node-memory-help>summary{padding:2px 0;color:#555;font-size:12px;font-weight:600}
+  .node-memory-note{margin:5px 0 0;color:#555;font-size:12px}
 	.node-issues{color:var(--unknown);margin:6px 0 0;padding-left:20px}
+  .node-overview-wrap{overflow-x:auto;background:#fff;border:1px solid #d8dee4;border-radius:8px;margin-top:10px}
+  .node-overview{width:100%;border-collapse:collapse;font-size:13px;min-width:820px}
+  .node-overview th,.node-overview td{padding:11px 12px;text-align:left;border-bottom:1px solid #e8edf2;vertical-align:middle}
+  .node-overview th{background:#f6f8fa;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
+  .node-overview tbody tr:last-child td{border-bottom:0}
+  .node-overview tbody tr:hover{background:#fafbfd}
+  .node-overview .node-name-cell{font-weight:700;white-space:nowrap}
+  .roles-cell{min-width:230px}
+  .role-chip{display:inline-block;margin:2px 3px 2px 0;padding:1px 7px;border-radius:999px;background:#edf2f7;color:#34495e;font-size:11px;white-space:nowrap}
+  .role-more{background:#e8eaf6;color:#3949ab}
+  .metric-value{font-variant-numeric:tabular-nums;white-space:nowrap}
+  .metric-warning{color:#a04b00;font-weight:700;background:#fff3e0;border-radius:4px;padding:1px 5px}
+  .metric-critical{color:var(--critical);font-weight:700;background:#ffebee;border-radius:4px;padding:1px 5px}
+  .metric-unknown{color:var(--unknown)}
+  .node-mobile-list{display:none}
+  .node-mobile-card{background:#fff;border:1px solid #d8dee4;border-radius:8px;margin:8px 0;padding:12px 14px}
+  .node-mobile-head{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+  .node-mobile-name{font-weight:700}
+  .node-mobile-roles{margin-top:4px}
+  .node-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+  .node-metric{background:#f7f9fb;border-radius:6px;padding:7px 9px}
+  .node-metric-label{display:block;color:#777;font-size:10px}
+  .node-metric-value{display:block;font-size:14px;font-weight:650}
+  .node-technical-details{margin-top:10px;background:#fff;border:1px solid #e0e0e0;border-radius:8px}
+  .node-technical-details>summary{font-size:12px;color:#555}
+  .node-technical-body{padding:0 12px 8px}
 	.node-card{background:#fff;border:1px solid #d8dee4;border-radius:6px;margin:8px 0;overflow:hidden}
 	.node-card summary{background:#f8fafc}
 	.node-body{padding:10px 14px 14px;border-top:1px solid #e8e8e8}
@@ -243,24 +436,58 @@ const htmlTmpl = `<!DOCTYPE html>
   .extra,.vw{font-size:13px;color:var(--warning);margin:8px 0 0}
   a{color:#1565c0;word-break:break-all}
   footer{margin:24px 0;padding:14px;background:#eceff1;border-radius:6px;font-size:12px;color:#555}
-  @media print{body{background:#fff}.card{break-inside:avoid}summary{cursor:default}}
+  @media (max-width:760px){
+    .wrap{padding:12px}
+    header{padding:16px}
+    .header-title{display:block}
+    .report-status{display:inline-block;margin-top:8px}
+    .meta-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .banner{align-items:flex-start;gap:8px;flex-direction:column}
+    .node-overview-wrap{display:none}
+    .node-mobile-list{display:block}
+  }
+  @media (max-width:460px){
+    header h1{font-size:20px}
+    .meta-grid{grid-template-columns:1fr}
+    .node-metrics{grid-template-columns:1fr 1fr}
+  }
+  @media print{
+    body{background:#fff}.card,.node-overview-wrap{break-inside:avoid}summary{cursor:default}
+    .wrap{max-width:none;padding:0}.node-mobile-list{display:none}.node-overview-wrap{display:block}
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
 <header>
-  <h1>elk-diagnostics 診斷報告</h1>
-  <div class="meta">
-    <span>叢集：{{.R.Meta.Cluster.Name}}</span>
-    <span>{{.R.Meta.Cluster.Host}}</span>
-    <span>ES {{.R.Meta.Cluster.ESVersion}}</span>
-    <span>模式：{{.R.Meta.Mode}}</span>
-    <span>{{.R.Meta.GeneratedAt}}</span>
-    <span>工具 {{.R.Meta.ToolVersion}}</span>
-    {{if .R.Meta.CollectedAt}}<span>採集時間：{{.R.Meta.CollectedAt}}（採集腳本 {{.R.Meta.CollectScriptVersion}}）</span>
-    {{else if isBundleHost .R.Meta.Cluster.Host}}<span class="vw">bundle 未含採集時間（舊版採集腳本）</span>
-    {{end}}
+  <div class="header-title">
+    <h1>Elasticsearch 叢集健康診斷報告</h1>
+    <span class="report-status {{cls .R.OverallStatus}}">{{statusLabel .R.OverallStatus}} · {{statusText .R.OverallStatus}}</span>
   </div>
+  <div class="cluster-name">{{clusterName .R.Meta.Cluster.Name}}</div>
+  <div class="cluster-facts">
+    <span>ES {{.R.Meta.Cluster.ESVersion}}</span>
+    {{with .R.NodeContext}}<span>{{len .Nodes}} 個節點</span>{{end}}
+    <span>{{analysisMode .R.Meta.Mode .R.Meta.Cluster.Host}}</span>
+  </div>
+  <div class="meta-grid">
+    {{if .R.Meta.CollectedAt}}
+    <div class="meta-item"><span class="meta-label">資料採集時間</span><time class="meta-value" datetime="{{.R.Meta.CollectedAt}}">{{localTime .R.Meta.CollectedAt}}</time></div>
+    {{else if isBundleHost .R.Meta.Cluster.Host}}
+    <div class="meta-item"><span class="meta-label">資料採集時間</span><span class="meta-value vw">bundle 未含採集時間（舊版採集腳本）</span></div>
+    {{end}}
+    <div class="meta-item"><span class="meta-label">報告產生時間</span><time class="meta-value" datetime="{{.R.Meta.GeneratedAt}}">{{localTime .R.Meta.GeneratedAt}}</time></div>
+    <div class="meta-item"><span class="meta-label">工具版本</span><span class="meta-value">elk-diagnostics {{.R.Meta.ToolVersion}}</span></div>
+    {{if .R.Meta.CollectScriptVersion}}<div class="meta-item"><span class="meta-label">採集器版本</span><span class="meta-value">{{.R.Meta.CollectScriptVersion}}</span></div>{{end}}
+  </div>
+  <details class="technical-info">
+    <summary>技術資訊</summary>
+    <dl class="technical-grid">
+      <dt>診斷模式</dt><dd>{{analysisMode .R.Meta.Mode .R.Meta.Cluster.Host}}</dd>
+      <dt>資料來源</dt><dd><span title="{{sourcePath .R.Meta.Cluster.Host}}">{{sourceShort .R.Meta.Cluster.Host}}</span></dd>
+      <dt>完整來源</dt><dd>{{sourcePath .R.Meta.Cluster.Host}}</dd>
+    </dl>
+  </details>
 </header>
 
 <div class="banner {{cls .R.OverallStatus}}">
@@ -282,15 +509,58 @@ const htmlTmpl = `<!DOCTYPE html>
 {{end}}
 
 {{with .R.NodeContext}}
-<h2>節點環境（Node Context）</h2>
+<h2>節點概況 <span class="section-en">Node Context</span></h2>
 <div class="node-coverage">
-  <strong>Nodes Stats：</strong>{{coverage .StatsCoverage}}　<strong>Nodes Info：</strong>{{coverage .InfoCoverage}}
-  <p class="node-memory-note"><strong>記憶體判讀：</strong>OS RAM 是主機／容器層的單次使用率快照，可能包含可回收的 filesystem cache；不等於 JVM Heap，單次高值不單獨視為記憶體壓力。</p>
+  <div class="coverage-line">
+    <span class="coverage-title">API 覆蓋</span>
+    <span class="coverage-badge {{coverageClass .StatsCoverage}}"><strong>Nodes Stats</strong> {{coverage .StatsCoverage}}</span>
+    <span class="coverage-badge {{coverageClass .InfoCoverage}}"><strong>Nodes Info</strong> {{coverage .InfoCoverage}}</span>
+  </div>
+  <details class="node-memory-help">
+    <summary>ⓘ 記憶體指標判讀</summary>
+    <p class="node-memory-note">OS RAM 是主機／容器層的單次使用率快照，可能包含可回收的 filesystem cache；不等於 JVM Heap，單次高值不單獨視為記憶體壓力。表格色彩只協助快速閱讀，正式判定仍以診斷結果卡為準。</p>
+  </details>
   {{if .Issues}}<ul class="node-issues">{{range .Issues}}<li>{{.}}</li>{{end}}</ul>{{end}}
 </div>
+<div class="node-overview-wrap">
+  <table class="node-overview">
+    <thead><tr><th>節點</th><th>角色</th><th>CPU</th><th>OS RAM*</th><th>JVM Heap</th><th>Swap</th><th>FD</th></tr></thead>
+    <tbody>
+    {{range .Nodes}}
+      <tr>
+        <td class="node-name-cell">{{nodeName .}}</td>
+        <td class="roles-cell" title="{{roles .Roles}}">{{range rolePreview .Roles}}<span class="role-chip">{{.}}</span>{{end}}{{if extraRoleCount .Roles}}<span class="role-chip role-more">+{{extraRoleCount .Roles}}</span>{{end}}</td>
+        <td><span class="metric-value {{metricClass "cpu" .OS.CPUPercent}}">{{pct .OS.CPUPercent}}</span></td>
+        <td><span class="metric-value">{{pct .OS.Memory.UsedPct}}</span></td>
+        <td><span class="metric-value {{metricClass "heap" .JVM.HeapUsedPct}}">{{pct .JVM.HeapUsedPct}}</span></td>
+        <td><span class="metric-value {{swapClass .OS.Swap.UsedBytes}}">{{bytesI .OS.Swap.UsedBytes}}</span></td>
+        <td><span class="metric-value {{fdClass .Process.OpenFileDescriptors .Process.MaxFileDescriptors}}">{{fdRatio .Process.OpenFileDescriptors .Process.MaxFileDescriptors}}</span></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+<div class="node-mobile-list">
+{{range .Nodes}}
+  <div class="node-mobile-card">
+    <div class="node-mobile-head"><span class="node-mobile-name">{{nodeName .}}</span></div>
+    <div class="node-mobile-roles" title="{{roles .Roles}}">{{range rolePreview .Roles}}<span class="role-chip">{{.}}</span>{{end}}{{if extraRoleCount .Roles}}<span class="role-chip role-more">+{{extraRoleCount .Roles}}</span>{{end}}</div>
+    <div class="node-metrics">
+      <div class="node-metric"><span class="node-metric-label">CPU</span><span class="node-metric-value {{metricClass "cpu" .OS.CPUPercent}}">{{pct .OS.CPUPercent}}</span></div>
+      <div class="node-metric"><span class="node-metric-label">OS RAM*</span><span class="node-metric-value">{{pct .OS.Memory.UsedPct}}</span></div>
+      <div class="node-metric"><span class="node-metric-label">JVM Heap</span><span class="node-metric-value {{metricClass "heap" .JVM.HeapUsedPct}}">{{pct .JVM.HeapUsedPct}}</span></div>
+      <div class="node-metric"><span class="node-metric-label">Swap</span><span class="node-metric-value {{swapClass .OS.Swap.UsedBytes}}">{{bytesI .OS.Swap.UsedBytes}}</span></div>
+      <div class="node-metric"><span class="node-metric-label">FD</span><span class="node-metric-value {{fdClass .Process.OpenFileDescriptors .Process.MaxFileDescriptors}}">{{fdRatio .Process.OpenFileDescriptors .Process.MaxFileDescriptors}}</span></div>
+    </div>
+  </div>
+{{end}}
+</div>
+<details class="node-technical-details">
+  <summary>展開節點技術明細</summary>
+  <div class="node-technical-body">
 {{range .Nodes}}
 <details class="node-card">
-  <summary>{{if .Name}}{{.Name}}{{else}}{{.ID}}{{end}} <span class="sm">— {{roles .Roles}} ｜ CPU {{pct .OS.CPUPercent}} ｜ OS RAM（含 cache） {{pct .OS.Memory.UsedPct}} ｜ Swap {{bytesI .OS.Swap.UsedBytes}} ｜ FD {{fdRatio .Process.OpenFileDescriptors .Process.MaxFileDescriptors}} ｜ JVM Heap {{pct .JVM.HeapUsedPct}}</span></summary>
+  <summary>{{nodeName .}} <span class="sm">— {{roles .Roles}}</span></summary>
   <div class="node-body">
     <dl class="node-grid">
       <dt>Node ID / 資料來源</dt><dd>{{.ID}} ｜ Stats={{.StatsAvailable}} Info={{.InfoAvailable}}</dd>
@@ -309,6 +579,8 @@ const htmlTmpl = `<!DOCTYPE html>
   </div>
 </details>
 {{end}}
+</div>
+</details>
 {{end}}
 
 {{range .Groups}}

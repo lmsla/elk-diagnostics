@@ -162,7 +162,7 @@ JSON 報告：
 
 ### Node Context
 
-`check` 會透過 ES Nodes APIs 收集所有回應節點的 OS、Elasticsearch process、filesystem 與 JVM 快照。HTML 的「節點環境（Node Context）」可查看：
+`check` 會透過 ES Nodes APIs 收集所有回應節點的 OS、Elasticsearch process、filesystem 與 JVM 快照。HTML 的「節點概況（Node Context）」先以固定欄位比較各節點的角色、CPU、OS RAM、JVM Heap、Swap 與 FD；窄畫面會自動切換成節點卡片。完整 OS／process／filesystem／JVM 資料收在可折疊的「節點技術明細」：
 
 - OS／架構／processors、CPU/load、memory/swap、Linux cgroup。
 - Elasticsearch PID、memory lock、CPU、virtual memory、open/max file descriptors。

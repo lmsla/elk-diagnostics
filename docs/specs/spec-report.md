@@ -130,10 +130,10 @@ JSON 為穩定契約：欄位只增不改名；新增診斷項只是多一個 `r
 
 版面由上而下：
 
-1. **頁首**：工具版本、產生時間、目標叢集(name/host/es_version)、模式。
+1. **頁首**：以「Elasticsearch 叢集健康診斷報告」為標題，顯示 overall_status、實際 cluster name、ES 版本、節點數與使用者可理解的模式名稱（Live 直接診斷／Bundle 離線分析）；採集時間、報告時間、工具與採集器版本分欄。完整 endpoint／Bundle 絕對路徑僅放在預設收合的技術資訊。
 2. **總狀態橫幅**：大色塊顯示 overall_status（✅綠 / ⚠️琥珀 / ❌紅 / 灰=unknown_present），右側計數摘要。
 3. **版本警告區**（若有）：es_version 超出 tested_versions 的全域提示。
-4. **Node Context 區塊**（資料可得時）：Stats／Info coverage、每個節點的資源摘要與可折疊 raw context；I/O、GC、CPU throttling 明示為累積值。
+4. **Node Context 區塊**（資料可得時）：Stats／Info coverage；桌面以固定欄位比較節點、角色、CPU、OS RAM、JVM Heap、Swap 與 FD，窄畫面切換為節點卡片；完整 raw context 另行折疊。角色超過三個時以 `+N` 收斂，OS RAM 不因單次高值直接標紅；I/O、GC、CPU throttling 明示為累積值。
 5. **分類區塊**：依 category 分節（叢集 / 容量 / 資料 / 管理 / 效能 / 快照 / 節點環境），節內逐項卡片：
    - 卡片標頭：狀態 badge（色彩＋圖示＋明確文字 `PASS`／`WARNING`／`CRITICAL`／`SKIPPED`／`UNKNOWN`）、`title`、`summary`、來源標記（health_report / raw / fallback）；不得只依賴色彩或圖示表達狀態。
    - 可折疊明細：findings、root_causes、recommendations（指令以等寬框、可複製）、docs 連結、version_warning。

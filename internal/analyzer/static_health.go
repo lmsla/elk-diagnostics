@@ -260,7 +260,7 @@ func TLSCertificateExpiry(certs []collector.TLSCertificate, t rules.Thresholds, 
 	case len(parseFailures) > 0:
 		return unknownStatic(res, "部分 certificate 到期日無法解析", parseFailures)
 	default:
-		res = pass(res, fmt.Sprintf("回應節點 certificate 均超過 %d 天後到期", t.StaticHealth.ExpiryWarnDays))
+		res = pass(res, fmt.Sprintf("本次 API 回傳的憑證皆距到期超過 %d 天", t.StaticHealth.ExpiryWarnDays))
 	}
 	res.RequiresExtra = true
 	res.ExtraReason = "/_ssl/certificates 只回報收到請求的 Elasticsearch 節點；完整叢集需逐節點採集"
