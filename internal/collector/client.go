@@ -1,4 +1,4 @@
-// Package collector 負責唯讀採集（見 docs/specs/spec-config.md、spec-cli.md §4）。
+// Package collector 負責唯讀採集（見 docs/內部/規格/設定規格.md、命令列規格.md §4）。
 package collector
 
 import (
@@ -49,7 +49,7 @@ type Options struct {
 	ClientKey  string
 	Insecure   bool
 	Timeout    time.Duration
-	Retries    int // 單一請求的暫時性失敗（網路錯誤/5xx）額外重試次數，見 spec-resilience §2
+	Retries    int // 單一請求的暫時性失敗（網路錯誤/5xx）額外重試次數，見 韌性規格 §2
 }
 
 type Client struct {
@@ -61,7 +61,7 @@ type Client struct {
 	version    string
 	retries    int
 
-	// manifest* 僅 bundle 模式、且 bundle 含 _manifest.json 時才有值（見 spec-bundle §4.2）。
+	// manifest* 僅 bundle 模式、且 bundle 含 _manifest.json 時才有值（見 採集包規格 §4.2）。
 	// 連線模式與舊版（無 manifest）bundle 一律留空，呼叫端據此判斷是否顯示採集時間。
 	manifestCollectedAt   string
 	manifestScriptVersion string
@@ -118,13 +118,13 @@ func New(opts Options) (*Client, error) {
 }
 
 // NewFromBundle 建立離線分析用的 client：資料來自採集腳本產出的 bundle 目錄，
-// 全程不連線任何叢集（見 docs/specs/spec-bundle.md）。
+// 全程不連線任何叢集（見 docs/內部/規格/採集包規格.md）。
 //
 // 用途是把「採集」與「判斷」拆開執行——客戶環境只跑一份看得懂的 curl 腳本，
 // 二進位檔在自己機器上分析 bundle，客戶不必為了健檢導入未知執行檔。
 //
 // bundle 缺檔一律回錯誤（不是回空值），讓對應診斷落到 unknown 而非 pass：
-// 查不到就說查不到，這是 spec-resilience §1/§3 的既有規則。
+// 查不到就說查不到，這是 韌性規格 §1/§3 的既有規則。
 func NewFromBundle(dir string) (*Client, error) {
 	statuses := readBundleStatuses(dir)
 	c := &Client{
@@ -160,7 +160,7 @@ func NewFromBundle(dir string) (*Client, error) {
 	return c, nil
 }
 
-// BundleManifestFile 記錄採集開始時間與腳本版本，由採集腳本產生（見 spec-bundle §4.2）。
+// BundleManifestFile 記錄採集開始時間與腳本版本，由採集腳本產生（見 採集包規格 §4.2）。
 const BundleManifestFile = "_manifest.json"
 
 // readBundleManifest 讀 bundle 的採集中繼資料。檔案不存在（舊版採集腳本產出的 bundle、
@@ -189,7 +189,7 @@ const BundleStatusFile = "_status.txt"
 // 沒有這份清單就無法區分「這個檔是正常回應」與「這個檔是 ES 的錯誤訊息」：
 //   - allocation/explain 在健康叢集回 400，而那個錯誤 body 正是「無未分配 shard」的答案
 //   - 反過來，若某端點因權限不足回 403，錯誤 body 被當成 200 解析後會得到零值，
-//     讓診斷回報「一切正常」——正是 VERIFICATION.md §1 那類假綠燈
+//     讓診斷回報「一切正常」——正是 驗證狀態.md §1 那類假綠燈
 //
 // 檔案不存在時回 nil，呼叫端一律視為 200（相容於直接拿 fixture 目錄當 bundle 的用法）。
 func readBundleStatuses(dir string) map[string]int {
@@ -283,7 +283,7 @@ func (c *Client) connect() error {
 // get 對暫時性失敗（網路層錯誤、5xx）重試最多 c.retries 次；4xx 視為永久失敗，
 // 不重試、直接連同 body 一併回傳（部分 ES 端點用 4xx 表達語意化的非錯誤狀態，
 // 如 AllocationExplain 的「無未分配 shard」，呼叫端需要讀到 body 才能判斷），
-// 見 spec-resilience §2。
+// 見 韌性規格 §2。
 func (c *Client) get(path string) ([]byte, error) {
 	// 零值 Client（未經 New/NewFromBundle 建構）預設走 HTTP，不因欄位未設而 panic。
 	fetch := c.fetch
@@ -353,7 +353,7 @@ func (c *Client) ClusterName() string { return c.name }
 func (c *Client) Version() string     { return c.version }
 
 // CollectedAt / CollectScriptVersion：bundle 模式下若 bundle 含 _manifest.json 才有值，
-// 供報告 meta 標示「資料取自何時」（spec-bundle §4.2）。連線模式與舊版 bundle 一律空字串。
+// 供報告 meta 標示「資料取自何時」（採集包規格 §4.2）。連線模式與舊版 bundle 一律空字串。
 func (c *Client) CollectedAt() string          { return c.manifestCollectedAt }
 func (c *Client) CollectScriptVersion() string { return c.manifestScriptVersion }
 

@@ -1,6 +1,6 @@
 // Package rules 外部化 C 類診斷（health_report 無對應 indicator、需自行判定連續型
 // 指標）用的可調閾值。A/B 類診斷直接轉述 _health_report 自身的 status/diagnosis，
-// 不經過這裡——ES 自己已經下過判斷，沒有「閾值」這回事，見 spec-rules.md。
+// 不經過這裡——ES 自己已經下過判斷，沒有「閾值」這回事，見 規則規格.md。
 package rules
 
 import (

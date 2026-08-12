@@ -1,4 +1,4 @@
-// allocation.go：shards_availability 的 B 類加深（#19/#20/#37，見 spec-health-report.md）。
+// allocation.go：shards_availability 的 B 類加深（#19/#20/#37，見 健康報告規格.md）。
 // A 類（cluster_health，涵蓋 #1/#2/#21）已由 healthreport.go 的通用 driver table 產出；
 // 這裡只在該 indicator 非 green 時，額外查 allocation.enable 設定與 decider 級根因。
 package analyzer
@@ -37,7 +37,7 @@ func DataAllocationBlocked(clusterEnable string) diagnostic.Result {
 // unprobed 為「該查但查不到」的 index（權限不足、或 bundle 模式無法涵蓋動態端點）。
 //
 // unprobed 必須參與判定，不能當成空集合忽略：查不到不等於沒問題，把「沒查到封鎖」
-// 講成「正常」正是 2026-07-15 抓到那批 bug 的共同模式（見 VERIFICATION.md §1）。
+// 講成「正常」正是 2026-07-15 抓到那批 bug 的共同模式（見 驗證狀態.md §1）。
 func IndexAllocationBlocked(enables map[string]string, unprobed []string) diagnostic.Result {
 	res := diagnostic.Result{ID: "index_allocation_blocked", Title: "Index 層級 shard 分配封鎖", Category: "cluster", Source: "raw_api", Docs: []string{docUnassigned}}
 	var blocked []string

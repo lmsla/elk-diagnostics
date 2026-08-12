@@ -161,7 +161,7 @@ func emit(report diagnostic.Report, format, outFile string, noColor bool) int {
 	return report.ExitCode()
 }
 
-// colorEnabled 依 spec-report §5.1：僅在 stdout 為 TTY、無 --no-color、無 NO_COLOR
+// colorEnabled 依 診斷報告規格 §5.1：僅在 stdout 為 TTY、無 --no-color、無 NO_COLOR
 // 環境變數、且非寫檔時輸出 ANSI。抽成純函式（isTTY 由呼叫端注入）方便測試，不必真造 TTY。
 func colorEnabled(outFile string, noColor, isTTY bool) bool {
 	if outFile != "" || noColor || os.Getenv("NO_COLOR") != "" {

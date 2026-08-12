@@ -12,7 +12,7 @@ import (
 	"elk-diagnostics/internal/nodecontext"
 )
 
-// HTML 產出離線可渲染報告（spec-report §5）：單一檔、CSS 全內嵌、零外部 CDN、
+// HTML 產出離線可渲染報告（診斷報告規格 §5）：單一檔、CSS 全內嵌、零外部 CDN、
 // 用原生 <details> 折疊（免 JS）、可列印。
 func HTML(r diagnostic.Report) ([]byte, error) {
 	byCat := map[string][]diagnostic.Result{}

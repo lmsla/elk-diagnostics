@@ -2,7 +2,7 @@ package collector
 
 import "encoding/json"
 
-// HealthReport 對映 GET /_health_report（見 docs/specs/spec-health-report.md）。
+// HealthReport 對映 GET /_health_report（見 docs/內部/規格/健康報告規格.md）。
 // Indicators 為 map，刻意容忍未知/新增 indicator（9.x 多了 file_settings，Phase 0 實測）。
 type HealthReport struct {
 	Status     string                 `json:"status"`

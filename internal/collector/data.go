@@ -14,7 +14,7 @@ type IndexFieldCount struct {
 // MappingFieldCounts 取 GET /_mapping 並逐 index 計算欄位數，排除 ES/Kibana 內部系統
 // index（如 .kibana*、.internal.alerts-*）。這些本來就常態性有上千個欄位（尤其 Kibana
 // alerting 框架自建的 .internal.alerts-*），與客戶資料的 mapping 膨脹無關；真機驗證時
-// 在全新、零資料的 8.14.3/9.0.0 叢集上就已重現這個誤報（見 docs/PROGRESS.md）。
+// 在全新、零資料的 8.14.3/9.0.0 叢集上就已重現這個誤報（見 docs/內部/實作進度.md）。
 //
 // **不能只用「.」開頭判斷**：data stream 的 backing index 也一律是「.」開頭（如
 // .ds-logs-app-2026.07.15-000001），而且客戶用 logs-*-*/metrics-*-* 這類標準範本、

@@ -1,4 +1,4 @@
-// cluster.go：master_is_stable 的 B 類加深（#30，見 spec-health-report.md）。
+// cluster.go：master_is_stable 的 B 類加深（#30，見 健康報告規格.md）。
 // A 類（master_stability，green/yellow/red）已由 healthreport.go 的通用 driver table
 // 產出；這裡補充節點拓樸的結構性根因——master-eligible 節點數過少或為偶數，是
 // 「叢集不穩定」最常見的成因，且不需要等到真的發生選舉問題才能發現。

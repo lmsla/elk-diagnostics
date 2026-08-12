@@ -115,7 +115,7 @@ func TestNewFromBundle(t *testing.T) {
 
 	// 這是 _status.txt 存在的唯一理由，實測確認過：若不記錄狀態碼，403 的錯誤 body
 	// 會被當成 200 解析成零值，讓診斷回報「Watcher 運作中」——正是本專案一路在
-	// 消滅的假綠燈（見 VERIFICATION.md §1）。
+	// 消滅的假綠燈（見 驗證狀態.md §1）。
 	t.Run("_status.txt 讓 4xx 回放成錯誤而非資料", func(t *testing.T) {
 		dir := writeBundle(t, map[string]string{
 			"version.json":       versionBody,

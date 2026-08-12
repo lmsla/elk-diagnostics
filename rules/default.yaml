@@ -1,6 +1,6 @@
 # C 類診斷（_health_report 無對應 indicator、需自行採集判定連續型指標）用的可調閾值。
 #
-# A/B 類診斷（見 docs/specs/spec-health-report.md）直接轉述 _health_report 自身的
+# A/B 類診斷（見 docs/內部/規格/健康報告規格.md）直接轉述 _health_report 自身的
 # status/diagnosis——ES 已經替這些指標下過判斷，不是「數值 vs 閾值」的問題，
 # 因此不經過這份設定檔，也不受 --rules 覆寫影響。
 #

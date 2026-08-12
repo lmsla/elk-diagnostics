@@ -9,7 +9,7 @@ package collector
 //
 // **為了讓「表」與「實際呼叫」不可能漂移，collector 各方法一律使用本檔的常數，
 // 不再各自寫字面字串。** 否則這張表會變成新一輪靜默錯誤的來源——2026-07-15 的
-// filter_path bug 已經示範過「以為在查 X、其實查了空氣」的代價（見 VERIFICATION.md §1）。
+// filter_path bug 已經示範過「以為在查 X、其實查了空氣」的代價（見 驗證狀態.md §1）。
 
 const (
 	EpRoot               = "/"
@@ -57,7 +57,7 @@ const (
 )
 
 // Endpoint 是 check 會呼叫的單一唯讀端點。Purpose 供 API 清單與採集腳本註解使用，
-// 寫給客戶的資安/導入審查人員看，故用途要寫得具體、可自我說明（見 spec-config §唯讀）。
+// 寫給客戶的資安/導入審查人員看，故用途要寫得具體、可自我說明（見 設定規格 §唯讀）。
 type Endpoint struct {
 	Path    string
 	File    string

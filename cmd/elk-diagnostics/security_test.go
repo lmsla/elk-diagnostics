@@ -1,4 +1,4 @@
-// security_test.go：唯讀保證與密鑰遮蔽的回歸測試（見 docs/PROGRESS.md §4「安全與非功能」）。
+// security_test.go：唯讀保證與密鑰遮蔽的回歸測試（見 docs/內部/實作進度.md §4「安全與非功能」）。
 //
 // 這兩項本來就已經是現況（collector 只曝露 http.MethodGet；沒有任何地方把
 // password/api-key 寫進 log 或報告），但都只是「沒人寫錯」的巧合式安全，沒有測試鎖住。
@@ -20,7 +20,7 @@ import (
 )
 
 // TestCheckIsReadOnly 驗證整輪 check（涵蓋所有已知端點）只送出 GET 請求，
-// 對應 spec-config.md「唯讀：client 只允許 GET/HEAD；實作層應封死寫入方法」。
+// 對應 設定規格.md「唯讀：client 只允許 GET/HEAD；實作層應封死寫入方法」。
 func TestCheckIsReadOnly(t *testing.T) {
 	var nonGET []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -105,4 +105,4 @@ else
   echo "  ⚠ 無 indicators（此版本可能 < 8.4 或回應異常）"
 fi
 echo
-echo "fixture 已存於 ${OUT}/。下一步：人工檢視各 indicator 的 diagnosis 是否足以取代 A 類逐 API 判斷（見 dev/phase0/README.md 檢查表）。"
+echo "fixture 已存於 ${OUT}/。下一步：人工檢視各 indicator 的 diagnosis 是否足以取代 A 類逐 API 判斷（見 dev/phase0/測試腳本說明.md 檢查表）。"

@@ -90,7 +90,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 	switch {
 	case !supportsHealthReport(esVersion):
 		// ES < 8.4：無 _health_report，非「抓取失敗」而是「此環境不適用」，A 類 skipped
-		// 而非 unknown（見 spec-cli §4、spec-resilience §1）。
+		// 而非 unknown（見 命令列規格 §4、韌性規格 §1）。
 		results = analyzer.HealthReportVersionUnsupported(esVersion)
 		versionNotice = fmt.Sprintf("目標叢集 ES %s 低於 8.4，無 _health_report：A 類診斷全數略過，B/C 類結果照跑但未經此版本測試（見各項 version_warning）。", esVersion)
 	default:
@@ -98,7 +98,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		hr, err = client.HealthReport()
 		if err != nil {
 			// 執行期抓取失敗（連線逾時/4xx/5xx；bundle 缺檔或錯誤 body）：不中止，A 類
-			// 全數以 unknown 浮出，B/C 類照常執行（見 spec-resilience §1，2026-07-16 修訂）。
+			// 全數以 unknown 浮出，B/C 類照常執行（見 韌性規格 §1，2026-07-16 修訂）。
 			results = analyzer.HealthReportFetchFailed(fetchFailureSummary(isBundle), []string{err.Error()})
 		} else {
 			results = analyzer.FromHealthReport(hr)
@@ -201,7 +201,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		results = append(results, unknownf(analyzer.SlowLog(nil), e))
 	}
 
-	// --- B 類加深（見 spec-health-report.md；A 類已由 FromHealthReport 產出）---
+	// --- B 類加深（見 健康報告規格.md；A 類已由 FromHealthReport 產出）---
 	if ce, e := client.ClusterAllocationEnable(); e == nil {
 		results = append(results, analyzer.DataAllocationBlocked(ce)) // #19
 	} else {
@@ -240,7 +240,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		results = append(results, unknownf(analyzer.RestoreStatus(nil), e))
 	}
 
-	// --- ES-GAP-01～06：單次 API 快照即可支持的靜態健檢（spec-static-health）---
+	// --- ES-GAP-01～06：單次 API 快照即可支持的靜態健檢（靜態健檢規格）---
 	if tasks, e := client.PendingClusterTasks(); e == nil {
 		results = append(results, analyzer.PendingClusterTasks(tasks, t))
 	} else {
@@ -293,7 +293,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		results = append(results, unknownf(analyzer.AllocationAwareness(awareness, nil), e))
 	}
 
-	// --- ES-GAP-07～12：第二批單次快照健檢（spec-extended-health）---
+	// --- ES-GAP-07～12：第二批單次快照健檢（擴充健檢規格）---
 	if pressure, e := client.IndexingPressure(); e == nil {
 		results = append(results, analyzer.IndexingPressure(pressure, t))
 	} else {
@@ -370,7 +370,7 @@ func snapshotReferenceTime(collectedAt string, fallback time.Time) time.Time {
 	return fallback.UTC()
 }
 
-// applyBundleNodeContextWording 保持 spec-resilience §3 的離線措辭契約：Node Context
+// applyBundleNodeContextWording 保持 韌性規格 §3 的離線措辭契約：Node Context
 // 可能只缺部分欄位而非整個 endpoint，因此不會走 unknownFrom，但 summary 仍須明講
 // 資料來源是 bundle，避免使用者誤認分析端剛剛連線抓取失敗。
 func applyBundleNodeContextWording(results []diagnostic.Result) {
@@ -381,7 +381,7 @@ func applyBundleNodeContextWording(results []diagnostic.Result) {
 	}
 }
 
-// applyVersionWarning 幫 B/C 類結果附上 version_warning（ES < 8.4 未經測試，見 spec-cli §4）。
+// applyVersionWarning 幫 B/C 類結果附上 version_warning（ES < 8.4 未經測試，見 命令列規格 §4）。
 // A 類（healthReportIndicators 驅動表）此時已是 skipped，不需要再疊加版本警告，
 // 排除清單一律從 analyzer.HealthReportIndicatorIDs 這個單一來源導出，不另建清單。
 func applyVersionWarning(results []diagnostic.Result, esVersion string) {
@@ -398,10 +398,10 @@ func applyVersionWarning(results []diagnostic.Result, esVersion string) {
 	}
 }
 
-// supportsHealthReport 判斷版本是否 >= 8.4（_health_report 的最低支援版本，見 spec-cli §4）。
+// supportsHealthReport 判斷版本是否 >= 8.4（_health_report 的最低支援版本，見 命令列規格 §4）。
 // 版本字串無法解析時（如 bundle/測試環境的怪異值）保守地當作「可能支援」，讓程式照常嘗試
 // 抓取 _health_report——最壞結果是抓取失敗轉 unknown，仍然不是 pass，比誤判成 skipped 安全
-// （見 docs/VERIFICATION.md §1：寧可保守判定失敗，不可靜默假設）。
+// （見 docs/內部/歷史/驗證紀錄.md §1：寧可保守判定失敗，不可靜默假設）。
 func supportsHealthReport(esVersion string) bool {
 	major, minor, ok := parseMajorMinor(esVersion)
 	if !ok {
@@ -426,7 +426,7 @@ func parseMajorMinor(version string) (major, minor int, ok bool) {
 	return major, minor, true
 }
 
-// fetchFailureSummary 依模式決定 unknown 結果的措辭（見 spec-resilience §3，2026-07-16 補）：
+// fetchFailureSummary 依模式決定 unknown 結果的措辭（見 韌性規格 §3，2026-07-16 補）：
 // bundle 模式沒有「抓取」這個動作，沿用連線模式的措辭會誤導使用者以為是分析端的網路問題。
 func fetchFailureSummary(isBundle bool) string {
 	if isBundle {
@@ -435,7 +435,7 @@ func fetchFailureSummary(isBundle bool) string {
 	return "資料抓取失敗，無法判定"
 }
 
-// suggestSymptoms 依 spec-diagnose-symptoms §3 的反向觸發規則，偵測到特定症狀特徵組合
+// suggestSymptoms 依 症狀診斷規格 §3 的反向觸發規則，偵測到特定症狀特徵組合
 // 時提示對應 diagnose --symptom；純函式、不觸發額外採集，只重用 check 已收集的資料。
 func suggestSymptoms(results []diagnostic.Result, cpus []collector.NodeCPU, pools []collector.WritePoolRow, t rules.Thresholds) []diagnostic.SymptomHint {
 	var hints []diagnostic.SymptomHint
@@ -460,11 +460,11 @@ func suggestSymptoms(results []diagnostic.Result, cpus []collector.NodeCPU, pool
 }
 
 // unknownFrom 將收集失敗轉為報告中可見的 unknown 結果，而非讓該診斷項目靜默消失
-// （見 spec-resilience §3）。zero 是呼叫該診斷項目的 analyzer 函式、帶零值/nil 輸入
+// （見 韌性規格 §3）。zero 是呼叫該診斷項目的 analyzer 函式、帶零值/nil 輸入
 // 取得的結果，只用來拿正確的 id/title/category/docs，避免另建一份易漂移的對照表——
 // 所有 analyzer 函式對零值輸入都是安全的純函式（已由零值/pass-path 測試涵蓋）。
 //
-// isBundle 決定 summary 措辭（見 spec-resilience §3，2026-07-16 補）：bundle 模式沒有
+// isBundle 決定 summary 措辭（見 韌性規格 §3，2026-07-16 補）：bundle 模式沒有
 // 「抓取」這個動作，措辭改為「bundle 缺少該端點資料」；findings 兩種模式都保留完整錯誤
 // 訊息（bundle 模式下 err 本身已含缺少的檔名，見 collector.NewFromBundle）。
 func unknownFrom(zero diagnostic.Result, err error, isBundle bool) diagnostic.Result {
@@ -494,7 +494,7 @@ const (
 // health_report 本身不可用（hr 為 nil，或無 shards_availability indicator）時直接回
 // unknown——受影響 index 清單根本拿不到，「無受影響 index 需檢查（shards_availability
 // 目前正常）」這句 pass 只有真的讀到 shards_availability 且清單為空時才可能出現；
-// 沒有資料時說「目前正常」正是 VERIFICATION.md §1.1 記載的假陰性模式（T2 讓
+// 沒有資料時說「目前正常」正是 驗證狀態.md §1.1 記載的假陰性模式（T2 讓
 // health_report 失敗不再整份中止後，此路徑首次真正可達，故須在此明確擋住）。
 func indexAllocationBlockedResult(client *collector.Client, hr *collector.HealthReport, isBundle bool) diagnostic.Result {
 	affected, ok := analyzer.AffectedIndices(hr, "shards_availability")

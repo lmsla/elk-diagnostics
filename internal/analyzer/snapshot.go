@@ -1,4 +1,4 @@
-// snapshot.go：repository_integrity 的 B 類加深（#36，見 spec-health-report.md）。
+// snapshot.go：repository_integrity 的 B 類加深（#36，見 健康報告規格.md）。
 package analyzer
 
 import (

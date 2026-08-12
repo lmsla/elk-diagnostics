@@ -15,7 +15,7 @@ const supportedSymptoms = "red-cluster / write-bottleneck / high-heap / ingest-l
 func newDiagnoseCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "diagnose",
-		Short: "症狀排查，跑該症狀的診斷樹（見 spec-diagnose-symptoms）",
+		Short: "症狀排查，跑該症狀的診斷樹（見 症狀診斷規格）",
 	}
 	cf := addConnFlags(cmd)
 	symptom := cmd.Flags().String("symptom", "", "症狀："+supportedSymptoms)

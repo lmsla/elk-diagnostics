@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestNewFromBundle_Manifest 涵蓋 spec-bundle §4.2：bundle 含 _manifest.json 時
+// TestNewFromBundle_Manifest 涵蓋 採集包規格 §4.2：bundle 含 _manifest.json 時
 // collected_at／collect_script_version 可被讀出；不存在時一律空字串，不得用
 // mtime 或目錄名猜測。
 func TestNewFromBundle_Manifest(t *testing.T) {

@@ -58,7 +58,7 @@ func TestUnknownFrom(t *testing.T) {
 }
 
 // TestUnknownFromBundleWording 驗證 T3：bundle 模式沒有「抓取」這個動作，措辭需與連線模式
-// 不同，但 findings（含檔名）照舊保留完整錯誤訊息（見 spec-resilience §3）。
+// 不同，但 findings（含檔名）照舊保留完整錯誤訊息（見 韌性規格 §3）。
 func TestUnknownFromBundleWording(t *testing.T) {
 	zero := diagnostic.Result{ID: "cluster_settings", Title: "叢集設定", Category: "cluster"}
 	err := errors.New("bundle 缺少 cluster_settings.json（採集腳本未執行此項或該端點當時失敗）")

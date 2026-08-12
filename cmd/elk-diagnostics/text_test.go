@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestColorEnabled 涵蓋 spec-report §5.1 的色彩規則：僅 TTY 且無 --no-color／NO_COLOR
+// TestColorEnabled 涵蓋 診斷報告規格 §5.1 的色彩規則：僅 TTY 且無 --no-color／NO_COLOR
 // 且非寫檔時才輸出 ANSI。isTTY 由呼叫端注入（見 root.go stdoutIsTTY），故這裡不需要
 // 真造一個 TTY 就能測滿四種關閉條件。
 func TestColorEnabled(t *testing.T) {

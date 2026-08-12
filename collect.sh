@@ -114,7 +114,7 @@ fi
 mkdir -p "$OUT"
 
 # 採集中繼資料：開始時間（UTC）與本腳本版本，讓分析端能標出「資料取自何時」，
-# 不必事後靠檔案 mtime 或目錄名猜測（見 docs/specs/spec-bundle.md §4.2）。
+# 不必事後靠檔案 mtime 或目錄名猜測（見 docs/內部/規格/採集包規格.md §4.2）。
 # 手寫 JSON 而非用 jq：欄位固定、值本身不含需要跳脫的字元，不值得為此引入依賴。
 MANIFEST="$OUT/_manifest.json"
 COLLECTED_AT="$(date -u +%Y-%m-%dT%H:%M:%SZ)"

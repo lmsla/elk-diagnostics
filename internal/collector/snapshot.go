@@ -13,7 +13,7 @@ type RestoreOperation struct {
 // RestoreProgress 取 GET _recovery?active_only=true，篩選 type=SNAPSHOT 的 shard
 // recovery（即從 snapshot 還原中的操作）。#36 唯讀查詢進度用，不執行 restore。
 //
-// 註：spec-health-report.md 原列 GET _snapshot/_status 作為加深來源，但該端點是
+// 註：健康報告規格.md 原列 GET _snapshot/_status 作為加深來源，但該端點是
 // 「建立快照」的進度，不是「還原」的進度；還原的正確查詢端點是 recovery API，
 // 這裡改用 _recovery 以求技術正確。
 func (c *Client) RestoreProgress() ([]RestoreOperation, error) {

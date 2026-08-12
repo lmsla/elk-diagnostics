@@ -218,7 +218,7 @@ func TestCollectScriptReadsPasswordFromFile(t *testing.T) {
 	}
 }
 
-// TestCollectScript_WritesParsableManifest 對映 spec-bundle §4.2 驗收條件：跑過
+// TestCollectScript_WritesParsableManifest 對映 採集包規格 §4.2 驗收條件：跑過
 // sh -n 只驗語法，這裡實際執行一次採集，確認 _manifest.json 存在且可被
 // json.Unmarshal 解析、欄位值正確。
 func TestCollectScript_WritesParsableManifest(t *testing.T) {

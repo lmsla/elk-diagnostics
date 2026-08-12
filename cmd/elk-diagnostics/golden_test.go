@@ -1,4 +1,4 @@
-// golden_test.go：多版本 golden test（見 docs/PROGRESS.md §4）。
+// golden_test.go：多版本 golden test（見 docs/內部/實作進度.md §4）。
 //
 // 對每個 dev/phase0/fixtures/<cluster> 真機錄製組跑一次完整 `check`，比對輸出與
 // dev/phase0/golden/<cluster>.json 是否一致，作為跨版本（8.14.3/9.0.0）、跨健康狀態
@@ -38,7 +38,7 @@ func fixtureDir(clusterDir string) string {
 // path → 檔名的對照直接取自 collector.Endpoints（正式程式碼的單一事實來源），
 // 不再於測試裡另維護一份——本檔原本自帶一份副本，正是它讓 filter_path bug 逃過
 // golden test：副本裡的 path 與 collector 實際呼叫的字串各自演化，測試以為自己在
-// 回放某端點，其實對不上（見 VERIFICATION.md §1）。
+// 回放某端點，其實對不上（見 驗證狀態.md §1）。
 func fixtureServer(t *testing.T, clusterDir string) *httptest.Server {
 	t.Helper()
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -7,7 +7,7 @@ import (
 	"elk-diagnostics/internal/diagnostic"
 )
 
-// Text 產出終端可讀摘要（spec-report §5.1）。
+// Text 產出終端可讀摘要（診斷報告規格 §5.1）。
 //
 // 用途是顧問在客戶跳板機／終端上立即判讀，不依賴瀏覽器；交付物仍是 html（給人）
 // 與 json（給機器）——text 不是穩定契約，格式可隨版本調整，任何機器處理一律走 json。
@@ -46,7 +46,7 @@ func Text(r diagnostic.Report, color bool) []byte {
 		paint(ansiCyan, textSymbol(diagnostic.StatusUnknown)), r.Summary.Unknown,
 	)
 
-	// version_notice 緊接整體狀態列（spec-report §5.1）——例如 ES < 8.4 的全域警告。
+	// version_notice 緊接整體狀態列（診斷報告規格 §5.1）——例如 ES < 8.4 的全域警告。
 	if r.VersionNotice != "" {
 		fmt.Fprintf(&b, "%s\n\n", paint(ansiYellow, "⚠ "+r.VersionNotice))
 	}
@@ -110,7 +110,7 @@ const (
 	ansiGray   = "\x1b[90m"
 )
 
-// textSymbol 對映 spec-report §5.1：不用 emoji 變體符號（無 VS16），避免部分終端字寬跑版。
+// textSymbol 對映 診斷報告規格 §5.1：不用 emoji 變體符號（無 VS16），避免部分終端字寬跑版。
 func textSymbol(s diagnostic.Status) string {
 	switch s {
 	case diagnostic.StatusPass:

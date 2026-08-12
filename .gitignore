@@ -15,7 +15,7 @@
 
 # collect.sh 的預設輸出目錄
 /elk-bundle-*/
-# PODMAN-TEST-ENV.md 流程建議的 bundle 輸出（bundle-baseline 等）
+# docs/內部/Podman測試環境.md 流程建議的 bundle 輸出（bundle-baseline 等）
 /bundle-*/
 
 # 本機 ES 測試環境產生的自簽 CA、憑證與私鑰

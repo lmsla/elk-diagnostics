@@ -8,7 +8,7 @@ import (
 	"elk-diagnostics/internal/collector"
 )
 
-const checkedInInventory = "../../docs/api-inventory.md"
+const checkedInInventory = "../../docs/交付/API清單.md"
 
 // TestAPIInventory_CheckedInCopyIsFresh 確保 checked in 的 API 清單與端點表同步。
 //
@@ -17,10 +17,10 @@ const checkedInInventory = "../../docs/api-inventory.md"
 func TestAPIInventory_CheckedInCopyIsFresh(t *testing.T) {
 	got, err := os.ReadFile(checkedInInventory)
 	if err != nil {
-		t.Fatalf("讀 api-inventory.md 失敗（請執行 make generate）: %v", err)
+		t.Fatalf("讀 API清單.md 失敗（請執行 make generate）: %v", err)
 	}
 	if string(got) != apisMarkdown() {
-		t.Errorf("docs/api-inventory.md 已過期（端點表已變動）。請執行：\n  make generate")
+		t.Errorf("docs/交付/API清單.md 已過期（端點表已變動）。請執行：\n  make generate")
 	}
 }
 

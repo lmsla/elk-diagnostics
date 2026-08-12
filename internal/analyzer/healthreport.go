@@ -2,7 +2,7 @@
 //
 // healthreport.go：通用 indicator analyzer。_health_report 的各 indicator 結構相同
 // （status/symptom/diagnosis/impacts），故以一張驅動表產出多條結果，不為每個 A 類項目
-// 複製 analyzer（見 docs/specs/spec-health-report.md）。ILM 因有延遲，另由 management.go
+// 複製 analyzer（見 docs/內部/規格/健康報告規格.md）。ILM 因有延遲，另由 management.go
 // 搭 _ilm/explain 補強；thread pool 等缺口由各自 analyzer 處理。
 package analyzer
 
@@ -119,7 +119,7 @@ func mapIndicator(hr *collector.HealthReport, s indicatorSpec) diagnostic.Result
 // HealthReportIndicatorIDs 回傳 A 類（healthReportIndicators 驅動表）全部 id，依表中順序。
 // 供 check.go 判斷某個 diagnostic.Result 是否屬於 A 類（例如套用版本警告時要排除 A 類，
 // 因為 A 類已經是 skipped，不需要再疊加 version_warning），單一來源導出、不得另建清單
-// （見 docs/workorders/wo-2026-07-16-trust.md T2）。
+// （見 docs/內部/工單/信任與韌性工單.md T2）。
 func HealthReportIndicatorIDs() []string {
 	ids := make([]string, len(healthReportIndicators))
 	for i, s := range healthReportIndicators {
@@ -130,8 +130,8 @@ func HealthReportIndicatorIDs() []string {
 
 // HealthReportFetchFailed 在無法取得 _health_report 時（連線逾時/4xx/5xx；bundle 缺檔或
 // 錯誤 body），讓 A 類全數以 status=unknown 浮出，而非讓整份報告中止
-//（見 spec-resilience §1，2026-07-16 修訂）。summary/findings 由呼叫端組裝——措辭依連線/
-// bundle 模式而異（見 spec-resilience §3），屬 CLI 層決策，不在 analyzer 內判斷模式。
+//（見 韌性規格 §1，2026-07-16 修訂）。summary/findings 由呼叫端組裝——措辭依連線/
+// bundle 模式而異（見 韌性規格 §3），屬 CLI 層決策，不在 analyzer 內判斷模式。
 // A 類清單一律從 healthReportIndicators 這張單一驅動表導出，不另建對照表。
 func HealthReportFetchFailed(summary string, findings []string) []diagnostic.Result {
 	out := make([]diagnostic.Result, 0, len(healthReportIndicators))
@@ -153,7 +153,7 @@ func HealthReportFetchFailed(summary string, findings []string) []diagnostic.Res
 
 // HealthReportVersionUnsupported 在目標 ES 版本 < 8.4（無 _health_report）時，讓 A 類全數
 // status=skipped（不是 unknown——這是「此環境不適用」，不是「該有而拿不到」，見
-// spec-resilience §1、spec-cli §4）。
+// 韌性規格 §1、命令列規格 §4）。
 func HealthReportVersionUnsupported(esVersion string) []diagnostic.Result {
 	out := make([]diagnostic.Result, 0, len(healthReportIndicators))
 	summary := fmt.Sprintf("ES %s < 8.4 無 _health_report，本項不適用", esVersion)
@@ -173,7 +173,7 @@ func HealthReportVersionUnsupported(esVersion string) []diagnostic.Result {
 }
 
 // HealthReportIndicator 取單一 indicator 的判定結果（依 id，如 "cluster_health"、"disk"）。
-// 供症狀診斷樹依因果順序挑選特定環節，不重跑 FromHealthReport 全量（見 spec-diagnose-symptoms）。
+// 供症狀診斷樹依因果順序挑選特定環節，不重跑 FromHealthReport 全量（見 症狀診斷規格）。
 func HealthReportIndicator(hr *collector.HealthReport, id string) (diagnostic.Result, bool) {
 	for _, s := range healthReportIndicators {
 		if s.id == id {
@@ -188,7 +188,7 @@ func HealthReportIndicator(hr *collector.HealthReport, id string) (diagnostic.Re
 //
 // ok=false 表示 health_report 不可用（hr 為 nil）或該 indicator 不存在——「沒有資料」
 // 與「讀到資料且清單為空」是兩回事，呼叫端不可把前者當成「無受影響 index」而回報正常
-//（VERIFICATION.md §1.1 的同款假陰性模式）。
+//（驗證狀態.md §1.1 的同款假陰性模式）。
 func AffectedIndices(hr *collector.HealthReport, indicator string) (indices []string, ok bool) {
 	if hr == nil {
 		return nil, false

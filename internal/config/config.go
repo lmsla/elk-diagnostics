@@ -1,4 +1,4 @@
-// Package config 載入連線設定（見 docs/specs/spec-config.md）。
+// Package config 載入連線設定（見 docs/內部/規格/設定規格.md）。
 // 優先序：flag > 環境變數 > config.yaml > 內建預設。
 package config
 

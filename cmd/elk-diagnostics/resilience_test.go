@@ -1,7 +1,7 @@
-// resilience_test.go：驗證 docs/workorders/wo-2026-07-16-trust.md T2/T3 的行為變化——
+// resilience_test.go：驗證 docs/內部/工單/信任與韌性工單.md T2/T3 的行為變化——
 // _health_report 抓取失敗（bundle 缺檔/錯誤 body、連線模式 5xx）不再讓整份報告中止，
 // A 類全數以 unknown（或版本不支援時 skipped）浮出；B/C 類照常執行；bundle 模式的
-// unknown 措辭與連線模式不同（見 spec-resilience §1/§3、spec-cli §4）。
+// unknown 措辭與連線模式不同（見 韌性規格 §1/§3、命令列規格 §4）。
 package main
 
 import (
@@ -179,7 +179,7 @@ func TestCheck_BundleMissingHealthReport(t *testing.T) {
 
 	// #20 依賴 health_report 點名受影響 index；health_report 不可用時必須是 unknown，
 	// 絕不可說出「shards_availability 目前正常」——沒有資料時宣稱正常正是
-	// VERIFICATION.md §1.1 記載的假陰性模式（T2 讓 health_report 失敗不再中止後，
+	// 驗證狀態.md §1.1 記載的假陰性模式（T2 讓 health_report 失敗不再中止後，
 	// 此路徑首次真正可達）。
 	iab, ok := afterByID["index_allocation_blocked"]
 	if !ok {

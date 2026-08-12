@@ -14,7 +14,7 @@ import (
 // apis 與 collect-script 都由 collector.Endpoints 產生，不另手寫維護——手寫的清單
 // 會跟實作漂移，而一份跟實作對不上的 API 清單交給客戶資安審查，比沒有還糟。
 
-const apisPreamble = `本工具只送出 HTTP GET，不執行任何寫入操作（見 docs/specs 鐵律 1）。
+const apisPreamble = `本工具只送出 HTTP GET，不執行任何寫入操作。
 以下為 check 會呼叫的全部端點，皆為叢集／節點層級的中繼資料。
 
 資料範圍：

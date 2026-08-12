@@ -91,7 +91,7 @@ func TestCheckFromBundle_ManifestAbsent(t *testing.T) {
 }
 
 // TestManifestDoesNotAffectAPIsOutput 對映驗收條件：manifest 不進 collector.Endpoints，
-// apis 輸出與 docs/api-inventory.md 不受影響。
+// apis 輸出與 docs/交付/API清單.md 不受影響。
 func TestManifestDoesNotAffectAPIsOutput(t *testing.T) {
 	for _, e := range collector.Endpoints {
 		if e.File == collector.BundleManifestFile {

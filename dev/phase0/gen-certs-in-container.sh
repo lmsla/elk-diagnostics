@@ -4,7 +4,7 @@
 # 這是唯一一份憑證產生邏輯——`docker-compose.yml` 的 certs-setup 與
 # `podman-test-env.sh` 的 generate_certs 都掛載並執行本檔，不得各自手抄。
 # （兩份手抄本必然漂移：SAN 清單改了一邊、另一邊靜默用舊憑證。
-#   同款教訓見 docs/VERIFICATION.md §1 的 golden test 端點副本。）
+#   同款教訓見 docs/內部/歷史/驗證紀錄.md §1 的 golden test 端點副本。）
 #
 # 冪等：CA 與憑證齊全時不重做。要強制重生，刪掉宿主機的 dev/phase0/certs/ 即可。
 set -euo pipefail
