@@ -18,6 +18,12 @@
 # docs/內部/Podman測試環境.md 流程建議的 bundle 輸出（bundle-baseline 等）
 /bundle-*/
 
+# 同事提供的 V2.3 比較資料（可能含 Vault、主機設定與客戶採集內容）
+/V.2.3_script_output/
+
+# 本機產生的客戶介紹投影片
+/docs/交付/elk-diagnostics-介紹.pptx
+
 # 本機 ES 測試環境產生的自簽 CA、憑證與私鑰
 /dev/phase0/certs/
 /dev/phase0/runtime/
