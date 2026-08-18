@@ -1,6 +1,9 @@
 package collector
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"sort"
+)
 
 // IlmStatus 取 GET /_ilm/status 的 operation_mode（RUNNING / STOPPING / STOPPED）。
 func (c *Client) IlmStatus() (string, error) {
@@ -52,6 +55,7 @@ func (c *Client) IlmExplain() ([]IlmError, error) {
 			out = append(out, IlmError{Index: name, FailedStep: idx.FailedStep, Reason: reason})
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Index < out[j].Index })
 	return out, nil
 }
 
@@ -87,5 +91,6 @@ func (c *Client) IlmMigrating() ([]IlmMigration, error) {
 			out = append(out, IlmMigration{Index: name, Phase: idx.Phase, Step: idx.Step})
 		}
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Index < out[j].Index })
 	return out, nil
 }

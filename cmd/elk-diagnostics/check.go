@@ -14,6 +14,7 @@ import (
 	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
 	"elk-diagnostics/internal/nodecontext"
+	"elk-diagnostics/internal/reporter"
 	"elk-diagnostics/rules"
 )
 
@@ -26,20 +27,34 @@ func newCheckCmd() *cobra.Command {
 	fromFile := cmd.Flags().String("from-file", "", "改讀本機單一 health_report.json（僅 A 類；完整離線分析請用 --from-bundle）")
 	fromBundle := cmd.Flags().String("from-bundle", "", "改讀採集腳本產出的 bundle 目錄（完整離線分析，全程不連線）")
 	output, outFile, noColor := addOutputFlags(cmd)
+	metricsOut := cmd.Flags().String("metrics-output", "", "另存可供長期趨勢使用的 NDJSON 觀測值")
+	expectedESNodesFile := cmd.Flags().String("expected-es-nodes-file", "", "預期 ES node.name 清單（每行一個；用於找出採集前已離線節點）")
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		os.Exit(runCheck(cf, *fromFile, *fromBundle, *output, *outFile, *noColor))
+		os.Exit(runCheckWithMetrics(cf, *fromFile, *fromBundle, *output, *outFile, *noColor, *metricsOut, *expectedESNodesFile))
 		return nil
 	}
 	return cmd
 }
 
 func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noColor bool) int {
+	return runCheckWithMetrics(cf, fromFile, fromBundle, output, outFile, noColor, "")
+}
+
+func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile string, noColor bool, metricsOut string, expectedESNodesFiles ...string) int {
+	expectedESNodesFile := ""
+	if len(expectedESNodesFiles) > 0 {
+		expectedESNodesFile = expectedESNodesFiles[0]
+	}
 	if fromFile != "" && fromBundle != "" {
 		fmt.Fprintln(os.Stderr, "--from-file 與 --from-bundle 不可同時使用")
 		return 10
 	}
 	if fromFile != "" {
+		if expectedESNodesFile != "" {
+			fmt.Fprintln(os.Stderr, "--expected-es-nodes-file 不適用於僅含 health_report 的 --from-file 模式")
+			return 10
+		}
 		b, err := os.ReadFile(fromFile)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "讀檔失敗:", err)
@@ -51,7 +66,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 			return 11
 		}
 		meta := diagnostic.ClusterMeta{Host: "(from-file) " + fromFile, ESVersion: "unknown"}
-		return emit(buildReport(meta, analyzer.FromHealthReport(hr), "check"), output, outFile, noColor)
+		return emitCheck(buildReport(meta, analyzer.FromHealthReport(hr), "check"), output, outFile, noColor, metricsOut)
 	}
 
 	// bundle 模式與連線模式共用底下完整的診斷流程——差別只在 client 的資料來源，
@@ -73,6 +88,17 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 			return code
 		}
 		client, host = c, h
+	}
+	var expectedESNodes []string
+	if expectedESNodesFile != "" {
+		nodes, err := collector.ReadExpectedESNodes(expectedESNodesFile)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "讀取預期 ES 節點清單失敗:", err)
+			return 10
+		}
+		expectedESNodes = nodes
+	} else if fromBundle != "" {
+		expectedESNodes = client.ExpectedESNodes()
 	}
 
 	t := loadThresholds(cf)
@@ -110,6 +136,11 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 	} else {
 		results = append(results, unknownf(analyzer.ILM("", nil), e))
 	}
+	if policies, e := client.ILMPolicies(); e == nil {
+		results = append(results, analyzer.ILMPolicyInventory(policies))
+	} else {
+		results = append(results, optionalUnknownFrom(analyzer.ILMPolicyInventory(nil), e, isBundle, "cluster read_ilm"))
+	}
 	if rows, e := client.ThreadPool(); e == nil {
 		results = append(results, analyzer.RejectedRequests(rows), analyzer.TaskBacklog(rows, t))
 	} else {
@@ -123,7 +154,11 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 	var nodeSnapshot *nodecontext.Snapshot
 	if snapshot, e := client.NodeContextSnapshot(); e == nil {
 		nodeSnapshot = snapshot
+		if snapshot.StatsCoverage.Complete() {
+			snapshot.MissingNodes = nodecontext.MissingExpectedNames(expectedESNodes, snapshot)
+		}
 		nodeResults := analyzer.NodeContextResults(snapshot, t)
+		nodeResults = append(nodeResults, analyzer.ExpectedESNodeCoverage(expectedESNodes, snapshot))
 		if isBundle {
 			applyBundleNodeContextWording(nodeResults)
 		}
@@ -133,6 +168,7 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		// 原始端點錯誤只放在 node_api_coverage；衍生檢查以 dependency unknown
 		// 指向完整性根因，避免同一個 403／timeout 在報告重複六次。
 		nodeResults[0] = unknownf(nodeResults[0], e)
+		nodeResults = append(nodeResults, analyzer.ExpectedESNodeCoverage(expectedESNodes, nil))
 		if isBundle {
 			applyBundleNodeContextWording(nodeResults)
 		}
@@ -142,6 +178,11 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		results = append(results, analyzer.CircuitBreaker(brks))
 	} else {
 		results = append(results, unknownf(analyzer.CircuitBreaker(nil), e))
+	}
+	if fielddata, e := client.FielddataStats(); e == nil {
+		results = append(results, analyzer.FielddataMemory(fielddata))
+	} else {
+		results = append(results, optionalUnknownFrom(analyzer.FielddataMemory(nil), e, isBundle, "cluster monitor"))
 	}
 	var cpus []collector.NodeCPU
 	if c, e := client.CatNodesCPU(); e == nil {
@@ -169,6 +210,11 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		results = append(results, analyzer.DataCorruption(idx))
 	} else {
 		results = append(results, unknownf(analyzer.DataCorruption(nil), e))
+	}
+	if streams, e := client.DataStreams(); e == nil {
+		results = append(results, analyzer.DataStreamHealth(streams))
+	} else {
+		results = append(results, optionalUnknownFrom(analyzer.DataStreamHealth(nil), e, isBundle, "index view_index_metadata"))
 	}
 	if stopped, e := client.WatcherManuallyStopped(); e == nil {
 		results = append(results, analyzer.Watcher(stopped))
@@ -257,10 +303,20 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		results = append(results, unknownf(analyzer.ShardSizing(nil, t), e))
 	}
 	analysisNow := snapshotReferenceTime(client.CollectedAt(), time.Now().UTC())
-	if policies, e := client.SLMPolicies(); e == nil {
-		results = append(results, analyzer.SnapshotFreshness(policies, t, analysisNow))
+	slmPolicies, slmErr := client.SLMPolicies()
+	if slmErr == nil {
+		results = append(results, analyzer.SnapshotFreshness(slmPolicies, t, analysisNow))
 	} else {
-		results = append(results, unknownf(analyzer.SnapshotFreshness(nil, t, analysisNow), e))
+		results = append(results, unknownf(analyzer.SnapshotFreshness(nil, t, analysisNow), slmErr))
+	}
+	repositories, repositoryErr := client.SnapshotRepositories()
+	switch {
+	case repositoryErr != nil:
+		results = append(results, optionalUnknownFrom(analyzer.SnapshotRepositoryReferences(nil, nil), repositoryErr, isBundle, "cluster monitor_snapshot"))
+	case slmErr != nil:
+		results = append(results, unknownf(analyzer.SnapshotRepositoryReferences(nil, repositories), slmErr))
+	default:
+		results = append(results, analyzer.SnapshotRepositoryReferences(slmPolicies, repositories))
 	}
 	if runtimes, e := client.NodeRuntimes(); e == nil {
 		results = append(results, analyzer.NodeRuntimeConsistency(runtimes))
@@ -348,14 +404,34 @@ func runCheck(cf *connFlags, fromFile, fromBundle, output, outFile string, noCol
 		applyVersionWarning(results, esVersion)
 	}
 
-	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: esVersion}
+	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), UUID: client.ClusterUUID(), Host: host, ESVersion: esVersion}
 	report := buildReport(meta, results, "check")
 	report.Meta.CollectedAt = client.CollectedAt()
 	report.Meta.CollectScriptVersion = client.CollectScriptVersion()
+	report.Meta.BundleSchemaVersion = client.BundleSchemaVersion()
+	report.Meta.CollectedServices = client.CollectedServices()
 	report.NodeContext = nodeSnapshot
 	report.VersionNotice = versionNotice
 	report.SuggestedSymptoms = suggestSymptoms(results, cpus, pools, t)
-	return emit(report, output, outFile, noColor)
+	return emitCheck(report, output, outFile, noColor, metricsOut)
+}
+
+func emitCheck(report diagnostic.Report, output, outFile string, noColor bool, metricsOut string) int {
+	code := emit(report, output, outFile, noColor)
+	if code >= 10 || metricsOut == "" {
+		return code
+	}
+	b, err := reporter.MetricsNDJSON(report)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "趨勢資料輸出失敗:", err)
+		return 20
+	}
+	if err := os.WriteFile(metricsOut, b, 0644); err != nil {
+		fmt.Fprintln(os.Stderr, "趨勢資料寫檔失敗:", err)
+		return 20
+	}
+	fmt.Fprintln(os.Stderr, "已寫入", metricsOut)
+	return code
 }
 
 // snapshotReferenceTime 讓離線報告描述採集當下的狀態，而不是把一份舊 bundle
@@ -476,7 +552,26 @@ func unknownFrom(zero diagnostic.Result, err error, isBundle bool) diagnostic.Re
 	zero.Recommendations = nil
 	zero.RequiresExtra = false
 	zero.ExtraReason = ""
+	zero.Measurements = nil // API 未成功時不得把 analyzer 的零值輸出成真實觀測值。
 	return zero
+}
+
+// optionalUnknownFrom 為額外權限 API 保留 403／404 的真實語意：權限不足或端點
+// 不可用都不是 ES 故障，也不能被包裝成 pass。其餘錯誤沿用共用 unknown 規則。
+func optionalUnknownFrom(zero diagnostic.Result, err error, isBundle bool, privilege string) diagnostic.Result {
+	res := unknownFrom(zero, err, isBundle)
+	status, ok := collector.HTTPStatus(err)
+	if !ok {
+		return res
+	}
+	switch status {
+	case 403:
+		res.Summary = "帳號權限不足，無法判定"
+		res.Recommendations = []diagnostic.Recommendation{{Desc: "若需啟用本項檢查，請為健檢角色補上最小權限：" + privilege}}
+	case 404:
+		res.Summary = "此版本、功能或端點不可用，無法判定"
+	}
+	return res
 }
 
 const (

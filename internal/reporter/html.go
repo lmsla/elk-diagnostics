@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"html/template"
+	"math"
 	"path/filepath"
 	"strings"
 	"time"
@@ -64,6 +65,8 @@ var htmlFuncs = template.FuncMap{
 		switch s {
 		case diagnostic.StatusPass:
 			return "✅"
+		case diagnostic.StatusInfo:
+			return "ℹ️"
 		case diagnostic.StatusWarning:
 			return "⚠️"
 		case diagnostic.StatusCritical:
@@ -78,6 +81,8 @@ var htmlFuncs = template.FuncMap{
 		switch s {
 		case diagnostic.StatusPass:
 			return "正常"
+		case diagnostic.StatusInfo:
+			return "需觀察"
 		case diagnostic.StatusWarning:
 			return "注意"
 		case diagnostic.StatusCritical:
@@ -92,6 +97,8 @@ var htmlFuncs = template.FuncMap{
 		switch s {
 		case diagnostic.StatusPass:
 			return "PASS"
+		case diagnostic.StatusInfo:
+			return "INFO"
 		case diagnostic.StatusWarning:
 			return "WARNING"
 		case diagnostic.StatusCritical:
@@ -101,6 +108,12 @@ var htmlFuncs = template.FuncMap{
 		default:
 			return "UNKNOWN"
 		}
+	},
+	"extraLead": func(s diagnostic.Status) string {
+		if s == diagnostic.StatusInfo {
+			return "ⓘ 需觀察"
+		}
+		return "⚠ 需額外條件"
 	},
 	"isOpen": func(s diagnostic.Status) bool { return s != diagnostic.StatusPass && s != diagnostic.StatusSkipped },
 	// isBundleHost 判斷本次分析是否來自 --from-bundle：Host 欄位在 bundle 模式固定帶
@@ -178,6 +191,7 @@ var htmlFuncs = template.FuncMap{
 		}
 		return strings.Join(v, ", ")
 	},
+	"joinNodes": func(v []string) string { return strings.Join(v, "、") },
 	"rolePreview": func(v []string) []string {
 		if len(v) <= 3 {
 			return v
@@ -318,6 +332,344 @@ var htmlFuncs = template.FuncMap{
 		}
 		return fmt.Sprintf("%s / %s（%.0f%%）", humanBytes(*usage), humanBytes(*limit), 100*float64(*usage)/float64(*limit))
 	},
+	"measurementLabel": func(m diagnostic.Measurement) string {
+		if m.Metric == "elasticsearch.node.resource.deviation_from_median" {
+			switch m.Component {
+			case "cpu":
+				return "CPU 相對叢集中位數差距"
+			case "heap.percent":
+				return "JVM Heap 相對叢集中位數差距"
+			case "disk.used_percent":
+				return "磁碟使用率相對叢集中位數差距"
+			}
+		}
+		if label, ok := measurementLabels[m.Metric]; ok {
+			return label
+		}
+		return m.Metric
+	},
+	"measurementTarget": func(m diagnostic.Measurement) string {
+		switch {
+		case m.EntityName != "":
+			return m.EntityName
+		case m.EntityID != "":
+			return m.EntityID
+		case m.Component != "":
+			return m.Component
+		default:
+			return "叢集"
+		}
+	},
+	"measurementValue": formatMeasurementValue,
+	"measurementKind": func(kind string) string {
+		if kind == "counter" {
+			return "累積值"
+		}
+		return "當下值"
+	},
+	"measurementKindClass": func(kind string) string {
+		if kind == "counter" {
+			return "counter"
+		}
+		return "gauge"
+	},
+	"hasCounter": func(values []diagnostic.Measurement) bool {
+		for _, value := range values {
+			if value.Kind == "counter" {
+				return true
+			}
+		}
+		return false
+	},
+	"hasHotspotMeasurements": hasHotspotMeasurements,
+	"hotspotBaselines":       hotspotBaselines,
+	"hotspotRows":            hotspotRows,
+}
+
+type hotspotBaselineRow struct {
+	Label     string
+	PeerGroup string
+	Value     string
+}
+
+type hotspotObservationRow struct {
+	Label      string
+	Node       string
+	PeerGroup  string
+	Current    string
+	Median     string
+	Difference string
+	Nature     string
+}
+
+func hasHotspotMeasurements(id string, values []diagnostic.Measurement) bool {
+	if id != "hot_spotting" {
+		return false
+	}
+	var current, median bool
+	for _, value := range values {
+		switch value.Metric {
+		case "elasticsearch.node.resource.current":
+			current = true
+		case "elasticsearch.cluster.resource.median":
+			median = true
+		}
+	}
+	return current && median
+}
+
+func hotspotMetricLabel(component string) string {
+	switch component {
+	case "cpu":
+		return "CPU 使用率"
+	case "heap.percent":
+		return "JVM Heap 使用率"
+	case "disk.used_percent":
+		return "磁碟使用率"
+	default:
+		return component
+	}
+}
+
+func hotspotPeerGroup(value diagnostic.Measurement) string {
+	if strings.TrimSpace(value.PeerGroup) == "" {
+		return "所有節點"
+	}
+	return value.PeerGroup
+}
+
+func hotspotBaselines(values []diagnostic.Measurement) []hotspotBaselineRow {
+	rows := make([]hotspotBaselineRow, 0)
+	seen := make(map[string]bool)
+	for _, value := range values {
+		if value.Metric != "elasticsearch.cluster.resource.median" {
+			continue
+		}
+		group := hotspotPeerGroup(value)
+		key := group + "\x00" + value.Component
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		rows = append(rows, hotspotBaselineRow{
+			Label: hotspotMetricLabel(value.Component), PeerGroup: group, Value: formatMeasurementValue(value),
+		})
+	}
+	return rows
+}
+
+func hotspotRows(values []diagnostic.Measurement) []hotspotObservationRow {
+	type observation struct {
+		current, difference *diagnostic.Measurement
+	}
+	items := make(map[string]*observation)
+	var order []string
+	for i := range values {
+		value := &values[i]
+		if value.Metric != "elasticsearch.node.resource.current" && value.Metric != "elasticsearch.node.resource.deviation_from_median" {
+			continue
+		}
+		group := hotspotPeerGroup(*value)
+		key := group + "\x00" + value.Component + "\x00" + value.EntityName
+		item, ok := items[key]
+		if !ok {
+			item = &observation{}
+			items[key] = item
+			order = append(order, key)
+		}
+		if value.Metric == "elasticsearch.node.resource.current" {
+			item.current = value
+		} else {
+			item.difference = value
+		}
+	}
+	medians := make(map[string]*diagnostic.Measurement)
+	for i := range values {
+		value := &values[i]
+		if value.Metric != "elasticsearch.cluster.resource.median" {
+			continue
+		}
+		key := hotspotPeerGroup(*value) + "\x00" + value.Component
+		if _, ok := medians[key]; !ok {
+			medians[key] = value
+		}
+	}
+	rows := make([]hotspotObservationRow, 0, len(order))
+	for _, key := range order {
+		item := items[key]
+		if item.current == nil {
+			continue
+		}
+		group := hotspotPeerGroup(*item.current)
+		row := hotspotObservationRow{
+			Label: hotspotMetricLabel(item.current.Component), Node: item.current.EntityName, PeerGroup: group,
+			Current: formatMeasurementValue(*item.current), Nature: "原始快照（同類節點不足）",
+		}
+		if median, ok := medians[group+"\x00"+item.current.Component]; ok {
+			row.Median = formatMeasurementValue(*median)
+			row.Nature = "原始快照＋衍生比較"
+		}
+		if item.difference != nil {
+			row.Difference = formatMeasurementValue(*item.difference)
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+var measurementLabels = map[string]string{
+	"elasticsearch.health_report.diagnosis.count":                    "診斷原因數量",
+	"elasticsearch.health_report.impact.count":                       "影響項目數量",
+	"elasticsearch.health_report.affected_index.count":               "受影響 Index 數量",
+	"elasticsearch.cluster.node.count":                               "叢集節點總數",
+	"elasticsearch.nodes.expected":                                   "預期 ES 節點數",
+	"elasticsearch.nodes.observed":                                   "目前回應 ES 節點數",
+	"elasticsearch.nodes.missing":                                    "缺失 ES 節點數",
+	"elasticsearch.cluster.master_eligible_node.count":               "Master-eligible 節點數",
+	"elasticsearch.cluster.pending_task.count":                       "Pending task 數量",
+	"elasticsearch.cluster.pending_task.max_queue_time":              "最長排隊時間",
+	"elasticsearch.cluster.voting_exclusion.count":                   "Voting exclusion 數量",
+	"elasticsearch.index.allocation.checked.count":                   "已檢查 Index 數量",
+	"elasticsearch.index.allocation.blocked.count":                   "分配受限 Index 數量",
+	"elasticsearch.index.allocation.unprobed.count":                  "無法檢查 Index 數量",
+	"elasticsearch.shard.allocation.rejected_decider.count":          "拒絕分配的 Decider 數量",
+	"elasticsearch.node.shard.count":                                 "節點 Shard 數量",
+	"elasticsearch.node.shard.undesired":                             "非理想位置 Shard 數量",
+	"elasticsearch.node.disk.used":                                   "節點磁碟使用率",
+	"elasticsearch.node.resource.deviation_from_median":              "相對叢集中位數差距",
+	"elasticsearch.data_tier.node.count":                             "Data tier 節點數",
+	"elasticsearch.index.mapping.scanned.count":                      "已檢查 Mapping 的 Index 數量",
+	"elasticsearch.index.mapping.field.max":                          "單一 Index 最大欄位數",
+	"elasticsearch.index.mapping.field.count":                        "Index 欄位數",
+	"elasticsearch.ingest.pipeline.processed":                        "Ingest pipeline 處理總數",
+	"elasticsearch.ingest.pipeline.failed":                           "Ingest pipeline 失敗總數",
+	"elasticsearch.ingest.pipeline.failure_rate":                     "Ingest pipeline 失敗率",
+	"elasticsearch.index.health.scanned.count":                       "已檢查 Index 數量",
+	"elasticsearch.index.health.red.count":                           "Red Index 數量",
+	"elasticsearch.index.blocked.count":                              "存在 Block 的 Index 數量",
+	"elasticsearch.index.replica.evaluated.count":                    "已檢查 Replica 的 Index 數量",
+	"elasticsearch.index.replica.minimum":                            "最低 Replica 數",
+	"elasticsearch.index.replica.zero.count":                         "零 Replica Index 數量",
+	"elasticsearch.index.replica.auto_expand_all.count":              "Auto-expand 上限為 all 的 Index 數量",
+	"elasticsearch.index.search_slowlog.enabled.count":               "已啟用 Search slow log 的 Index 數量",
+	"elasticsearch.ilm.policy.count":                                 "ILM policy 總數",
+	"elasticsearch.ilm.policy.in_use.count":                          "使用中的 ILM policy",
+	"elasticsearch.ilm.error_index.count":                            "ILM ERROR Index 數量",
+	"elasticsearch.ilm.migrating_index.count":                        "Tier 遷移中 Index 數量",
+	"elasticsearch.slm.policy.count":                                 "SLM policy 總數",
+	"elasticsearch.slm.freshness.evaluated_policy.count":             "已檢查新鮮度的 SLM policy 數量",
+	"elasticsearch.slm.snapshot.taken":                               "Snapshot 成功累積數",
+	"elasticsearch.slm.snapshot.failed":                              "Snapshot 失敗累積數",
+	"elasticsearch.slm.snapshot.last_success_age":                    "距最後成功 Snapshot 時間",
+	"elasticsearch.snapshot.repository.count":                        "Snapshot repository 總數",
+	"elasticsearch.slm.missing_repository.count":                     "缺少 repository 的 SLM policy",
+	"elasticsearch.snapshot.restore.active_shard.count":              "Snapshot 還原中 Shard 數量",
+	"elasticsearch.data_stream.count":                                "Data stream 總數",
+	"elasticsearch.data_stream.backing_index.count":                  "Backing index 數量",
+	"elasticsearch.data_stream.status.count":                         "Data stream 狀態數量",
+	"elasticsearch.transform.count":                                  "Transform 總數",
+	"elasticsearch.transform.failed.count":                           "失敗 Transform 數量",
+	"elasticsearch.remote_cluster.count":                             "Remote cluster 總數",
+	"elasticsearch.remote_cluster.disconnected.count":                "未連線 Remote cluster 數量",
+	"elasticsearch.deprecation.count":                                "Deprecation 總數",
+	"elasticsearch.deprecation.critical.count":                       "Critical deprecation 數量",
+	"elasticsearch.deprecation.warning.count":                        "Warning deprecation 數量",
+	"elasticsearch.node.thread_pool.rejected":                        "Thread pool 拒絕累積數",
+	"elasticsearch.node.thread_pool.completed":                       "Thread pool 完成累積數",
+	"elasticsearch.node.thread_pool.queue":                           "Thread pool Queue",
+	"elasticsearch.thread_pool.queue.max":                            "最大 Thread pool Queue",
+	"elasticsearch.thread_pool.active.max":                           "最大 Active thread 數",
+	"elasticsearch.node.jvm.old_pool.used":                           "JVM Old pool 已用",
+	"elasticsearch.node.jvm.old_pool.max":                            "JVM Old pool 上限",
+	"elasticsearch.node.jvm.old_pool.pressure":                       "JVM Old pool 壓力",
+	"elasticsearch.node.breaker.tripped":                             "Circuit breaker 跳閘累積數",
+	"elasticsearch.node.cpu":                                         "節點 CPU 使用率",
+	"elasticsearch.node.allocated_processors":                        "Elasticsearch 可用處理器數",
+	"elasticsearch.task.long_running.count":                          "長時間執行 Task 數量",
+	"elasticsearch.task.long_running.max_duration":                   "最長 Task 執行時間",
+	"elasticsearch.shard.primary.count":                              "Primary shard 數量",
+	"elasticsearch.shard.primary.max_store":                          "最大 Primary shard 容量",
+	"elasticsearch.shard.primary.large.count":                        "大型 Primary shard 數量",
+	"elasticsearch.shard.primary.small.count":                        "小型 Primary shard 數量",
+	"elasticsearch.nodes.indexing_pressure.total":                    "Indexing pressure API 節點總數",
+	"elasticsearch.nodes.indexing_pressure.successful":               "Indexing pressure API 成功節點",
+	"elasticsearch.nodes.indexing_pressure.failed":                   "Indexing pressure API 失敗節點",
+	"elasticsearch.nodes.indexing_pressure.returned":                 "Indexing pressure API 回傳節點",
+	"elasticsearch.node.indexing_pressure.combined":                  "Coordinating + Primary 使用量",
+	"elasticsearch.node.indexing_pressure.replica":                   "Replica 使用量",
+	"elasticsearch.node.indexing_pressure.limit":                     "Indexing pressure 上限",
+	"elasticsearch.node.indexing_pressure.combined_pct":              "Coordinating + Primary 使用率",
+	"elasticsearch.node.indexing_pressure.replica_pct":               "Replica 使用率",
+	"elasticsearch.ccr.follower.count":                               "CCR Follower 數量",
+	"elasticsearch.ccr.follower.checkpoint_lag":                      "CCR Checkpoint lag",
+	"elasticsearch.ccr.follower.fatal_error.count":                   "CCR Fatal error 數量",
+	"elasticsearch.ccr.follower.read_error.count":                    "CCR Read error 數量",
+	"elasticsearch.ccr.auto_follow.failed_indices":                   "Auto-follow 失敗 Index 累積數",
+	"elasticsearch.ccr.auto_follow.failed_remote_state":              "Remote state 失敗累積數",
+	"elasticsearch.ccr.auto_follow.recent_error.count":               "近期 Auto-follow error 數量",
+	"elasticsearch.ml.job.count":                                     "ML Job 數量",
+	"elasticsearch.ml.datafeed.count":                                "ML Datafeed 數量",
+	"elasticsearch.ml.state.count":                                   "ML 狀態數量",
+	"elasticsearch.planned_shutdown.count":                           "Planned shutdown 登記數量",
+	"elasticsearch.node.planned_shutdown.shard_migrations_remaining": "剩餘 Shard 遷移數",
+	"elasticsearch.nodes.runtime.total":                              "Runtime API 節點總數",
+	"elasticsearch.nodes.runtime.successful":                         "Runtime API 成功節點",
+	"elasticsearch.nodes.runtime.failed":                             "Runtime API 失敗節點",
+	"elasticsearch.nodes.runtime.returned":                           "Runtime API 回傳節點",
+	"elasticsearch.node.runtime.heap_init":                           "JVM 初始 Heap",
+	"elasticsearch.node.runtime.heap_max":                            "JVM 最大 Heap",
+	"elasticsearch.node.runtime.plugin.count":                        "Plugin 數量",
+	"elasticsearch.tls.certificate.count":                            "TLS Certificate 數量",
+	"elasticsearch.tls.certificate.days_remaining":                   "TLS Certificate 剩餘天數",
+	"elasticsearch.license.days_remaining":                           "License 剩餘天數",
+	"elasticsearch.allocation.awareness.attribute.count":             "Awareness attribute 數量",
+	"elasticsearch.allocation.awareness.data_node.count":             "Data node 數量",
+	"elasticsearch.allocation.awareness.value.count":                 "Failure domain 數量",
+	"elasticsearch.allocation.awareness.missing_node.count":          "缺少 Awareness attribute 的節點數",
+	"elasticsearch.node.write_bottleneck.cpu":                        "寫入節點 CPU 使用率",
+	"elasticsearch.node.write_bottleneck.queue":                      "Write Queue",
+	"elasticsearch.node.write_bottleneck.allocated_processors":       "寫入節點可用處理器數",
+	"elasticsearch.node.write_bottleneck.pool_size":                  "Write thread pool 大小",
+	"elasticsearch.nodes.fielddata.total":                            "Fielddata API 節點總數",
+	"elasticsearch.nodes.fielddata.successful":                       "Fielddata API 成功節點",
+	"elasticsearch.nodes.fielddata.failed":                           "Fielddata API 失敗節點",
+	"elasticsearch.nodes.fielddata.returned":                         "Fielddata API 回傳節點",
+	"elasticsearch.node.fielddata.memory":                            "節點 Fielddata 記憶體",
+	"elasticsearch.node.fielddata.evictions":                         "節點 Fielddata eviction",
+	"elasticsearch.fielddata.memory":                                 "Fielddata 記憶體總量",
+}
+
+func formatMeasurementValue(m diagnostic.Measurement) string {
+	switch m.Unit {
+	case "bytes":
+		if m.Value < 0 {
+			return fmt.Sprintf("%.0f B", m.Value)
+		}
+		return humanBytes(uint64(m.Value))
+	case "percent":
+		return fmt.Sprintf("%s%%", formatMeasurementNumber(m.Value))
+	case "percentage_point":
+		return fmt.Sprintf("%s 個百分點", formatMeasurementNumber(m.Value))
+	case "milliseconds":
+		return time.Duration(m.Value * float64(time.Millisecond)).String()
+	case "nanoseconds":
+		return time.Duration(m.Value).String()
+	case "hours":
+		return fmt.Sprintf("%s 小時", formatMeasurementNumber(m.Value))
+	case "days":
+		return fmt.Sprintf("%s 天", formatMeasurementNumber(m.Value))
+	case "count", "":
+		return formatMeasurementNumber(m.Value)
+	default:
+		return fmt.Sprintf("%s %s", formatMeasurementNumber(m.Value), m.Unit)
+	}
+}
+
+func formatMeasurementNumber(v float64) string {
+	if math.Trunc(v) == v {
+		return fmt.Sprintf("%.0f", v)
+	}
+	return strings.TrimRight(strings.TrimRight(fmt.Sprintf("%.2f", v), "0"), ".")
 }
 
 func humanBytes(v uint64) string {
@@ -340,7 +692,7 @@ const htmlTmpl = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Elasticsearch 叢集健康診斷報告</title>
 <style>
-  :root{--pass:#2e7d32;--warning:#ed6c02;--critical:#c62828;--skipped:#757575;--unknown:#455a64;}
+  :root{--pass:#2e7d32;--info:#1565c0;--warning:#ed6c02;--critical:#c62828;--skipped:#757575;--unknown:#455a64;}
   *{box-sizing:border-box}
   body{font-family:-apple-system,"Segoe UI","Microsoft JhengHei",sans-serif;margin:0;color:#1a1a1a;background:#f5f5f5;line-height:1.6}
   .wrap{max-width:1180px;margin:0 auto;padding:24px}
@@ -348,7 +700,7 @@ const htmlTmpl = `<!DOCTYPE html>
   .header-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
   header h1{margin:0;font-size:24px;line-height:1.35}
   .report-status{flex:none;border-radius:999px;padding:4px 12px;font-size:12px;font-weight:700;letter-spacing:.03em}
-  .report-status.pass{background:#e8f5e9;color:var(--pass)}.report-status.warning{background:#fff3e0;color:#a04b00}
+  .report-status.pass{background:#e8f5e9;color:var(--pass)}.report-status.info{background:#e3f2fd;color:var(--info)}.report-status.warning{background:#fff3e0;color:#a04b00}
   .report-status.critical{background:#ffebee;color:var(--critical)}.report-status.skipped{background:#f0f0f0;color:var(--skipped)}
   .report-status.unknown{background:#eceff1;color:var(--unknown)}
   .cluster-name{font-size:18px;font-weight:650;margin-top:12px}
@@ -363,8 +715,9 @@ const htmlTmpl = `<!DOCTYPE html>
   .technical-grid{display:grid;grid-template-columns:110px minmax(0,1fr);gap:4px 12px;margin:8px 0 0;font-size:12px}
   .technical-grid dt{color:#777}.technical-grid dd{margin:0;overflow-wrap:anywhere}
   .banner{margin:16px 0;padding:16px 20px;border-radius:8px;color:#fff;font-size:18px;font-weight:700;display:flex;justify-content:space-between;align-items:center}
-  .banner.pass{background:var(--pass)}.banner.warning{background:var(--warning)}.banner.critical{background:var(--critical)}.banner.unknown{background:var(--unknown)}
+  .banner.pass{background:var(--pass)}.banner.info{background:var(--info)}.banner.warning{background:var(--warning)}.banner.critical{background:var(--critical)}.banner.unknown{background:var(--unknown)}
   .counts{font-size:13px;font-weight:400}
+  .counts .info-count{color:#bbdefb}
   .counts b{font-weight:700}
   .version-notice{margin:16px 0;padding:10px 16px;background:#fff8e1;border:1px solid #ffca28;border-radius:6px;color:#795548;font-size:13px}
   .hints{margin:16px 0;padding:10px 16px;background:#fff8e1;border:1px solid #ffe082;border-radius:6px}
@@ -383,12 +736,15 @@ const htmlTmpl = `<!DOCTYPE html>
   .node-memory-help>summary{padding:2px 0;color:#555;font-size:12px;font-weight:600}
   .node-memory-note{margin:5px 0 0;color:#555;font-size:12px}
 	.node-issues{color:var(--unknown);margin:6px 0 0;padding-left:20px}
-  .node-overview-wrap{overflow-x:auto;background:#fff;border:1px solid #d8dee4;border-radius:8px;margin-top:10px}
+	.node-missing-alert{margin:8px 0 0;padding:8px 10px;background:#ffebee;border:1px solid #ef9a9a;border-radius:6px;color:var(--critical);font-weight:700}
+	.node-overview-wrap{overflow-x:auto;background:#fff;border:1px solid #d8dee4;border-radius:8px;margin-top:10px}
   .node-overview{width:100%;border-collapse:collapse;font-size:13px;min-width:820px}
   .node-overview th,.node-overview td{padding:11px 12px;text-align:left;border-bottom:1px solid #e8edf2;vertical-align:middle}
   .node-overview th{background:#f6f8fa;color:#555;font-size:11px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap}
-  .node-overview tbody tr:last-child td{border-bottom:0}
-  .node-overview tbody tr:hover{background:#fafbfd}
+	.node-overview tbody tr:last-child td{border-bottom:0}
+	.node-overview tbody tr:hover{background:#fafbfd}
+	.node-overview .node-missing-row{background:#fff5f5}
+	.node-overview .node-missing-row td{color:var(--critical);font-weight:700}
   .node-overview .node-name-cell{font-weight:700;white-space:nowrap}
   .roles-cell{min-width:230px}
   .role-chip{display:inline-block;margin:2px 3px 2px 0;padding:1px 7px;border-radius:999px;background:#edf2f7;color:#34495e;font-size:11px;white-space:nowrap}
@@ -417,9 +773,10 @@ const htmlTmpl = `<!DOCTYPE html>
 	.node-grid dt{font-weight:600;color:#444}.node-grid dd{margin:0;word-break:break-word}
 	.node-table{width:100%;border-collapse:collapse;font-size:12px}.node-table th,.node-table td{border:1px solid #ddd;padding:4px 6px;text-align:left}.node-table th{background:#f5f5f5}
   .card{background:#fff;border:1px solid #e0e0e0;border-left-width:5px;border-radius:6px;margin:8px 0;overflow:hidden}
-  .card.pass{border-left-color:var(--pass)}.card.warning{border-left-color:var(--warning)}.card.critical{border-left-color:var(--critical)}.card.skipped{border-left-color:var(--skipped)}.card.unknown{border-left-color:var(--unknown)}
+  .card.pass{border-left-color:var(--pass)}.card.info{border-left-color:var(--info)}.card.warning{border-left-color:var(--warning)}.card.critical{border-left-color:var(--critical)}.card.skipped{border-left-color:var(--skipped)}.card.unknown{border-left-color:var(--unknown)}
   .status-label{display:inline-block;margin-right:4px;padding:1px 6px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.04em;vertical-align:1px}
   .card.pass .status-label{background:#e8f5e9;color:var(--pass)}
+  .card.info .status-label{background:#e3f2fd;color:var(--info)}
   .card.warning .status-label{background:#fff3e0;color:#a04b00}
   .card.critical .status-label{background:#ffebee;color:var(--critical)}
   .card.skipped .status-label{background:#f0f0f0;color:var(--skipped)}
@@ -432,8 +789,23 @@ const htmlTmpl = `<!DOCTYPE html>
   .body h4{margin:12px 0 4px;font-size:13px;color:#333}
   .body ul{margin:0;padding-left:20px}
   .body li{margin:2px 0;font-size:14px}
+  .measurement-wrap{overflow-x:auto;margin-top:4px;border:1px solid #e0e0e0;border-radius:6px}
+  .measurement-table{width:100%;border-collapse:collapse;font-size:13px;min-width:560px}
+  .measurement-table th,.measurement-table td{padding:7px 9px;text-align:left;border-bottom:1px solid #eee;vertical-align:middle}
+  .measurement-table th{background:#f6f8fa;color:#555;font-size:11px;white-space:nowrap}
+  .measurement-table tbody tr:last-child td{border-bottom:0}
+  .measurement-table .measurement-number{font-variant-numeric:tabular-nums;font-weight:650;white-space:nowrap}
+  .measurement-kind{display:inline-block;padding:1px 7px;border-radius:999px;font-size:11px;white-space:nowrap;background:#e8f5e9;color:var(--pass)}
+  .measurement-kind.counter{background:#fff3e0;color:#a04b00}
+  .measurement-note{font-size:12px;color:#795548;margin:7px 0 0}
+  .hotspot-table{min-width:820px}
+  .judgment-wrap{overflow-x:auto;margin-top:4px;border:1px solid #e0e0e0;border-radius:6px}
+  .judgment-table{width:100%;border-collapse:collapse;font-size:13px;min-width:560px}
+  .judgment-table th,.judgment-table td{padding:7px 9px;text-align:left;border-bottom:1px solid #eee;vertical-align:top}
+  .judgment-table th{background:#f6f8fa;color:#555;font-size:11px;white-space:nowrap}
+  .judgment-table tbody tr:last-child td{border-bottom:0}
   code{background:#f0f0f0;padding:1px 6px;border-radius:4px;font-size:13px}
-  .extra,.vw{font-size:13px;color:var(--warning);margin:8px 0 0}
+  .extra,.vw{font-size:13px;color:var(--warning);margin:8px 0 0}.extra.info{color:var(--info)}
   a{color:#1565c0;word-break:break-all}
   footer{margin:24px 0;padding:14px;background:#eceff1;border-radius:6px;font-size:12px;color:#555}
   @media (max-width:760px){
@@ -486,13 +858,15 @@ const htmlTmpl = `<!DOCTYPE html>
       <dt>診斷模式</dt><dd>{{analysisMode .R.Meta.Mode .R.Meta.Cluster.Host}}</dd>
       <dt>資料來源</dt><dd><span title="{{sourcePath .R.Meta.Cluster.Host}}">{{sourceShort .R.Meta.Cluster.Host}}</span></dd>
       <dt>完整來源</dt><dd>{{sourcePath .R.Meta.Cluster.Host}}</dd>
+      {{if .R.Meta.BundleSchemaVersion}}<dt>採集包格式</dt><dd>schema v{{.R.Meta.BundleSchemaVersion}}</dd>{{end}}
+      {{if .R.Meta.CollectedServices}}<dt>採集模組</dt><dd>{{range $i, $service := .R.Meta.CollectedServices}}{{if $i}}、{{end}}{{$service}}{{end}}</dd>{{end}}
     </dl>
   </details>
 </header>
 
 <div class="banner {{cls .R.OverallStatus}}">
   <span>整體狀態：{{statusText .R.OverallStatus}}</span>
-  <span class="counts">✅ <b>{{.R.Summary.Pass}}</b>　⚠️ <b>{{.R.Summary.Warning}}</b>　❌ <b>{{.R.Summary.Critical}}</b>　⏭️ <b>{{.R.Summary.Skipped}}</b>　❓ <b>{{.R.Summary.Unknown}}</b></span>
+  <span class="counts">✅ <b>{{.R.Summary.Pass}}</b>　<span class="info-count">ℹ️ <b>{{.R.Summary.Info}}</b></span>　⚠️ <b>{{.R.Summary.Warning}}</b>　❌ <b>{{.R.Summary.Critical}}</b>　⏭️ <b>{{.R.Summary.Skipped}}</b>　❓ <b>{{.R.Summary.Unknown}}</b></span>
 </div>
 
 {{if .R.VersionNotice}}
@@ -521,14 +895,22 @@ const htmlTmpl = `<!DOCTYPE html>
     <p class="node-memory-note">OS RAM 是主機／容器層的單次使用率快照，可能包含可回收的 filesystem cache；不等於 JVM Heap，單次高值不單獨視為記憶體壓力。表格色彩只協助快速閱讀，正式判定仍以診斷結果卡為準。</p>
   </details>
   {{if .Issues}}<ul class="node-issues">{{range .Issues}}<li>{{.}}</li>{{end}}</ul>{{end}}
+  {{if .MissingNodes}}<div class="node-missing-alert">❌ 缺失節點：{{joinNodes .MissingNodes}}</div>{{end}}
 </div>
 <div class="node-overview-wrap">
   <table class="node-overview">
-    <thead><tr><th>節點</th><th>角色</th><th>CPU</th><th>OS RAM*</th><th>JVM Heap</th><th>Swap</th><th>FD</th></tr></thead>
+    <thead><tr><th>節點</th><th>IP</th><th>角色</th><th>CPU</th><th>OS RAM*</th><th>JVM Heap</th><th>Swap</th><th>FD</th></tr></thead>
     <tbody>
+    {{range .MissingNodes}}
+      <tr class="node-missing-row">
+        <td class="node-name-cell">{{.}}</td>
+        <td colspan="7">❌ 缺失（Nodes API 未回應）</td>
+      </tr>
+    {{end}}
     {{range .Nodes}}
       <tr>
         <td class="node-name-cell">{{nodeName .}}</td>
+        <td>{{if .IP}}{{.IP}}{{else}}—{{end}}</td>
         <td class="roles-cell" title="{{roles .Roles}}">{{range rolePreview .Roles}}<span class="role-chip">{{.}}</span>{{end}}{{if extraRoleCount .Roles}}<span class="role-chip role-more">+{{extraRoleCount .Roles}}</span>{{end}}</td>
         <td><span class="metric-value {{metricClass "cpu" .OS.CPUPercent}}">{{pct .OS.CPUPercent}}</span></td>
         <td><span class="metric-value">{{pct .OS.Memory.UsedPct}}</span></td>
@@ -541,9 +923,16 @@ const htmlTmpl = `<!DOCTYPE html>
   </table>
 </div>
 <div class="node-mobile-list">
+{{range .MissingNodes}}
+  <div class="node-mobile-card node-missing-card">
+    <div class="node-mobile-head"><span class="node-mobile-name">{{.}}</span></div>
+    <div class="node-missing-alert">❌ 缺失（Nodes API 未回應）</div>
+  </div>
+{{end}}
 {{range .Nodes}}
   <div class="node-mobile-card">
     <div class="node-mobile-head"><span class="node-mobile-name">{{nodeName .}}</span></div>
+    <div class="sm">IP：{{if .IP}}{{.IP}}{{else}}—{{end}}</div>
     <div class="node-mobile-roles" title="{{roles .Roles}}">{{range rolePreview .Roles}}<span class="role-chip">{{.}}</span>{{end}}{{if extraRoleCount .Roles}}<span class="role-chip role-more">+{{extraRoleCount .Roles}}</span>{{end}}</div>
     <div class="node-metrics">
       <div class="node-metric"><span class="node-metric-label">CPU</span><span class="node-metric-value {{metricClass "cpu" .OS.CPUPercent}}">{{pct .OS.CPUPercent}}</span></div>
@@ -563,7 +952,7 @@ const htmlTmpl = `<!DOCTYPE html>
   <summary>{{nodeName .}} <span class="sm">— {{roles .Roles}}</span></summary>
   <div class="node-body">
     <dl class="node-grid">
-      <dt>Node ID / 資料來源</dt><dd>{{.ID}} ｜ Stats={{.StatsAvailable}} Info={{.InfoAvailable}}</dd>
+      <dt>Node ID / IP / 資料來源</dt><dd>{{.ID}} ｜ {{if .IP}}{{.IP}}{{else}}—{{end}} ｜ Stats={{.StatsAvailable}} Info={{.InfoAvailable}}</dd>
       <dt>OS</dt><dd>{{if .OS.PrettyName}}{{.OS.PrettyName}}{{else}}{{.OS.Name}}{{end}} {{.OS.Version}} ｜ {{.OS.Architecture}} ｜ processors available={{intp .OS.AvailableProcessors}} allocated={{intp .OS.AllocatedProcessors}}</dd>
       <dt>OS CPU / load</dt><dd>{{pct .OS.CPUPercent}} ｜ load 1m={{load .OS.Load1m}} 5m={{load .OS.Load5m}} 15m={{load .OS.Load15m}}</dd>
       <dt>OS RAM（含 cache）</dt><dd>used={{bytesI .OS.Memory.UsedBytes}} / total={{bytesI .OS.Memory.TotalBytes}}（{{pct .OS.Memory.UsedPct}}）｜ swap={{bytesI .OS.Swap.UsedBytes}} / {{bytesI .OS.Swap.TotalBytes}}</dd>
@@ -590,9 +979,14 @@ const htmlTmpl = `<!DOCTYPE html>
   <summary>{{badge .Status}} <span class="status-label">{{statusLabel .Status}}</span> {{.Title}} <span class="sm">— {{.Summary}}</span><span class="src">{{.Source}}</span></summary>
   <div class="body">
     {{if .Findings}}<h4>發現</h4><ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}
+    {{if hasHotspotMeasurements .ID .Measurements}}
+    <h4>本次比較基準</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>比較群組</th><th>同類節點中位數</th></tr></thead><tbody>{{range hotspotBaselines .Measurements}}<tr><td>{{.Label}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Value}}</td></tr>{{end}}</tbody></table></div>
+    <h4>節點觀測值</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>節點</th><th>比較群組</th><th>當下值</th><th>同類節點中位數</th><th>差距（百分點）</th><th>資料屬性</th></tr></thead><tbody>{{range hotspotRows .Measurements}}<tr><td>{{.Label}}</td><td>{{.Node}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Current}}</td><td class="measurement-number">{{if .Median}}{{.Median}}{{else}}—{{end}}</td><td class="measurement-number">{{if .Difference}}{{.Difference}}{{else}}—{{end}}</td><td>{{.Nature}}</td></tr>{{end}}</tbody></table></div><p class="measurement-note">中位數是本次同類節點的比較基準；差距以百分點表示。單次快照不能單獨判定 hot spotting。</p>
+    {{else if .Measurements}}<h4>本次觀測值</h4><div class="measurement-wrap"><table class="measurement-table"><thead><tr><th>指標</th><th>對象</th><th>數值</th><th>性質</th></tr></thead><tbody>{{range .Measurements}}<tr><td>{{measurementLabel .}}</td><td>{{measurementTarget .}}</td><td class="measurement-number">{{measurementValue .}}</td><td><span class="measurement-kind {{measurementKindClass .Kind}}">{{measurementKind .Kind}}</span></td></tr>{{end}}</tbody></table></div>{{if hasCounter .Measurements}}<p class="measurement-note">累積值需以前後兩次採集的差值判讀；節點或程序重啟後計數可能歸零。</p>{{end}}{{end}}
+    {{if .JudgmentGuide}}<h4>判定方式</h4><div class="judgment-wrap"><table class="judgment-table"><thead><tr><th>情況</th><th>判讀</th></tr></thead><tbody>{{range .JudgmentGuide}}<tr><td>{{.Condition}}</td><td>{{.Interpretation}}</td></tr>{{end}}</tbody></table></div>{{end}}
     {{if .RootCauses}}<h4>可能根因（假設）</h4><ul>{{range .RootCauses}}<li>{{.}}</li>{{end}}</ul>{{end}}
     {{if .Recommendations}}<h4>建議（唯讀引導）</h4><ul>{{range .Recommendations}}<li>{{if .Cmd}}<code>{{.Cmd}}</code> — {{end}}{{.Desc}}</li>{{end}}</ul>{{end}}
-    {{if .RequiresExtra}}<p class="extra">⚠ 需額外條件：{{.ExtraReason}}</p>{{end}}
+    {{if .RequiresExtra}}<p class="extra {{cls .Status}}">{{extraLead .Status}}：{{.ExtraReason}}</p>{{end}}
     {{if .VersionWarning}}<p class="vw">版本警告：{{.VersionWarning}}</p>{{end}}
     {{if .Docs}}<h4>官方文件</h4><ul>{{range .Docs}}<li><a href="{{.}}">{{.}}</a></li>{{end}}</ul>{{end}}
   </div>

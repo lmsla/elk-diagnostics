@@ -4,24 +4,24 @@
 /dist/
 /.cache/
 /.tmp/
+/artifacts/
 
 # macOS
 .DS_Store
 
-# 實測產出的診斷報告（可能含客戶叢集資訊）
+# 實測產出的診斷報告（可能含使用者叢集資訊）
 /report*.html
 /reports/
 /check-report.*
 
-# collect.sh 的預設輸出目錄
+# 舊版 collect.sh 與驗證流程的根目錄輸出（向後相容）
 /elk-bundle-*/
-# docs/內部/Podman測試環境.md 流程建議的 bundle 輸出（bundle-baseline 等）
 /bundle-*/
 
-# 同事提供的 V2.3 比較資料（可能含 Vault、主機設定與客戶採集內容）
+# 舊位置相容；新位置為 artifacts/reference/，已由 /artifacts/ 排除
 /V.2.3_script_output/
 
-# 本機產生的客戶介紹投影片
+# 本機產生的產品介紹投影片
 /docs/交付/elk-diagnostics-介紹.pptx
 
 # 本機 ES 測試環境產生的自簽 CA、憑證與私鑰
@@ -30,3 +30,6 @@
 
 # 連線設定（含認證憑證，僅保留 .example 範本）
 config.yaml
+
+# 每個叢集不同的預期節點清單（只交付 .example 範本）
+/expected-es-nodes.txt

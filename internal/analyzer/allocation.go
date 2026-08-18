@@ -46,6 +46,11 @@ func IndexAllocationBlocked(enables map[string]string, unprobed []string) diagno
 			blocked = append(blocked, fmt.Sprintf("%s：index.routing.allocation.enable=%q", idx, v))
 		}
 	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.index.allocation.checked.count", float64(len(enables)), "count", "", "", "", ""),
+		gauge("elasticsearch.index.allocation.blocked.count", float64(len(blocked)), "count", "", "", "", ""),
+		gauge("elasticsearch.index.allocation.unprobed.count", float64(len(unprobed)), "count", "", "", "", ""),
+	)
 	if len(blocked) == 0 {
 		// 有 index 查不到就無法宣稱正常——已查的都乾淨，不代表查不到的那些也乾淨。
 		if len(unprobed) > 0 {
@@ -82,8 +87,10 @@ func IndexAllocationBlocked(enables map[string]string, unprobed []string) diagno
 func AllocationGuidance(exp *collector.AllocationExplanation, found bool) diagnostic.Result {
 	res := diagnostic.Result{ID: "allocation_guidance", Title: "Shard 分配根因（decider 級）", Category: "cluster", Source: "raw_api", Docs: []string{docAllocExplain}}
 	if !found || exp == nil {
+		res.Measurements = append(res.Measurements, gauge("elasticsearch.shard.allocation.rejected_decider.count", 0, "count", "", "", "", ""))
 		return pass(res, "無未分配 shard 可供 allocation/explain 解釋")
 	}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.shard.allocation.rejected_decider.count", float64(len(exp.Deciders)), "count", "index", exp.Index, exp.Index, fmt.Sprintf("shard-%d", exp.Shard)))
 	if len(exp.Deciders) == 0 {
 		res = pass(res, fmt.Sprintf("%s shard %d（primary=%v）：無 decider 封鎖，可能為暫時性 rebalancing", exp.Index, exp.Shard, exp.Primary))
 		res.RequiresExtra, res.ExtraReason = true, "僅代表性抽查一個未分配 shard，非窮舉；其餘 shard 可能有不同根因"

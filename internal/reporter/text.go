@@ -9,7 +9,7 @@ import (
 
 // Text 產出終端可讀摘要（診斷報告規格 §5.1）。
 //
-// 用途是顧問在客戶跳板機／終端上立即判讀，不依賴瀏覽器；交付物仍是 html（給人）
+// 用途是顧問在使用者端跳板機／終端上立即判讀，不依賴瀏覽器；交付物仍是 html（給人）
 // 與 json（給機器）——text 不是穩定契約，格式可隨版本調整，任何機器處理一律走 json。
 //
 // color 由呼叫端依 TTY／--no-color／NO_COLOR／是否寫檔判斷後傳入（見 cmd 的
@@ -36,10 +36,17 @@ func Text(r diagnostic.Report, color bool) []byte {
 	} else if strings.HasPrefix(r.Meta.Cluster.Host, "(bundle) ") {
 		b.WriteString("採集時間：bundle 未含採集時間（舊版採集腳本）\n")
 	}
+	if r.Meta.BundleSchemaVersion > 0 {
+		fmt.Fprintf(&b, "採集包格式：schema v%d\n", r.Meta.BundleSchemaVersion)
+	}
+	if len(r.Meta.CollectedServices) > 0 {
+		fmt.Fprintf(&b, "採集模組：%s\n", strings.Join(r.Meta.CollectedServices, "、"))
+	}
 
-	fmt.Fprintf(&b, "整體狀態：%s %s     %s %d  %s %d  %s %d  %s %d  %s %d\n\n",
+	fmt.Fprintf(&b, "整體狀態：%s %s     %s %d  %s %d  %s %d  %s %d  %s %d  %s %d\n\n",
 		paint(ansiColorFor(r.OverallStatus), textSymbol(r.OverallStatus)), textStatusName(r.OverallStatus),
 		paint(ansiGreen, textSymbol(diagnostic.StatusPass)), r.Summary.Pass,
+		paint(ansiBlue, textSymbol(diagnostic.StatusInfo)), r.Summary.Info,
 		paint(ansiYellow, textSymbol(diagnostic.StatusWarning)), r.Summary.Warning,
 		paint(ansiRed, textSymbol(diagnostic.StatusCritical)), r.Summary.Critical,
 		paint(ansiGray, textSymbol(diagnostic.StatusSkipped)), r.Summary.Skipped,
@@ -58,11 +65,14 @@ func Text(r diagnostic.Report, color bool) []byte {
 			fmt.Fprintf(&b, "（%d 個完整性問題）", len(r.NodeContext.Issues))
 		}
 		b.WriteString("\n\n")
+		if len(r.NodeContext.MissingNodes) > 0 {
+			fmt.Fprintf(&b, "%s 缺失節點：%s\n\n", paint(ansiRed, "❌"), strings.Join(r.NodeContext.MissingNodes, "、"))
+		}
 	}
 
-	// 非 pass 項目：critical → warning → unknown 排序，逐項兩行。
+	// 非 pass 項目：critical → warning → info → unknown 排序，逐項兩行。
 	var pass, skipped []string
-	for _, order := range []diagnostic.Status{diagnostic.StatusCritical, diagnostic.StatusWarning, diagnostic.StatusUnknown} {
+	for _, order := range []diagnostic.Status{diagnostic.StatusCritical, diagnostic.StatusWarning, diagnostic.StatusInfo, diagnostic.StatusUnknown} {
 		for _, res := range r.Results {
 			if res.Status != order {
 				continue
@@ -83,7 +93,7 @@ func Text(r diagnostic.Report, color bool) []byte {
 		}
 	}
 
-	if r.Summary.Critical+r.Summary.Warning+r.Summary.Unknown > 0 {
+	if r.Summary.Critical+r.Summary.Warning+r.Summary.Info+r.Summary.Unknown > 0 {
 		b.WriteString("\n")
 	}
 
@@ -104,6 +114,7 @@ func Text(r diagnostic.Report, color bool) []byte {
 const (
 	ansiReset  = "\x1b[0m"
 	ansiGreen  = "\x1b[32m"
+	ansiBlue   = "\x1b[34m"
 	ansiYellow = "\x1b[33m"
 	ansiRed    = "\x1b[31m"
 	ansiCyan   = "\x1b[36m"
@@ -115,6 +126,8 @@ func textSymbol(s diagnostic.Status) string {
 	switch s {
 	case diagnostic.StatusPass:
 		return "✅"
+	case diagnostic.StatusInfo:
+		return "ℹ"
 	case diagnostic.StatusWarning:
 		return "⚠"
 	case diagnostic.StatusCritical:
@@ -130,6 +143,8 @@ func ansiColorFor(s diagnostic.Status) string {
 	switch s {
 	case diagnostic.StatusPass:
 		return ansiGreen
+	case diagnostic.StatusInfo:
+		return ansiBlue
 	case diagnostic.StatusWarning:
 		return ansiYellow
 	case diagnostic.StatusCritical:
@@ -145,6 +160,8 @@ func textStatusName(s diagnostic.Status) string {
 	switch s {
 	case diagnostic.StatusPass:
 		return "正常"
+	case diagnostic.StatusInfo:
+		return "需觀察"
 	case diagnostic.StatusWarning:
 		return "注意"
 	case diagnostic.StatusCritical:

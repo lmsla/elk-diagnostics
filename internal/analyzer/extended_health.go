@@ -26,6 +26,12 @@ func IndexingPressure(snapshot *collector.IndexingPressureSnapshot, t rules.Thre
 		return unknownStatic(res, "Indexing pressure 資料不可用", nil)
 	}
 	coverage := fmt.Sprintf("Nodes Stats: successful=%d/%d failed=%d returned=%d", snapshot.Coverage.Successful, snapshot.Coverage.Total, snapshot.Coverage.Failed, snapshot.Coverage.Returned)
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.nodes.indexing_pressure.total", float64(snapshot.Coverage.Total), "count", "", "", "", ""),
+		gauge("elasticsearch.nodes.indexing_pressure.successful", float64(snapshot.Coverage.Successful), "count", "", "", "", ""),
+		gauge("elasticsearch.nodes.indexing_pressure.failed", float64(snapshot.Coverage.Failed), "count", "", "", "", ""),
+		gauge("elasticsearch.nodes.indexing_pressure.returned", float64(snapshot.Coverage.Returned), "count", "", "", "", ""),
+	)
 	if !snapshot.Coverage.Complete() {
 		return unknownStatic(res, "Indexing pressure Nodes API 回應不完整，無法判定所有節點", []string{coverage})
 	}
@@ -42,6 +48,13 @@ func IndexingPressure(snapshot *collector.IndexingPressureSnapshot, t rules.Thre
 		combinedPct := int(100 * float64(*node.CombinedCoordinatingPrimary) / float64(*node.LimitBytes))
 		// Elastic 的 replica rejection 上限是 coordinating+primary limit 的 1.5 倍。
 		replicaPct := int(100 * float64(*node.ReplicaBytes) / (1.5 * float64(*node.LimitBytes)))
+		res.Measurements = append(res.Measurements,
+			gauge("elasticsearch.node.indexing_pressure.combined", float64(*node.CombinedCoordinatingPrimary), "bytes", "node", node.ID, name, ""),
+			gauge("elasticsearch.node.indexing_pressure.replica", float64(*node.ReplicaBytes), "bytes", "node", node.ID, name, ""),
+			gauge("elasticsearch.node.indexing_pressure.limit", float64(*node.LimitBytes), "bytes", "node", node.ID, name, ""),
+			gauge("elasticsearch.node.indexing_pressure.combined_pct", float64(combinedPct), "percent", "node", node.ID, name, ""),
+			gauge("elasticsearch.node.indexing_pressure.replica_pct", float64(replicaPct), "percent", "node", node.ID, name, ""),
+		)
 		pct := combinedPct
 		if replicaPct > pct {
 			pct = replicaPct
@@ -77,6 +90,7 @@ func IndexingPressure(snapshot *collector.IndexingPressureSnapshot, t rules.Thre
 
 func IndexReadWriteBlocks(blocks []collector.IndexBlock) diagnostic.Result {
 	res := diagnostic.Result{ID: "index_read_write_blocks", Title: "Index read/write blocks", Category: "data", Source: "raw_api", Docs: []string{docIndexBlocks}}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.index.blocked.count", float64(len(blocks)), "count", "", "", "", ""))
 	if len(blocks) == 0 {
 		return pass(res, "非系統 index 未設定 read/write/metadata block")
 	}
@@ -109,6 +123,12 @@ func IndexReadWriteBlocks(blocks []collector.IndexBlock) diagnostic.Result {
 
 func CCRHealth(stats collector.CCRStats, t rules.Thresholds) diagnostic.Result {
 	res := diagnostic.Result{ID: "ccr_health", Title: "CCR follower / auto-follow 健康", Category: "replication", Source: "raw_api", Docs: []string{docCCRStats}}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.ccr.follower.count", float64(len(stats.Followers)), "count", "", "", "", ""),
+		counter("elasticsearch.ccr.auto_follow.failed_indices", float64(stats.FailedFollowIndices), "count", "", "", "", ""),
+		counter("elasticsearch.ccr.auto_follow.failed_remote_state", float64(stats.FailedRemoteStateRequests), "count", "", "", "", ""),
+		gauge("elasticsearch.ccr.auto_follow.recent_error.count", float64(len(stats.RecentAutoFollowErrors)), "count", "", "", "", ""),
+	)
 	if len(stats.Followers) == 0 && stats.FailedFollowIndices == 0 && stats.FailedRemoteStateRequests == 0 && len(stats.RecentAutoFollowErrors) == 0 {
 		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
 		res.Summary = "未偵測到 CCR follower 或 auto-follow 活動"
@@ -116,6 +136,11 @@ func CCRHealth(stats collector.CCRStats, t rules.Thresholds) diagnostic.Result {
 	}
 	var critical, warning []string
 	for _, follower := range stats.Followers {
+		res.Measurements = append(res.Measurements,
+			gauge("elasticsearch.ccr.follower.checkpoint_lag", float64(follower.GlobalCheckpointLag), "count", "index", follower.Index, follower.Index, ""),
+			gauge("elasticsearch.ccr.follower.fatal_error.count", float64(len(follower.FatalErrors)), "count", "index", follower.Index, follower.Index, ""),
+			gauge("elasticsearch.ccr.follower.read_error.count", float64(len(follower.ReadErrors)), "count", "index", follower.Index, follower.Index, ""),
+		)
 		if len(follower.FatalErrors) > 0 || len(follower.ReadErrors) > 0 {
 			critical = append(critical, fmt.Sprintf("%s：fatal=%v read=%v", follower.Index, follower.FatalErrors, follower.ReadErrors))
 		}
@@ -155,6 +180,10 @@ func CCRFeatureUnavailable() diagnostic.Result {
 
 func MLHealth(jobs []collector.MLJob, feeds []collector.MLDatafeed) diagnostic.Result {
 	res := diagnostic.Result{ID: "ml_jobs_datafeeds", Title: "ML jobs / datafeeds 狀態", Category: "machine_learning", Source: "raw_api", Docs: []string{docMLJobStats, docMLDatafeedStats}}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.ml.job.count", float64(len(jobs)), "count", "", "", "", ""),
+		gauge("elasticsearch.ml.datafeed.count", float64(len(feeds)), "count", "", "", "", ""),
+	)
 	if len(jobs) == 0 && len(feeds) == 0 {
 		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
 		res.Summary = "未設定 anomaly detection job 或 datafeed"
@@ -186,6 +215,14 @@ func MLHealth(jobs []collector.MLJob, feeds []collector.MLDatafeed) diagnostic.R
 			warning = append(warning, finding+" assignment="+feed.AssignmentExplanation)
 		}
 	}
+	stateKeys := make([]string, 0, len(states))
+	for state := range states {
+		stateKeys = append(stateKeys, state)
+	}
+	sort.Strings(stateKeys)
+	for _, state := range stateKeys {
+		res.Measurements = append(res.Measurements, gauge("elasticsearch.ml.state.count", float64(states[state]), "count", "", "", "", state))
+	}
 	res.Findings = append(critical, warning...)
 	switch {
 	case len(critical) > 0:
@@ -215,11 +252,13 @@ func MLFeatureUnavailable() diagnostic.Result {
 
 func PlannedShutdownHealth(nodes []collector.PlannedShutdown) diagnostic.Result {
 	res := diagnostic.Result{ID: "planned_shutdown", Title: "Planned shutdown 登記狀態", Category: "cluster", Source: "raw_api", Docs: []string{docPlannedShutdown}}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.planned_shutdown.count", float64(len(nodes)), "count", "", "", "", ""))
 	if len(nodes) == 0 {
 		return pass(res, "沒有已登記的 planned shutdown")
 	}
 	var critical, warning []string
 	for _, node := range nodes {
+		res.Measurements = append(res.Measurements, gauge("elasticsearch.node.planned_shutdown.shard_migrations_remaining", float64(node.ShardMigrationsRemaining), "count", "node", node.NodeID, node.NodeID, ""))
 		finding := fmt.Sprintf("node=%s type=%s status=%s shard_migration=%s remaining=%d persistent_tasks=%s plugins=%s reason=%s",
 			node.NodeID, node.Type, node.Status, node.ShardMigrationStatus, node.ShardMigrationsRemaining, node.PersistentTasksStatus, node.PluginsStatus, node.Reason)
 		if strings.EqualFold(node.Status, "stalled") || strings.EqualFold(node.ShardMigrationStatus, "stalled") || strings.EqualFold(node.PersistentTasksStatus, "stalled") {
@@ -251,6 +290,7 @@ func PlannedShutdownUnavailable(status int) diagnostic.Result {
 
 func VotingExclusionsHealth(exclusions []collector.VotingExclusion) diagnostic.Result {
 	res := diagnostic.Result{ID: "voting_config_exclusions", Title: "Voting configuration exclusions", Category: "cluster", Source: "raw_api", Docs: []string{docVotingExclusions}}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.cluster.voting_exclusion.count", float64(len(exclusions)), "count", "", "", "", ""))
 	if len(exclusions) == 0 {
 		return pass(res, "沒有尚未清除的 voting configuration exclusion")
 	}

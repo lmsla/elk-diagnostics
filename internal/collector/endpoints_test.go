@@ -20,7 +20,7 @@ func TestEndpoints_NoDuplicates(t *testing.T) {
 			t.Errorf("File 重複: %s（會蓋掉另一個端點的資料）", e.File)
 		}
 		if e.Purpose == "" {
-			t.Errorf("%s 缺 Purpose（客戶導入審查的 API 清單要靠它自我說明）", e.Path)
+			t.Errorf("%s 缺 Purpose（使用者導入審查的 API 清單要靠它自我說明）", e.Path)
 		}
 		seenPath[e.Path] = true
 		seenFile[e.File] = true
@@ -38,6 +38,7 @@ func TestNodeFanOutEndpointsHaveServerSideTimeout(t *testing.T) {
 		EpNodesRuntime,
 		EpNodesTopology,
 		EpNodesIndexingPressure,
+		EpNodesFielddata,
 	}
 	for _, path := range paths {
 		u, err := url.Parse(path)
@@ -79,8 +80,8 @@ func TestNewFromBundle(t *testing.T) {
 		if err != nil {
 			t.Fatalf("NewFromBundle() 失敗: %v", err)
 		}
-		if c.Version() != "8.14.3" || c.ClusterName() != "test" {
-			t.Errorf("version=%q cluster=%q", c.Version(), c.ClusterName())
+		if c.Version() != "8.14.3" || c.ClusterName() != "test" || c.ClusterUUID() != "cluster-uuid" {
+			t.Errorf("version=%q cluster=%q uuid=%q", c.Version(), c.ClusterName(), c.ClusterUUID())
 		}
 	})
 

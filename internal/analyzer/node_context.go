@@ -138,6 +138,44 @@ func NodeAPICoverage(snapshot *nodecontext.Snapshot) diagnostic.Result {
 	return unknownNodeContext(res, "Nodes API 回應不完整，無法宣稱已涵蓋所有節點", findings)
 }
 
+// ExpectedESNodeCoverage 用明確提供的 node.name 基準找出採集前就已離線的節點。
+// IP 與 roles 仍由 Nodes API 回傳，不納入人工維護的比對條件。
+func ExpectedESNodeCoverage(expected []string, snapshot *nodecontext.Snapshot) diagnostic.Result {
+	res := diagnostic.Result{ID: "expected_es_node_coverage", Title: "預期 ES 節點完整性", Category: "node", Source: "raw_api", Docs: []string{docNodeInfo}}
+	if len(expected) == 0 {
+		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
+		res.Summary = "未提供預期 ES 節點清單；只能確認目前在線節點，無法判斷採集前已離線節點"
+		return res
+	}
+
+	observed := map[string]bool{}
+	if snapshot != nil {
+		for _, node := range snapshot.Nodes {
+			if node.Name != "" {
+				observed[node.Name] = true
+			}
+		}
+	}
+	res.Measurements = []diagnostic.Measurement{
+		{Metric: "elasticsearch.nodes.expected", Kind: "gauge", Value: float64(len(expected)), Unit: "count", EntityType: "cluster"},
+		{Metric: "elasticsearch.nodes.observed", Kind: "gauge", Value: float64(len(observed)), Unit: "count", EntityType: "cluster"},
+	}
+	if snapshot == nil || !snapshot.StatsCoverage.Complete() {
+		return unknownNodeContext(res, "Nodes Stats 回應不完整，不能把未回應節點直接判定為缺失", nil)
+	}
+
+	missing := nodecontext.MissingExpectedNames(expected, snapshot)
+	res.Measurements = append(res.Measurements, diagnostic.Measurement{Metric: "elasticsearch.nodes.missing", Kind: "gauge", Value: float64(len(missing)), Unit: "count", EntityType: "cluster"})
+	if len(missing) == 0 {
+		return pass(res, fmt.Sprintf("預期的 %d 個 ES 節點均有回應", len(expected)))
+	}
+	res.Status, res.Conclusion = diagnostic.StatusCritical, diagnostic.ConclusionConfirmed
+	res.Summary = fmt.Sprintf("預期 %d 個 ES 節點，目前回應 %d 個，缺少 %d 個", len(expected), len(observed), len(missing))
+	res.Findings = []string{"缺失節點：" + strings.Join(missing, "、")}
+	res.Recommendations = []diagnostic.Recommendation{{Desc: "確認缺失節點的 Elasticsearch 服務、網路連線與維護狀態"}}
+	return res
+}
+
 func NodeSwapUsage(nodes []nodecontext.Node) diagnostic.Result {
 	res := diagnostic.Result{ID: "node_swap_usage", Title: "節點 Swap 使用", Category: "node", Source: "raw_api", Docs: []string{docSwap}}
 	var hits, missing []string

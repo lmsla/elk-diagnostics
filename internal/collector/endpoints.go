@@ -5,7 +5,7 @@ package collector
 // 這張表同時服務多個用途，故不能與 collector 實際呼叫的字串有任何落差：
 //  1. `--from-bundle` 離線分析：path → bundle 目錄中的檔名
 //  2. golden test 的 fixture 回放（原本各自維護一份，已改為共用本表）
-//  3. 後續：產生採集腳本（`collect.sh`）與客戶導入審查用的 API 清單
+//  3. 後續：產生採集腳本（`collect.sh`）與使用者導入審查用的 API 清單
 //
 // **為了讓「表」與「實際呼叫」不可能漂移，collector 各方法一律使用本檔的常數，
 // 不再各自寫字面字串。** 否則這張表會變成新一輪靜默錯誤的來源——2026-07-15 的
@@ -18,11 +18,11 @@ const (
 	EpClusterSettings    = "/_cluster/settings?include_defaults=true&flat_settings=true"
 	EpAllocationExplain  = "/_cluster/allocation/explain"
 	EpNodesRoles         = "/_nodes?timeout=5s&filter_path=nodes.*.roles"
-	EpNodesResourceStats = "/_nodes/stats/os,process,fs,jvm?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.cpu,nodes.*.os.load_average,nodes.*.os.mem,nodes.*.os.swap,nodes.*.os.cgroup,nodes.*.process.cpu,nodes.*.process.mem,nodes.*.process.open_file_descriptors,nodes.*.process.max_file_descriptors,nodes.*.fs.total,nodes.*.fs.data,nodes.*.fs.io_stats,nodes.*.jvm.uptime_in_millis,nodes.*.jvm.mem,nodes.*.jvm.gc"
+	EpNodesResourceStats = "/_nodes/stats/os,process,fs,jvm?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.ip,nodes.*.roles,nodes.*.os.cpu,nodes.*.os.load_average,nodes.*.os.mem,nodes.*.os.swap,nodes.*.os.cgroup,nodes.*.process.cpu,nodes.*.process.mem,nodes.*.process.open_file_descriptors,nodes.*.process.max_file_descriptors,nodes.*.fs.total,nodes.*.fs.data,nodes.*.fs.io_stats,nodes.*.jvm.uptime_in_millis,nodes.*.jvm.mem,nodes.*.jvm.gc"
 	// EpNodesJVMOldPool 保留舊名稱，既有 analyzer 與舊 bundle 的 JVM 診斷不必分岔；
 	// 實際端點已擴充成完整 node resource stats，檔名仍維持 nodes_stats_jvm.json。
 	EpNodesJVMOldPool       = EpNodesResourceStats
-	EpNodesResourceInfo     = "/_nodes/os,process?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall"
+	EpNodesResourceInfo     = "/_nodes/os,process?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.ip,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall"
 	EpNodesBreakers         = "/_nodes/stats/breaker?timeout=5s&filter_path=nodes.*.name,nodes.*.breakers"
 	EpNodesIngest           = "/_nodes/stats/ingest?timeout=5s&filter_path=nodes.*.ingest.pipelines"
 	EpCatNodes              = "/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent"
@@ -35,6 +35,7 @@ const (
 	EpIlmStatus             = "/_ilm/status"
 	EpIlmExplainErrors      = "/_all/_ilm/explain?only_errors=true&only_managed=true"
 	EpIlmExplainManaged     = "/_all/_ilm/explain?only_managed=true"
+	EpILMPolicies           = "/_ilm/policy?filter_path=*.version,*.modified_date_millis,*.policy.phases,*.in_use_by"
 	EpWatcherStats          = "/_watcher/stats"
 	EpTransformStats        = "/_transform/_stats"
 	EpRemoteInfo            = "/_remote/info"
@@ -43,8 +44,11 @@ const (
 	EpPendingTasks          = "/_cluster/pending_tasks"
 	EpRunningTasks          = "/_tasks?timeout=5s&detailed=true&group_by=none&filter_path=tasks.*.node,tasks.*.type,tasks.*.action,tasks.*.description,tasks.*.running_time_in_nanos,tasks.*.cancellable"
 	EpCatShardsSizing       = "/_cat/shards?format=json&bytes=b&h=index,shard,prirep,state,node,store,docs"
-	EpSLMPolicies           = "/_slm/policy?filter_path=*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed"
+	EpSLMPolicies           = "/_slm/policy?filter_path=*.policy.repository,*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed"
+	EpSnapshotRepositories  = "/_snapshot/_all?filter_path=*.type,*.uuid"
+	EpDataStreams           = "/_data_stream?filter_path=data_streams.name,data_streams.status,data_streams.template,data_streams.generation,data_streams.ilm_policy,data_streams.next_generation_managed_by,data_streams.indices.index_name,data_streams.indices.ilm_policy,data_streams.indices.managed_by"
 	EpNodesRuntime          = "/_nodes/jvm,plugins?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.version,nodes.*.build_hash,nodes.*.jvm.version,nodes.*.jvm.vm_version,nodes.*.jvm.mem.heap_init_in_bytes,nodes.*.jvm.mem.heap_max_in_bytes,nodes.*.plugins.name,nodes.*.plugins.version"
+	EpNodesFielddata        = "/_nodes/stats/indices/fielddata?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.indices.fielddata.memory_size_in_bytes,nodes.*.indices.fielddata.evictions"
 	EpSSLCertificates       = "/_ssl/certificates"
 	EpLicense               = "/_license?filter_path=license.status,license.type,license.issued_to,license.expiry_date_in_millis"
 	EpNodesTopology         = "/_nodes?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.attributes"
@@ -57,7 +61,7 @@ const (
 )
 
 // Endpoint 是 check 會呼叫的單一唯讀端點。Purpose 供 API 清單與採集腳本註解使用，
-// 寫給客戶的資安/導入審查人員看，故用途要寫得具體、可自我說明（見 設定規格 §唯讀）。
+// 寫給使用者的資安/導入審查人員看，故用途要寫得具體、可自我說明（見 設定規格 §唯讀）。
 type Endpoint struct {
 	Path    string
 	File    string
@@ -70,6 +74,7 @@ var Endpoints = []Endpoint{
 	{EpHealthReport, "health_report.json", "叢集健康總表，A/B 類診斷的地基"},
 	{EpIlmStatus, "ilm_status.json", "ILM 服務狀態（RUNNING/STOPPING/STOPPED）"},
 	{EpIlmExplainErrors, "ilm_explain_errors.json", "卡在 ERROR step 的 index（health_report 的 ilm indicator 會延遲，須直接問）"},
+	{EpILMPolicies, "ilm_policies.json", "ILM policy 的 phase/action 與使用關聯（不含文件內容）"},
 	{EpCatThreadPool, "cat_thread_pool.json", "thread pool 佇列與拒絕數"},
 	{EpNodesResourceStats, "nodes_stats_jvm.json", "各節點 OS／process／filesystem／JVM 快照與 JVM old pool 記憶體壓力"},
 	{EpNodesResourceInfo, "nodes_info_os_process.json", "各節點 OS 版本／架構／processors、PID 與 memory lock 狀態"},
@@ -95,7 +100,10 @@ var Endpoints = []Endpoint{
 	{EpRunningTasks, "running_tasks.json", "目前執行中的 task 與執行時間（不採集 request body/header）"},
 	{EpCatShardsSizing, "cat_shards_sizing.json", "各 shard 大小、文件數與配置節點（shard sizing）"},
 	{EpSLMPolicies, "slm_policies.json", "SLM policy 最近成功／失敗時間與下次執行時間"},
+	{EpSnapshotRepositories, "snapshot_repositories.json", "Snapshot repository 名稱與類型（不採集 location/bucket 等 settings）"},
+	{EpDataStreams, "data_streams.json", "Data stream 健康、backing index、template 與生命週期管理關聯"},
 	{EpNodesRuntime, "nodes_runtime.json", "各節點 ES/JDK/heap/plugin 一致性與 Nodes API coverage"},
+	{EpNodesFielddata, "nodes_fielddata.json", "各節點 fielddata cache 記憶體與 eviction 累積值"},
 	{EpSSLCertificates, "ssl_certificates.json", "回應節點載入的 TLS 憑證與到期日（單節點視角）"},
 	{EpLicense, "license.json", "叢集 License 狀態、類型與到期日"},
 	{EpNodesTopology, "nodes_topology.json", "節點角色與 allocation awareness attributes"},

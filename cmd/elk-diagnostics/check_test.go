@@ -76,6 +76,24 @@ func TestUnknownFromBundleWording(t *testing.T) {
 	}
 }
 
+func TestOptionalUnknownFromPreservesPermissionSemantics(t *testing.T) {
+	zero := diagnostic.Result{ID: "ilm_policy_inventory", Title: "ILM Policy 設定概況", Category: "management"}
+	permissionErr := &collector.HTTPStatusError{Status: 403, Path: collector.EpILMPolicies}
+	got := optionalUnknownFrom(zero, permissionErr, true, "cluster read_ilm")
+	if got.Status != diagnostic.StatusUnknown || got.Summary != "帳號權限不足，無法判定" {
+		t.Fatalf("403 result = %+v", got)
+	}
+	if len(got.Recommendations) != 1 || got.Recommendations[0].Desc == "" {
+		t.Fatalf("403 應提供最小權限提示: %+v", got.Recommendations)
+	}
+
+	notFoundErr := &collector.HTTPStatusError{Status: 404, Path: collector.EpILMPolicies}
+	got = optionalUnknownFrom(zero, notFoundErr, false, "cluster read_ilm")
+	if got.Status != diagnostic.StatusUnknown || got.Summary != "此版本、功能或端點不可用，無法判定" {
+		t.Fatalf("404 result = %+v", got)
+	}
+}
+
 func TestSnapshotReferenceTime(t *testing.T) {
 	fallback := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
 	if got := snapshotReferenceTime("2026-07-20T03:04:05Z", fallback); !got.Equal(time.Date(2026, 7, 20, 3, 4, 5, 0, time.UTC)) {

@@ -2,6 +2,8 @@
 // 這是內部領域模型：collector 只負責填值，analyzer 下判斷，reporter 只呈現。
 package nodecontext
 
+import "sort"
+
 // Coverage 是單一 Nodes API 的回應完整性。Available=false 表示回應沒有可驗證的
 // _nodes 統計；此時其餘數值不得被解讀為 0 個失敗。
 type Coverage struct {
@@ -22,12 +24,42 @@ type Snapshot struct {
 	StatsCoverage Coverage `json:"stats_coverage"`
 	InfoCoverage  Coverage `json:"info_coverage"`
 	Nodes         []Node   `json:"nodes"`
+	MissingNodes  []string `json:"missing_nodes,omitempty"`
 	Issues        []string `json:"issues,omitempty"`
+}
+
+// MissingExpectedNames compares a caller-provided node.name inventory with the
+// names returned by Nodes Stats. Callers must check StatsCoverage.Complete
+// before using the result; an incomplete response cannot prove a node is absent.
+func MissingExpectedNames(expected []string, snapshot *Snapshot) []string {
+	if len(expected) == 0 || snapshot == nil {
+		return nil
+	}
+	observed := make(map[string]bool, len(snapshot.Nodes))
+	for _, node := range snapshot.Nodes {
+		if node.Name != "" {
+			observed[node.Name] = true
+		}
+	}
+	seen := make(map[string]bool, len(expected))
+	missing := make([]string, 0, len(expected))
+	for _, name := range expected {
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		if !observed[name] {
+			missing = append(missing, name)
+		}
+	}
+	sort.Strings(missing)
+	return missing
 }
 
 type Node struct {
 	ID             string     `json:"id"`
 	Name           string     `json:"name"`
+	IP             string     `json:"ip,omitempty"`
 	Roles          []string   `json:"roles,omitempty"`
 	StatsAvailable bool       `json:"stats_available"`
 	InfoAvailable  bool       `json:"info_available"`

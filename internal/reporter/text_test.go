@@ -12,6 +12,10 @@ func sampleReport() diagnostic.Report {
 	results := []diagnostic.Result{
 		{ID: "cluster_health", Title: "叢集健康 / 未分配 shard", Status: diagnostic.StatusWarning,
 			Summary: "This cluster has 7 unavailable replica shards.", Findings: []string{"詳情第一條"}},
+		{ID: "fielddata_memory", Title: "Fielddata 記憶體", Status: diagnostic.StatusInfo,
+			Summary: "2 個節點曾發生 fielddata cache eviction，需觀察", Findings: []string{"evictions 是累積值"},
+			Docs:          []string{"https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-fielddata.html"},
+			JudgmentGuide: []diagnostic.JudgmentGuide{{Condition: "單次 evictions > 0", Interpretation: "不能單獨判定故障"}, {Condition: "一段時間內持續增加", Interpretation: "可能有 cache churn，需觀察"}}},
 		{ID: "data_allocation_blocked", Title: "叢集層級 shard 分配封鎖", Status: diagnostic.StatusUnknown,
 			Summary: "資料抓取失敗，無法判定", Findings: []string{"bundle 缺少 cluster_settings.json"}},
 		{ID: "red_cluster", Title: "叢集為 RED", Status: diagnostic.StatusCritical,
@@ -58,13 +62,14 @@ func TestText_NonPassItemsListedWithFindingIndent(t *testing.T) {
 	}
 }
 
-func TestText_CriticalBeforeWarningBeforeUnknown(t *testing.T) {
+func TestText_CriticalBeforeWarningBeforeInfoBeforeUnknown(t *testing.T) {
 	out := string(Text(sampleReport(), false))
 	iCrit := strings.Index(out, "叢集為 RED")
 	iWarn := strings.Index(out, "叢集健康 / 未分配 shard")
+	iInfo := strings.Index(out, "Fielddata 記憶體")
 	iUnk := strings.Index(out, "叢集層級 shard 分配封鎖")
-	if !(iCrit < iWarn && iWarn < iUnk) {
-		t.Errorf("排序應為 critical → warning → unknown，got 位置 crit=%d warn=%d unk=%d", iCrit, iWarn, iUnk)
+	if !(iCrit < iWarn && iWarn < iInfo && iInfo < iUnk) {
+		t.Errorf("排序應為 critical → warning → info → unknown，got 位置 crit=%d warn=%d info=%d unk=%d", iCrit, iWarn, iInfo, iUnk)
 	}
 }
 

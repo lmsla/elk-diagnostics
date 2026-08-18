@@ -20,6 +20,7 @@ func TestCheckFromBundle_ManifestPresent(t *testing.T) {
 	manifest := `{
   "collect_script_version": "0.0.5",
   "collected_at": "2026-07-16T02:10:00Z",
+  "services": ["elasticsearch", "kibana"],
   "host": "https://es.example.local:9200",
   "endpoints_total": 24
 }
@@ -44,6 +45,9 @@ func TestCheckFromBundle_ManifestPresent(t *testing.T) {
 	if report.Meta.CollectScriptVersion != "0.0.5" {
 		t.Errorf("Meta.CollectScriptVersion = %q, want 0.0.5", report.Meta.CollectScriptVersion)
 	}
+	if got := report.Meta.CollectedServices; len(got) != 2 || got[0] != "elasticsearch" || got[1] != "kibana" {
+		t.Errorf("Meta.CollectedServices = %v, want [elasticsearch kibana]", got)
+	}
 
 	htmlOut := filepath.Join(t.TempDir(), "report.html")
 	runCheck(newTestConnFlags(t, nil, "", ""), "", bundle, "html", htmlOut, false)
@@ -53,6 +57,9 @@ func TestCheckFromBundle_ManifestPresent(t *testing.T) {
 	}
 	if !strings.Contains(string(hb), "2026-07-16T02:10:00Z") {
 		t.Error("HTML 頁首應顯示採集時間")
+	}
+	if !strings.Contains(string(hb), "採集模組") || !strings.Contains(string(hb), "elasticsearch、kibana") {
+		t.Error("HTML 技術資訊應顯示採集模組")
 	}
 }
 

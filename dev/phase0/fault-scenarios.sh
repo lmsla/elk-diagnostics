@@ -1,7 +1,7 @@
 #!/bin/sh
 # 本機真機驗證用故障控制器。
 #
-# 只允許操作可丟棄的 elk-diagnostics 測試叢集；禁止用於客戶或共用環境。
+# 只允許操作可丟棄的 elk-diagnostics 測試叢集；禁止用於使用者環境或共用環境。
 # 每個案例提供三個動作：trigger（製造故障）、verify（以 ES API 確認故障成立）、
 # restore（復原）。診斷與報告不在此腳本內，避免 Live／Bundle 路線耦合。
 

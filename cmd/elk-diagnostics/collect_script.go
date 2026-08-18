@@ -28,14 +28,14 @@ type collectScriptEndpoint struct {
 func newCollectScriptCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "collect-script",
-		Short: "產生客戶環境用的採集腳本（純 curl，不需安裝本工具）",
+		Short: "產生使用者環境用的採集腳本（純 curl，不需安裝本工具）",
 		Long: `印出一份 POSIX sh 採集腳本到 stdout。
 
-腳本在客戶環境執行，只用 curl 送出唯讀 GET 並把原始回應存成 bundle 目錄；
-之後在自己的機器上以 check --from-bundle 分析。客戶不需要執行本二進位檔。
+腳本在使用者環境執行，只用 curl 送出唯讀 GET 並把原始回應存成 bundle 目錄；
+之後在自己的機器上以 check --from-bundle 分析。使用者不需要執行本二進位檔。
 
   elk-diagnostics collect-script > collect.sh
-  # 交付 collect.sh 給客戶或在跳板機執行`,
+  # 交付 collect.sh 給使用者或在跳板機執行`,
 	}
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		s, err := renderCollectScript()
@@ -72,17 +72,23 @@ func renderCollectScript() (string, error) {
 	}
 	var b strings.Builder
 	err = t.Execute(&b, struct {
-		ToolVersion  string
-		Total        int
-		StatusFile   string
-		ManifestFile string
-		Endpoints    []collectScriptEndpoint
+		ToolVersion         string
+		Total               int
+		SchemaVersion       int
+		StatusFile          string
+		ManifestFile        string
+		ElasticsearchDir    string
+		ExpectedESNodesFile string
+		Endpoints           []collectScriptEndpoint
 	}{
-		ToolVersion:  toolVersion,
-		Total:        len(collector.Endpoints),
-		StatusFile:   collector.BundleStatusFile,
-		ManifestFile: collector.BundleManifestFile,
-		Endpoints:    endpoints,
+		ToolVersion:         toolVersion,
+		Total:               len(collector.Endpoints),
+		SchemaVersion:       collector.BundleSchemaVersion,
+		StatusFile:          collector.BundleStatusFile,
+		ManifestFile:        collector.BundleManifestFile,
+		ElasticsearchDir:    collector.BundleElasticsearchDir,
+		ExpectedESNodesFile: collector.BundleExpectedESNodesFile,
+		Endpoints:           endpoints,
 	})
 	if err != nil {
 		return "", err
@@ -108,7 +114,8 @@ func collectMaxTimeSeconds(path string) int {
 		collector.EpRunningTasks,
 		collector.EpNodesRuntime,
 		collector.EpNodesTopology,
-		collector.EpNodesIndexingPressure:
+		collector.EpNodesIndexingPressure,
+		collector.EpNodesFielddata:
 		return fanOutCollectMaxTimeSeconds
 	default:
 		return defaultCollectMaxTimeSeconds

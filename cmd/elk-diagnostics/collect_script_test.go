@@ -14,7 +14,7 @@ import (
 	"elk-diagnostics/internal/collector"
 )
 
-// 這支腳本是交到客戶手上、在客戶正式環境執行的東西，且它的全部價值就是「資安人員
+// 這支腳本是交到使用者手上、在使用者正式環境執行的東西，且它的全部價值就是「資安人員
 // 讀得懂、敢放行」，因此語法與內容都要鎖住。
 
 // checkedInScript 是 repo 根目錄下 checked in 的那份 collect.sh。
@@ -45,7 +45,7 @@ func TestCollectScript_CheckedInCopyIsExecutable(t *testing.T) {
 		t.Fatal(err)
 	}
 	if fi.Mode().Perm()&0o111 == 0 {
-		t.Error("collect.sh 應具執行權限（客戶拿到後要能直接 ./collect.sh）")
+		t.Error("collect.sh 應具執行權限（使用者拿到後要能直接 ./collect.sh）")
 	}
 }
 
@@ -112,6 +112,7 @@ func TestCollectScript_BoundsNodeFanOutRequests(t *testing.T) {
 		collector.EpNodesRuntime:          true,
 		collector.EpNodesTopology:         true,
 		collector.EpNodesIndexingPressure: true,
+		collector.EpNodesFielddata:        true,
 	}
 	for _, e := range collector.Endpoints {
 		timeout := defaultCollectMaxTimeSeconds
@@ -130,7 +131,7 @@ func TestCollectScript_IsReadOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// 唯讀是本工具的核心保證（specs 鐵律 1）。腳本在客戶正式環境執行，
+	// 唯讀是本工具的核心保證（specs 鐵律 1）。腳本在使用者正式環境執行，
 	// 任何寫入方法都不可接受。
 	for _, forbidden := range []string{"-XPOST", "-XPUT", "-XDELETE", "-X POST", "-X PUT", "-X DELETE", "--request"} {
 		if strings.Contains(s, forbidden) {
@@ -255,10 +256,12 @@ func TestCollectScript_WritesParsableManifest(t *testing.T) {
 		t.Fatalf("讀 %s 失敗: %v", manifestPath, err)
 	}
 	var manifest struct {
-		CollectScriptVersion string `json:"collect_script_version"`
-		CollectedAt          string `json:"collected_at"`
-		Host                 string `json:"host"`
-		EndpointsTotal       int    `json:"endpoints_total"`
+		BundleSchemaVersion  int      `json:"bundle_schema_version"`
+		CollectScriptVersion string   `json:"collect_script_version"`
+		CollectedAt          string   `json:"collected_at"`
+		Host                 string   `json:"host"`
+		EndpointsTotal       int      `json:"endpoints_total"`
+		Services             []string `json:"services"`
 	}
 	if err := json.Unmarshal(b, &manifest); err != nil {
 		t.Fatalf("_manifest.json 應可被 json.Unmarshal 解析: %v\n內容:\n%s", err, b)
@@ -266,17 +269,60 @@ func TestCollectScript_WritesParsableManifest(t *testing.T) {
 	if manifest.CollectScriptVersion != toolVersion {
 		t.Errorf("collect_script_version = %q, want %q", manifest.CollectScriptVersion, toolVersion)
 	}
+	if manifest.BundleSchemaVersion != collector.BundleSchemaVersion {
+		t.Errorf("bundle_schema_version = %d, want %d", manifest.BundleSchemaVersion, collector.BundleSchemaVersion)
+	}
+	if _, err := os.Stat(filepath.Join(out, collector.BundleElasticsearchDir, collector.FileOf(collector.EpRoot))); err != nil {
+		t.Errorf("v2 endpoint 應寫入 elasticsearch/ 目錄: %v", err)
+	}
 	if manifest.Host != srv.URL {
 		t.Errorf("host = %q, want %q", manifest.Host, srv.URL)
 	}
 	if manifest.EndpointsTotal != len(collector.Endpoints) {
 		t.Errorf("endpoints_total = %d, want %d", manifest.EndpointsTotal, len(collector.Endpoints))
 	}
+	if len(manifest.Services) != 1 || manifest.Services[0] != "elasticsearch" {
+		t.Errorf("services = %v, want [elasticsearch]", manifest.Services)
+	}
 	if manifest.CollectedAt == "" {
 		t.Error("collected_at 不應為空")
 	}
 	if !strings.HasSuffix(manifest.CollectedAt, "Z") {
 		t.Errorf("collected_at = %q, 應為 UTC（Z 結尾）", manifest.CollectedAt)
+	}
+}
+
+func TestCollectScriptEmbedsExpectedESNodesFile(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("本機未安裝 sh")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"cluster_name":"test","version":{"number":"8.14.3"}}`))
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	script := filepath.Join(tmp, "collect.sh")
+	s, err := renderCollectScript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte(s), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	expected := filepath.Join(tmp, "expected.txt")
+	if err := os.WriteFile(expected, []byte("node-a\nnode-b\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(tmp, "bundle")
+	cmd := exec.Command(sh, script, "-h", srv.URL, "-o", out, "--expected-es-nodes-file", expected)
+	if b, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("collect failed: %v\n%s", err, b)
+	}
+	b, err := os.ReadFile(filepath.Join(out, collector.BundleExpectedESNodesFile))
+	if err != nil || string(b) != "node-a\nnode-b\n" {
+		t.Fatalf("embedded expected nodes=%q err=%v", b, err)
 	}
 }
 

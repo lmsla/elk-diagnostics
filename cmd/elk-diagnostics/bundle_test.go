@@ -4,14 +4,16 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"elk-diagnostics/internal/collector"
 	"elk-diagnostics/internal/diagnostic"
 )
 
 // TestCheckFromBundle 用真機錄製的 fixture 目錄當 bundle，跑一次完整 check。
 //
-// 這是「採集與判斷分離」的端到端驗證：客戶環境只跑採集腳本產出 bundle，二進位檔在
+// 這是「採集與判斷分離」的端到端驗證：使用者環境只跑採集腳本產出 bundle，二進位檔在
 // 自己機器上分析——本測試證明後半段跟連線模式走的是同一套診斷邏輯。
 //
 // Phase 0 的 fixture 只錄了部分端點，正好同時驗到兩條路徑：有錄到的正常判定、
@@ -53,7 +55,7 @@ func TestCheckFromBundle(t *testing.T) {
 	}
 
 	// 沒錄到的端點：必須是 unknown。若是 pass，代表「查不到」又被講成「沒問題」。
-	for _, id := range []string{"mapping_explosion", "restore_status", "data_allocation_blocked"} {
+	for _, id := range []string{"mapping_explosion", "restore_status", "data_allocation_blocked", "ilm_policy_inventory", "snapshot_repository_references", "data_stream_health", "fielddata_memory"} {
 		r, ok := byID[id]
 		if !ok {
 			t.Errorf("%s 未出現在報告中（缺資料的診斷不該整條消失）", id)
@@ -66,6 +68,43 @@ func TestCheckFromBundle(t *testing.T) {
 
 	if report.Summary.Unknown == 0 {
 		t.Error("Summary.Unknown = 0，但 bundle 明顯缺端點——unknown 沒有被正確計數")
+	}
+}
+
+func TestCheckFromBundleUsesEmbeddedExpectedESNodes(t *testing.T) {
+	bundle := copyFixtureBundle(t, "es8-health")
+	b, err := os.ReadFile(filepath.Join(bundle, collector.FileOf(collector.EpNodesResourceStats)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var raw struct {
+		Nodes map[string]struct {
+			Name string `json:"name"`
+		} `json:"nodes"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		t.Fatal(err)
+	}
+	var observed string
+	for _, node := range raw.Nodes {
+		observed = node.Name
+		break
+	}
+	if observed == "" {
+		t.Fatal("fixture 未包含 node.name")
+	}
+	expected := observed + "\nnode-offline-before-collection\n"
+	if err := os.WriteFile(filepath.Join(bundle, collector.BundleExpectedESNodesFile), []byte(expected), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report, _ := runBundleCheck(t, bundle)
+	got := resultsByID(report.Results)["expected_es_node_coverage"]
+	if got.Status != diagnostic.StatusCritical || !strings.Contains(strings.Join(got.Findings, " "), "node-offline-before-collection") {
+		t.Fatalf("expected node coverage=%+v", got)
+	}
+	if len(report.NodeContext.MissingNodes) != 1 || report.NodeContext.MissingNodes[0] != "node-offline-before-collection" {
+		t.Fatalf("node context missing nodes=%v", report.NodeContext.MissingNodes)
 	}
 }
 
@@ -149,23 +188,58 @@ func TestCheckExtendedHealthFromBundle(t *testing.T) {
 	writeJSON(t, filepath.Join(bundle, "ml_datafeed_stats.json"), map[string]any{"count": 0, "datafeeds": []any{}})
 	writeJSON(t, filepath.Join(bundle, "planned_shutdown.json"), map[string]any{"nodes": []any{}})
 	writeJSON(t, filepath.Join(bundle, "voting_exclusions.json"), map[string]any{"metadata": map[string]any{"cluster_coordination": map[string]any{"voting_config_exclusions": []any{}}}})
+	writeJSON(t, filepath.Join(bundle, "slm_policies.json"), map[string]any{})
+	writeJSON(t, filepath.Join(bundle, "ilm_policies.json"), map[string]any{})
+	writeJSON(t, filepath.Join(bundle, "snapshot_repositories.json"), map[string]any{})
+	writeJSON(t, filepath.Join(bundle, "data_streams.json"), map[string]any{"data_streams": []any{}})
+	writeJSON(t, filepath.Join(bundle, "nodes_fielddata.json"), map[string]any{
+		"_nodes": map[string]any{"total": 1, "successful": 1, "failed": 0},
+		"nodes":  map[string]any{"a": map[string]any{"name": "n1", "indices": map[string]any{"fielddata": map[string]any{"memory_size_in_bytes": 0, "evictions": 0}}}},
+	})
 
 	report, _ := runBundleCheck(t, bundle)
 	byID := resultsByID(report.Results)
 	want := map[string]diagnostic.Status{
-		"indexing_pressure":        diagnostic.StatusPass,
-		"index_read_write_blocks":  diagnostic.StatusPass,
-		"recent_node_restart":      diagnostic.StatusPass,
-		"node_memory_lock":         diagnostic.StatusPass,
-		"ccr_health":               diagnostic.StatusSkipped,
-		"ml_jobs_datafeeds":        diagnostic.StatusSkipped,
-		"planned_shutdown":         diagnostic.StatusPass,
-		"voting_config_exclusions": diagnostic.StatusPass,
+		"indexing_pressure":              diagnostic.StatusPass,
+		"index_read_write_blocks":        diagnostic.StatusPass,
+		"recent_node_restart":            diagnostic.StatusPass,
+		"node_memory_lock":               diagnostic.StatusPass,
+		"ccr_health":                     diagnostic.StatusSkipped,
+		"ml_jobs_datafeeds":              diagnostic.StatusSkipped,
+		"planned_shutdown":               diagnostic.StatusPass,
+		"voting_config_exclusions":       diagnostic.StatusPass,
+		"ilm_policy_inventory":           diagnostic.StatusSkipped,
+		"snapshot_repository_references": diagnostic.StatusSkipped,
+		"data_stream_health":             diagnostic.StatusSkipped,
+		"fielddata_memory":               diagnostic.StatusPass,
 	}
 	for id, status := range want {
 		if got, ok := byID[id]; !ok || got.Status != status {
 			t.Errorf("%s = %+v, want status=%s", id, got, status)
 		}
+	}
+}
+
+func TestCheckEnrichment403DegradesWithoutAborting(t *testing.T) {
+	bundle := copyFixtureBundle(t, "es8-health")
+	for _, file := range []string{"ilm_policies.json", "snapshot_repositories.json", "data_streams.json", "nodes_fielddata.json"} {
+		writeJSON(t, filepath.Join(bundle, file), map[string]any{"error": map[string]any{"reason": "forbidden"}, "status": 403})
+	}
+	status := "version.json 200\nilm_policies.json 403\nsnapshot_repositories.json 403\ndata_streams.json 403\nnodes_fielddata.json 403\n"
+	if err := os.WriteFile(filepath.Join(bundle, collector.BundleStatusFile), []byte(status), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	report, _ := runBundleCheck(t, bundle)
+	byID := resultsByID(report.Results)
+	for _, id := range []string{"ilm_policy_inventory", "snapshot_repository_references", "data_stream_health", "fielddata_memory"} {
+		got, ok := byID[id]
+		if !ok || got.Status != diagnostic.StatusUnknown || got.Summary != "帳號權限不足，無法判定" {
+			t.Errorf("%s = %+v, want permission unknown", id, got)
+		}
+	}
+	if got := byID["cluster_health"].Status; got != diagnostic.StatusPass {
+		t.Errorf("其他診斷不應因選配 API 403 中止：cluster_health=%s", got)
 	}
 }
 

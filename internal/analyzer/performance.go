@@ -24,7 +24,14 @@ func RejectedRequests(rows []collector.ThreadPoolRow) diagnostic.Result {
 	res := diagnostic.Result{ID: "rejected_requests", Title: "請求拒絕 (thread pool)", Category: "performance", Source: "raw_api", Docs: []string{docRejected}}
 	var hits []string
 	for _, r := range rows {
-		if watchPools[r.Name] && r.Rejected > 0 {
+		if !watchPools[r.Name] {
+			continue
+		}
+		res.Measurements = append(res.Measurements,
+			counter("elasticsearch.node.thread_pool.rejected", float64(r.Rejected), "count", "node", r.Node, r.Node, r.Name),
+			counter("elasticsearch.node.thread_pool.completed", float64(r.Completed), "count", "node", r.Node, r.Node, r.Name),
+		)
+		if r.Rejected > 0 {
 			hits = append(hits, fmt.Sprintf("%s / %s：rejected=%d completed=%d", r.Node, r.Name, r.Rejected, r.Completed))
 		}
 	}
@@ -34,7 +41,7 @@ func RejectedRequests(rows []collector.ThreadPoolRow) diagnostic.Result {
 	res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
 	res.Summary = "search / write thread pool 出現拒絕（累積值，需間隔取樣比對差值確認是否持續）"
 	res.Findings = hits
-	res.RequiresExtra, res.ExtraReason = true, "rejected 為自節點啟動起的累積值；以 --interval 雙取樣比對差值才能確認當下是否持續"
+	res.RequiresExtra, res.ExtraReason = true, "rejected 為自節點啟動起的累積值；請以 Monitoring 或前後兩次採集比對差值，確認當下是否持續"
 	res.Recommendations = []diagnostic.Recommendation{{Desc: "降低 bulk / 搜尋批次大小、紓解 CPU/JVM 壓力、清理 task backlog"}}
 	return res
 }
@@ -45,6 +52,11 @@ func JVMPressure(nodes []collector.NodeJVM, t rules.Thresholds) diagnostic.Resul
 	res := diagnostic.Result{ID: "jvm_memory_pressure", Title: "JVM 記憶體壓力", Category: "performance", Source: "raw_api", Docs: []string{docJVM}}
 	var crit, warn []string
 	for _, n := range nodes {
+		res.Measurements = append(res.Measurements,
+			gauge("elasticsearch.node.jvm.old_pool.used", float64(n.UsedBytes), "bytes", "node", n.Name, n.Name, ""),
+			gauge("elasticsearch.node.jvm.old_pool.max", float64(n.MaxBytes), "bytes", "node", n.Name, n.Name, ""),
+			gauge("elasticsearch.node.jvm.old_pool.pressure", float64(n.PressurePct), "percent", "node", n.Name, n.Name, ""),
+		)
 		switch {
 		case n.PressurePct >= jvmCritPct:
 			crit = append(crit, fmt.Sprintf("%s：old pool 壓力 %d%%", n.Name, n.PressurePct))
@@ -73,6 +85,7 @@ func CircuitBreaker(nodes []collector.NodeBreaker) diagnostic.Result {
 	res := diagnostic.Result{ID: "circuit_breaker", Title: "Circuit breaker", Category: "performance", Source: "raw_api", Docs: []string{docBreaker}}
 	var hits []string
 	for _, n := range nodes {
+		res.Measurements = append(res.Measurements, counter("elasticsearch.node.breaker.tripped", float64(n.Tripped), "count", "node", n.Node, n.Node, n.Breaker))
 		if n.Tripped > 0 {
 			hits = append(hits, fmt.Sprintf("%s / %s breaker：tripped=%d", n.Node, n.Breaker, n.Tripped))
 		}
@@ -94,6 +107,10 @@ func HighCPU(nodes []collector.NodeCPU, t rules.Thresholds) diagnostic.Result {
 	res := diagnostic.Result{ID: "high_cpu", Title: "CPU 使用率", Category: "performance", Source: "raw_api", Docs: []string{docCPU}}
 	var hits []string
 	for _, n := range nodes {
+		res.Measurements = append(res.Measurements,
+			gauge("elasticsearch.node.cpu", float64(n.CPU), "percent", "node", n.Name, n.Name, ""),
+			gauge("elasticsearch.node.allocated_processors", float64(n.AllocatedProcessors), "count", "node", n.Name, n.Name, ""),
+		)
 		if n.CPU >= cpuWarnPct {
 			hits = append(hits, fmt.Sprintf("%s（%s）：cpu=%d%% load_1m=%s allocated_processors=%d", n.Name, n.Role, n.CPU, n.Load1m, n.AllocatedProcessors))
 		}
@@ -114,11 +131,26 @@ func TaskBacklog(rows []collector.ThreadPoolRow, t rules.Thresholds) diagnostic.
 	queueBacklog := t.Performance.QueueBacklog
 	res := diagnostic.Result{ID: "task_backlog", Title: "Thread pool 佇列積壓", Category: "performance", Source: "raw_api", Docs: []string{docTaskBacklog}}
 	var hits []string
+	maxQueue := 0
+	maxActive := 0
 	for _, r := range rows {
+		if r.Queue > maxQueue {
+			maxQueue = r.Queue
+		}
+		if r.Active > maxActive {
+			maxActive = r.Active
+		}
+		if r.Queue > 0 {
+			res.Measurements = append(res.Measurements, gauge("elasticsearch.node.thread_pool.queue", float64(r.Queue), "count", "node", r.Node, r.Node, r.Name))
+		}
 		if r.Queue >= queueBacklog {
 			hits = append(hits, fmt.Sprintf("%s / %s：queue=%d active=%d", r.Node, r.Name, r.Queue, r.Active))
 		}
 	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.thread_pool.queue.max", float64(maxQueue), "count", "", "", "", ""),
+		gauge("elasticsearch.thread_pool.active.max", float64(maxActive), "count", "", "", "", ""),
+	)
 	if len(hits) == 0 {
 		return pass(res, fmt.Sprintf("各 thread pool queue <%d", queueBacklog))
 	}
@@ -133,6 +165,7 @@ func TaskBacklog(rows []collector.ThreadPoolRow, t rules.Thresholds) diagnostic.
 // SlowLog #31：引導型。偵測 search slow log 是否開啟；未開則輸出開啟方式，不臆測慢查詢。
 func SlowLog(enabledIndices []string) diagnostic.Result {
 	res := diagnostic.Result{ID: "search_slow_log", Title: "Search slow log", Category: "performance", Source: "raw_api", Docs: []string{docSlowlog}}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.index.search_slowlog.enabled.count", float64(len(enabledIndices)), "count", "", "", "", ""))
 	if len(enabledIndices) > 0 {
 		res = pass(res, fmt.Sprintf("已於 %d 個 index 開啟 search slow log", len(enabledIndices)))
 		res.Findings = enabledIndices

@@ -19,7 +19,7 @@ func newTestClient(t *testing.T, handler http.HandlerFunc) *Client {
 	return c
 }
 
-const versionBody = `{"cluster_name":"test","version":{"number":"8.14.3"}}`
+const versionBody = `{"cluster_name":"test","cluster_uuid":"cluster-uuid","version":{"number":"8.14.3"}}`
 
 func TestGet_RetriesOnServerError(t *testing.T) {
 	orig := retryDelay

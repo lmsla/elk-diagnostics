@@ -66,6 +66,17 @@ func mapIndicator(hr *collector.HealthReport, s indicatorSpec) diagnostic.Result
 		res.Summary = fmt.Sprintf("此版本未提供 %q indicator", s.indicator)
 		return res
 	}
+	affected := map[string]bool{}
+	for _, diagnosis := range ind.Diagnosis {
+		for _, index := range diagnosis.AffectedResources.Indices {
+			affected[index] = true
+		}
+	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.health_report.diagnosis.count", float64(len(ind.Diagnosis)), "count", "", "", "", s.indicator),
+		gauge("elasticsearch.health_report.impact.count", float64(len(ind.Impacts)), "count", "", "", "", s.indicator),
+		gauge("elasticsearch.health_report.affected_index.count", float64(len(affected)), "count", "", "", "", s.indicator),
+	)
 
 	switch ind.Status {
 	case "green":
@@ -130,7 +141,7 @@ func HealthReportIndicatorIDs() []string {
 
 // HealthReportFetchFailed 在無法取得 _health_report 時（連線逾時/4xx/5xx；bundle 缺檔或
 // 錯誤 body），讓 A 類全數以 status=unknown 浮出，而非讓整份報告中止
-//（見 韌性規格 §1，2026-07-16 修訂）。summary/findings 由呼叫端組裝——措辭依連線/
+// （見 韌性規格 §1，2026-07-16 修訂）。summary/findings 由呼叫端組裝——措辭依連線/
 // bundle 模式而異（見 韌性規格 §3），屬 CLI 層決策，不在 analyzer 內判斷模式。
 // A 類清單一律從 healthReportIndicators 這張單一驅動表導出，不另建對照表。
 func HealthReportFetchFailed(summary string, findings []string) []diagnostic.Result {
@@ -188,7 +199,7 @@ func HealthReportIndicator(hr *collector.HealthReport, id string) (diagnostic.Re
 //
 // ok=false 表示 health_report 不可用（hr 為 nil）或該 indicator 不存在——「沒有資料」
 // 與「讀到資料且清單為空」是兩回事，呼叫端不可把前者當成「無受影響 index」而回報正常
-//（驗證狀態.md §1.1 的同款假陰性模式）。
+// （驗證狀態.md §1.1 的同款假陰性模式）。
 func AffectedIndices(hr *collector.HealthReport, indicator string) (indices []string, ok bool) {
 	if hr == nil {
 		return nil, false

@@ -136,6 +136,7 @@ func (c *Client) ShardSizes() ([]ShardSize, error) {
 
 type SLMPolicy struct {
 	Name                string
+	Repository          string
 	ModifiedMillis      int64
 	NextExecutionMillis int64
 	LastSuccessMillis   int64
@@ -152,6 +153,9 @@ func (c *Client) SLMPolicies() ([]SLMPolicy, error) {
 		return nil, err
 	}
 	var raw map[string]struct {
+		Policy struct {
+			Repository string `json:"repository"`
+		} `json:"policy"`
 		ModifiedMillis      int64 `json:"modified_date_millis"`
 		NextExecutionMillis int64 `json:"next_execution_millis"`
 		LastSuccess         struct {
@@ -173,7 +177,7 @@ func (c *Client) SLMPolicies() ([]SLMPolicy, error) {
 	out := make([]SLMPolicy, 0, len(raw))
 	for name, policy := range raw {
 		out = append(out, SLMPolicy{
-			Name: name, ModifiedMillis: policy.ModifiedMillis, NextExecutionMillis: policy.NextExecutionMillis,
+			Name: name, Repository: policy.Policy.Repository, ModifiedMillis: policy.ModifiedMillis, NextExecutionMillis: policy.NextExecutionMillis,
 			LastSuccessMillis: epochMillis(policy.LastSuccess.Time), LastSuccessSnapshot: policy.LastSuccess.Snapshot,
 			LastFailureMillis: epochMillis(policy.LastFailure.Time), LastFailureSnapshot: policy.LastFailure.Snapshot,
 			SnapshotsTaken: policy.Stats.Taken, SnapshotsFailed: policy.Stats.Failed,

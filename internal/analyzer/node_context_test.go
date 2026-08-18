@@ -41,6 +41,28 @@ func TestNodeAPICoverage(t *testing.T) {
 	}
 }
 
+func TestExpectedESNodeCoverage(t *testing.T) {
+	snapshot := &nodecontext.Snapshot{
+		StatsCoverage: completeCoverage(2),
+		Nodes:         []nodecontext.Node{{Name: "node-a"}, {Name: "node-b"}},
+	}
+	if got := ExpectedESNodeCoverage(nil, snapshot); got.Status != diagnostic.StatusSkipped {
+		t.Fatalf("without baseline=%+v", got)
+	}
+	if got := ExpectedESNodeCoverage([]string{"node-a", "node-b"}, snapshot); got.Status != diagnostic.StatusPass {
+		t.Fatalf("complete=%+v", got)
+	}
+	got := ExpectedESNodeCoverage([]string{"node-a", "node-b", "node-c"}, snapshot)
+	if got.Status != diagnostic.StatusCritical || !strings.Contains(strings.Join(got.Findings, " "), "node-c") {
+		t.Fatalf("missing=%+v", got)
+	}
+	partial := *snapshot
+	partial.StatsCoverage = nodecontext.Coverage{Available: true, Total: 3, Successful: 2, Failed: 1, Returned: 2}
+	if got := ExpectedESNodeCoverage([]string{"node-a", "node-b", "node-c"}, &partial); got.Status != diagnostic.StatusUnknown {
+		t.Fatalf("partial=%+v", got)
+	}
+}
+
 func TestNodeContextResultsConvergesPartialCoverage(t *testing.T) {
 	unlimited := true
 	locked := true

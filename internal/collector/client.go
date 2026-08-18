@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +59,7 @@ type Client struct {
 	authHeader string
 	base       string // 故障轉移後選定的 host（bundle 模式為 "(bundle) <dir>"）
 	name       string
+	uuid       string
 	version    string
 	retries    int
 
@@ -65,6 +67,9 @@ type Client struct {
 	// 連線模式與舊版（無 manifest）bundle 一律留空，呼叫端據此判斷是否顯示採集時間。
 	manifestCollectedAt   string
 	manifestScriptVersion string
+	manifestSchemaVersion int
+	manifestServices      []string
+	expectedESNodes       []string
 
 	// node resource stats 同時供既有 JVM 壓力與新增 Node Context 使用。單次 check 只採集
 	// 一次，避免對每個 consumer 重複送出相同的大型 Nodes Stats 請求。
@@ -120,16 +125,32 @@ func New(opts Options) (*Client, error) {
 // NewFromBundle 建立離線分析用的 client：資料來自採集腳本產出的 bundle 目錄，
 // 全程不連線任何叢集（見 docs/內部/規格/採集包規格.md）。
 //
-// 用途是把「採集」與「判斷」拆開執行——客戶環境只跑一份看得懂的 curl 腳本，
-// 二進位檔在自己機器上分析 bundle，客戶不必為了健檢導入未知執行檔。
+// 用途是把「採集」與「判斷」拆開執行——使用者環境只跑一份看得懂的 curl 腳本，
+// 二進位檔在自己機器上分析 bundle，使用者不必為了健檢導入未知執行檔。
 //
 // bundle 缺檔一律回錯誤（不是回空值），讓對應診斷落到 unknown 而非 pass：
 // 查不到就說查不到，這是 韌性規格 §1/§3 的既有規則。
 func NewFromBundle(dir string) (*Client, error) {
+	manifest := readBundleManifest(dir)
+	schemaVersion := manifest.BundleSchemaVersion
+	if schemaVersion == 0 {
+		schemaVersion = 1
+	}
+	if schemaVersion < 1 || schemaVersion > BundleSchemaVersion {
+		return nil, fmt.Errorf("不支援的 bundle schema version: %d（本工具最高支援 %d）", schemaVersion, BundleSchemaVersion)
+	}
+	dataDir := dir
+	if schemaVersion >= 2 {
+		dataDir = filepath.Join(dir, BundleElasticsearchDir)
+	}
 	statuses := readBundleStatuses(dir)
 	c := &Client{
-		base:    "(bundle) " + dir,
-		retries: 0, // 讀本地檔案沒有暫時性失敗，重試無意義
+		base:                  "(bundle) " + dir,
+		retries:               0, // 讀本地檔案沒有暫時性失敗，重試無意義
+		manifestCollectedAt:   manifest.CollectedAt,
+		manifestScriptVersion: manifest.CollectScriptVersion,
+		manifestSchemaVersion: schemaVersion,
+		manifestServices:      append([]string(nil), manifest.Services...),
 	}
 	c.fetch = func(path string) ([]byte, int, error) {
 		file, ok := FileForEndpoint(path)
@@ -137,52 +158,93 @@ func NewFromBundle(dir string) (*Client, error) {
 			// 動態端點（如 per-index settings）本來就無法預先採集，見 EpIndexSettings。
 			return nil, 0, fmt.Errorf("bundle 模式不支援動態端點: %s", path)
 		}
-		b, err := os.ReadFile(filepath.Join(dir, file))
+		relFile := file
+		if schemaVersion >= 2 {
+			relFile = BundleElasticsearchDir + "/" + file
+		}
+		b, err := os.ReadFile(filepath.Join(dataDir, file))
 		if err != nil {
 			if os.IsNotExist(err) {
-				return nil, 0, fmt.Errorf("bundle 缺少 %s（採集腳本未執行此項或該端點當時失敗）", file)
+				return nil, 0, fmt.Errorf("bundle 缺少 %s（採集腳本未執行此項或該端點當時失敗）", relFile)
 			}
 			return nil, 0, err
 		}
 		// 回放採集當下的真實狀態碼，讓 get() 對 4xx/5xx 的處理與連線模式完全一致。
+		if status, ok := statuses[relFile]; ok {
+			return b, status, nil
+		}
+		// 相容早期試作過的 v2 bundle：資料已分目錄，但 _status.txt 仍只記檔名。
 		if status, ok := statuses[file]; ok {
 			return b, status, nil
 		}
 		return b, http.StatusOK, nil
 	}
 
-	name, ver, err := c.info()
+	name, uuid, ver, err := c.info()
 	if err != nil {
 		return nil, fmt.Errorf("讀取 bundle 失敗（%s 不存在或格式錯誤？）: %w", FileOf(EpRoot), err)
 	}
-	c.name, c.version = name, ver
-	c.manifestCollectedAt, c.manifestScriptVersion = readBundleManifest(dir)
+	c.name, c.uuid, c.version = name, uuid, ver
+	if nodes, readErr := ReadExpectedESNodes(filepath.Join(dir, BundleExpectedESNodesFile)); readErr == nil {
+		c.expectedESNodes = nodes
+	} else if !os.IsNotExist(readErr) {
+		return nil, fmt.Errorf("讀取預期 ES 節點清單失敗: %w", readErr)
+	}
 	return c, nil
 }
 
-// BundleManifestFile 記錄採集開始時間與腳本版本，由採集腳本產生（見 採集包規格 §4.2）。
-const BundleManifestFile = "_manifest.json"
+const (
+	// BundleSchemaVersion 是目前採集包目錄契約版本；它與工具／採集腳本版本不同。
+	BundleSchemaVersion       = 2
+	BundleManifestFile        = "_manifest.json"
+	BundleStatusFile          = "_status.txt"
+	BundleExpectedESNodesFile = "_expected_es_nodes.txt"
+	BundleElasticsearchDir    = "elasticsearch"
+)
 
-// readBundleManifest 讀 bundle 的採集中繼資料。檔案不存在（舊版採集腳本產出的 bundle、
-// 或直接拿 fixture 目錄當 bundle）時回空字串，呼叫端據此判斷——**不得**用檔案 mtime
-// 或目錄名猜測採集時間，查不到就是查不到。
-func readBundleManifest(dir string) (collectedAt, scriptVersion string) {
-	b, err := os.ReadFile(filepath.Join(dir, BundleManifestFile))
-	if err != nil {
-		return "", ""
-	}
-	var m struct {
-		CollectScriptVersion string `json:"collect_script_version"`
-		CollectedAt          string `json:"collected_at"`
-	}
-	if err := json.Unmarshal(b, &m); err != nil {
-		return "", ""
-	}
-	return m.CollectedAt, m.CollectScriptVersion
+type bundleManifest struct {
+	BundleSchemaVersion  int      `json:"bundle_schema_version"`
+	CollectScriptVersion string   `json:"collect_script_version"`
+	CollectedAt          string   `json:"collected_at"`
+	Services             []string `json:"services"`
 }
 
-// BundleStatusFile 記錄採集當下每個端點的 HTTP 狀態碼，由採集腳本產生。
-const BundleStatusFile = "_status.txt"
+// readBundleManifest 讀 bundle 的採集中繼資料。檔案不存在或無 schema 欄位時，
+// NewFromBundle 依 v1 平鋪格式讀取；不得用檔案 mtime 或目錄名猜測採集時間。
+func readBundleManifest(dir string) bundleManifest {
+	b, err := os.ReadFile(filepath.Join(dir, BundleManifestFile))
+	if err != nil {
+		return bundleManifest{}
+	}
+	var m bundleManifest
+	if err := json.Unmarshal(b, &m); err != nil {
+		return bundleManifest{}
+	}
+	return m
+}
+
+// ReadExpectedESNodes 讀取每行一個 node.name 的基準清單。空白、註解與重複值會忽略。
+func ReadExpectedESNodes(file string) ([]string, error) {
+	b, err := os.ReadFile(file)
+	if err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	var nodes []string
+	for _, line := range strings.Split(string(b), "\n") {
+		name := strings.TrimSpace(line)
+		if name == "" || strings.HasPrefix(name, "#") || seen[name] {
+			continue
+		}
+		seen[name] = true
+		nodes = append(nodes, name)
+	}
+	if len(nodes) == 0 {
+		return nil, fmt.Errorf("%s 未包含任何節點名稱", file)
+	}
+	sort.Strings(nodes)
+	return nodes, nil
+}
 
 // readBundleStatuses 讀 bundle 的狀態清單（每行 "<檔名> <狀態碼>"）。
 //
@@ -269,9 +331,9 @@ func (c *Client) connect() error {
 	for _, h := range c.hosts {
 		h = strings.TrimRight(h, "/")
 		c.base = h
-		name, ver, err := c.info()
+		name, uuid, ver, err := c.info()
 		if err == nil {
-			c.name, c.version = name, ver
+			c.name, c.uuid, c.version = name, uuid, ver
 			return nil
 		}
 		lastErr = err
@@ -331,31 +393,36 @@ func (c *Client) doGet(path string) (body []byte, status int, err error) {
 	return body, resp.StatusCode, nil
 }
 
-func (c *Client) info() (name, version string, err error) {
+func (c *Client) info() (name, uuid, version string, err error) {
 	b, err := c.get(EpRoot)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	var root struct {
 		ClusterName string `json:"cluster_name"`
+		ClusterUUID string `json:"cluster_uuid"`
 		Version     struct {
 			Number string `json:"number"`
 		} `json:"version"`
 	}
 	if err := json.Unmarshal(b, &root); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
-	return root.ClusterName, root.Version.Number, nil
+	return root.ClusterName, root.ClusterUUID, root.Version.Number, nil
 }
 
-// ClusterName / Version：連線時已取得。
+// ClusterName / ClusterUUID / Version：連線時已取得。
 func (c *Client) ClusterName() string { return c.name }
+func (c *Client) ClusterUUID() string { return c.uuid }
 func (c *Client) Version() string     { return c.version }
 
 // CollectedAt / CollectScriptVersion：bundle 模式下若 bundle 含 _manifest.json 才有值，
 // 供報告 meta 標示「資料取自何時」（採集包規格 §4.2）。連線模式與舊版 bundle 一律空字串。
 func (c *Client) CollectedAt() string          { return c.manifestCollectedAt }
 func (c *Client) CollectScriptVersion() string { return c.manifestScriptVersion }
+func (c *Client) BundleSchemaVersion() int     { return c.manifestSchemaVersion }
+func (c *Client) CollectedServices() []string  { return append([]string(nil), c.manifestServices...) }
+func (c *Client) ExpectedESNodes() []string    { return append([]string(nil), c.expectedESNodes...) }
 
 // HealthReport 取並解析 GET /_health_report。
 func (c *Client) HealthReport() (*HealthReport, error) {

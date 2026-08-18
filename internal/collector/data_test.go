@@ -36,7 +36,7 @@ func TestMappingFieldCounts_ExcludesSystemIndicesButKeepsDataStreams(t *testing.
 		t.Errorf("customer-logs-2026.01 應保留，FieldCount=2，got ok=%v fc=%d", ok, fc)
 	}
 	if fc, ok := byIndex[".ds-logs-app-default-2026.07.15-000001"]; !ok || fc != 1 {
-		t.Errorf(".ds- data stream backing index 應保留（客戶用 data stream 送的資料），got ok=%v fc=%d", ok, fc)
+		t.Errorf(".ds- data stream backing index 應保留（使用者用 data stream 送的資料），got ok=%v fc=%d", ok, fc)
 	}
 }
 
@@ -65,13 +65,13 @@ func TestCatIndicesHealth_ExcludesSystemIndicesButKeepsDataStreams(t *testing.T)
 		byIndex[r.Index] = r
 	}
 	if len(got) != 2 {
-		t.Fatalf("got %d indices, want 2（系統 index 即使 red 也不該混入客戶資料毀損判定；.ds- data stream backing index 仍須檢查）: %+v", len(got), got)
+		t.Fatalf("got %d indices, want 2（系統 index 即使 red 也不該混入使用者資料毀損判定；.ds- data stream backing index 仍須檢查）: %+v", len(got), got)
 	}
 	if r, ok := byIndex["customer-logs-2026.01"]; !ok || r.Health != "green" {
 		t.Errorf("customer-logs-2026.01 應保留且為 green，got ok=%v %+v", ok, r)
 	}
 	if r, ok := byIndex[".ds-logs-app-default-2026.07.15-000001"]; !ok || r.Health != "yellow" {
-		t.Errorf(".ds- data stream backing index 應保留（客戶資料），got ok=%v %+v", ok, r)
+		t.Errorf(".ds- data stream backing index 應保留（使用者資料），got ok=%v %+v", ok, r)
 	}
 }
 

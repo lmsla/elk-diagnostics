@@ -27,7 +27,11 @@ func PendingClusterTasks(tasks []collector.PendingClusterTask, t rules.Threshold
 	critMillis := int64(t.StaticHealth.PendingTaskCritSeconds) * 1000
 	res := diagnostic.Result{ID: "cluster_pending_tasks", Title: "Cluster pending tasks", Category: "cluster", Source: "raw_api", Docs: []string{docPendingTasks}}
 	var critical, warning []string
+	var maxQueueMillis int64
 	for _, task := range tasks {
+		if task.QueueTimeMillis > maxQueueMillis {
+			maxQueueMillis = task.QueueTimeMillis
+		}
 		finding := fmt.Sprintf("priority=%s queue=%s executing=%t source=%s", task.Priority, formatDurationMillis(task.QueueTimeMillis), task.CurrentlyExecuting, task.Source)
 		switch {
 		case task.QueueTimeMillis >= critMillis:
@@ -36,6 +40,10 @@ func PendingClusterTasks(tasks []collector.PendingClusterTask, t rules.Threshold
 			warning = append(warning, finding)
 		}
 	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.cluster.pending_task.count", float64(len(tasks)), "count", "", "", "", ""),
+		gauge("elasticsearch.cluster.pending_task.max_queue_time", float64(maxQueueMillis), "milliseconds", "", "", "", ""),
+	)
 	res.Findings = append(critical, warning...)
 	switch {
 	case len(critical) > 0:
@@ -55,9 +63,13 @@ func LongRunningTasks(tasks []collector.RunningTask, t rules.Thresholds) diagnos
 	warnNanos := int64(t.StaticHealth.LongTaskWarnSeconds) * int64(time.Second)
 	res := diagnostic.Result{ID: "long_running_tasks", Title: "長時間執行 task", Category: "performance", Source: "raw_api", Docs: []string{docTasks}}
 	var hits []string
+	var maxRunningNanos int64
 	for _, task := range tasks {
 		if strings.HasPrefix(task.Action, "cluster:monitor/tasks/lists") || task.RunningNanos < warnNanos {
 			continue
+		}
+		if task.RunningNanos > maxRunningNanos {
+			maxRunningNanos = task.RunningNanos
 		}
 		description := task.Description
 		if len(description) > 160 {
@@ -69,6 +81,10 @@ func LongRunningTasks(tasks []collector.RunningTask, t rules.Thresholds) diagnos
 		}
 		hits = append(hits, finding)
 	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.task.long_running.count", float64(len(hits)), "count", "", "", "", ""),
+		gauge("elasticsearch.task.long_running.max_duration", float64(maxRunningNanos), "nanoseconds", "", "", "", ""),
+	)
 	if len(hits) == 0 {
 		return pass(res, fmt.Sprintf("無 task 執行超過 %d 秒", t.StaticHealth.LongTaskWarnSeconds))
 	}
@@ -86,9 +102,15 @@ func ShardSizing(shards []collector.ShardSize, t rules.Thresholds) diagnostic.Re
 	smallBytes := int64(t.StaticHealth.ShardSmallMaxMB) * 1024 * 1024
 	res := diagnostic.Result{ID: "shard_sizing", Title: "Shard 大小規劃", Category: "capacity", Source: "raw_api", Docs: []string{docShardSizing}}
 	var large, small []string
+	primaryCount := 0
+	var maxStoreBytes int64
 	for _, shard := range shards {
 		if !shard.Primary {
 			continue
+		}
+		primaryCount++
+		if shard.StoreBytes > maxStoreBytes {
+			maxStoreBytes = shard.StoreBytes
 		}
 		switch {
 		case shard.StoreBytes >= largeBytes:
@@ -97,6 +119,12 @@ func ShardSizing(shards []collector.ShardSize, t rules.Thresholds) diagnostic.Re
 			small = append(small, fmt.Sprintf("%s shard=%d store=%s docs=%d", shard.Index, shard.Shard, formatBytes(shard.StoreBytes), shard.Docs))
 		}
 	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.shard.primary.count", float64(primaryCount), "count", "", "", "", ""),
+		gauge("elasticsearch.shard.primary.max_store", float64(maxStoreBytes), "bytes", "", "", "", ""),
+		gauge("elasticsearch.shard.primary.large.count", float64(len(large)), "count", "", "", "", ""),
+		gauge("elasticsearch.shard.primary.small.count", float64(len(small)), "count", "", "", "", ""),
+	)
 	if len(large) == 0 && len(small) < t.StaticHealth.ShardSmallCountWarn {
 		return pass(res, fmt.Sprintf("無 primary shard ≥%d GiB，且小 shard 數量低於 %d", t.StaticHealth.ShardLargeWarnGB, t.StaticHealth.ShardSmallCountWarn))
 	}
@@ -125,6 +153,7 @@ func ShardSizing(shards []collector.ShardSize, t rules.Thresholds) diagnostic.Re
 
 func SnapshotFreshness(policies []collector.SLMPolicy, t rules.Thresholds, now time.Time) diagnostic.Result {
 	res := diagnostic.Result{ID: "snapshot_freshness", Title: "Snapshot 新鮮度 / RPO", Category: "snapshot", Source: "raw_api", Docs: []string{docSLMPolicy}}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.slm.freshness.evaluated_policy.count", float64(len(policies)), "count", "", "", "", ""))
 	if len(policies) == 0 {
 		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
 		res.Summary = "未設定 SLM policy；無法由 SLM API 判斷外部或手動備份"
@@ -135,6 +164,13 @@ func SnapshotFreshness(policies []collector.SLMPolicy, t rules.Thresholds, now t
 	critAge := int64(t.StaticHealth.SnapshotCritHours) * int64(time.Hour/time.Millisecond)
 	var critical, warning []string
 	for _, policy := range policies {
+		res.Measurements = append(res.Measurements,
+			counter("elasticsearch.slm.snapshot.taken", float64(policy.SnapshotsTaken), "count", "slm_policy", policy.Name, policy.Name, ""),
+			counter("elasticsearch.slm.snapshot.failed", float64(policy.SnapshotsFailed), "count", "slm_policy", policy.Name, policy.Name, ""),
+		)
+		if policy.LastSuccessMillis > 0 {
+			res.Measurements = append(res.Measurements, gauge("elasticsearch.slm.snapshot.last_success_age", float64(nowMillis-policy.LastSuccessMillis)/float64(time.Hour/time.Millisecond), "hours", "slm_policy", policy.Name, policy.Name, ""))
+		}
 		switch {
 		case policy.LastSuccessMillis == 0:
 			finding := fmt.Sprintf("%s：尚無成功 snapshot（taken=%d failed=%d next=%s）", policy.Name, policy.SnapshotsTaken, policy.SnapshotsFailed, formatEpochMillis(policy.NextExecutionMillis))
@@ -168,7 +204,7 @@ func SnapshotFreshness(policies []collector.SLMPolicy, t rules.Thresholds, now t
 		return pass(res, fmt.Sprintf("各 SLM policy 最近成功時間均在 %d 小時內", t.StaticHealth.SnapshotWarnHours))
 	}
 	res.RequiresExtra = true
-	res.ExtraReason = "預設 RPO 是工具 heuristic；應依客戶正式備份政策覆寫門檻"
+	res.ExtraReason = "預設 RPO 是工具 heuristic；應依使用者的正式備份政策覆寫門檻"
 	res.Recommendations = []diagnostic.Recommendation{{Desc: "確認 repository 可用性、policy schedule、最近失敗原因與必要 index/feature state 是否納入"}}
 	return res
 }
@@ -179,11 +215,24 @@ func NodeRuntimeConsistency(snapshot *collector.NodeRuntimeSnapshot) diagnostic.
 		return unknownStatic(res, "Nodes runtime 資料不可用", nil)
 	}
 	coverageFinding := fmt.Sprintf("Nodes Info: successful=%d/%d failed=%d returned=%d", snapshot.Coverage.Successful, snapshot.Coverage.Total, snapshot.Coverage.Failed, snapshot.Coverage.Returned)
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.nodes.runtime.total", float64(snapshot.Coverage.Total), "count", "", "", "", ""),
+		gauge("elasticsearch.nodes.runtime.successful", float64(snapshot.Coverage.Successful), "count", "", "", "", ""),
+		gauge("elasticsearch.nodes.runtime.failed", float64(snapshot.Coverage.Failed), "count", "", "", "", ""),
+		gauge("elasticsearch.nodes.runtime.returned", float64(snapshot.Coverage.Returned), "count", "", "", "", ""),
+	)
 	if !snapshot.Coverage.Complete() {
 		return unknownStatic(res, "Nodes runtime API 回應不完整，無法判斷全叢集一致性", []string{coverageFinding})
 	}
 	var findings []string
 	base := snapshot.Nodes[0]
+	for _, node := range snapshot.Nodes {
+		res.Measurements = append(res.Measurements,
+			gauge("elasticsearch.node.runtime.heap_init", float64(node.HeapInitBytes), "bytes", "node", node.ID, node.Name, ""),
+			gauge("elasticsearch.node.runtime.heap_max", float64(node.HeapMaxBytes), "bytes", "node", node.ID, node.Name, ""),
+			gauge("elasticsearch.node.runtime.plugin.count", float64(len(node.Plugins)), "count", "node", node.ID, node.Name, ""),
+		)
+	}
 	for _, node := range snapshot.Nodes[1:] {
 		if node.ESVersion != base.ESVersion || node.BuildHash != base.BuildHash {
 			findings = append(findings, fmt.Sprintf("版本漂移：%s=%s/%s，%s=%s/%s", base.Name, base.ESVersion, shortHash(base.BuildHash), node.Name, node.ESVersion, shortHash(node.BuildHash)))
@@ -226,6 +275,7 @@ func NodeRuntimeConsistency(snapshot *collector.NodeRuntimeSnapshot) diagnostic.
 
 func TLSCertificateExpiry(certs []collector.TLSCertificate, t rules.Thresholds, now time.Time) diagnostic.Result {
 	res := diagnostic.Result{ID: "tls_certificate_expiry", Title: "TLS 憑證到期", Category: "security", Source: "raw_api", Docs: []string{docSSLCerts}}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.tls.certificate.count", float64(len(certs)), "count", "", "", "", ""))
 	if len(certs) == 0 {
 		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
 		res.Summary = "回應節點未回傳 Elasticsearch TLS certificate context"
@@ -239,6 +289,14 @@ func TLSCertificateExpiry(certs []collector.TLSCertificate, t rules.Thresholds, 
 			parseFailures = append(parseFailures, fmt.Sprintf("subject=%s expiry=%q 無法解析", cert.Subject, cert.Expiry))
 			continue
 		}
+		name := cert.Alias
+		if name == "" {
+			name = cert.Subject
+		}
+		if name == "" {
+			name = cert.Path
+		}
+		res.Measurements = append(res.Measurements, gauge("elasticsearch.tls.certificate.days_remaining", expiry.Sub(now).Hours()/24, "days", "certificate", name, name, ""))
 		finding := fmt.Sprintf("subject=%s issuer=%s expiry=%s private_key=%t path=%s", cert.Subject, cert.Issuer, expiry.UTC().Format(time.RFC3339), cert.HasPrivateKey, cert.Path)
 		switch {
 		case !expiry.After(now) && cert.HasPrivateKey:
@@ -273,6 +331,10 @@ func LicenseHealth(info collector.LicenseInfo, t rules.Thresholds, now time.Time
 	if info.Status == "" {
 		return unknownStatic(res, "License API 未提供狀態", nil)
 	}
+	if info.ExpiryMillis > 0 {
+		expiry := time.UnixMilli(info.ExpiryMillis)
+		res.Measurements = append(res.Measurements, gauge("elasticsearch.license.days_remaining", expiry.Sub(now).Hours()/24, "days", "", "", "", info.Type))
+	}
 	if info.Status == "expired" || info.Status == "invalid" {
 		res.Status, res.Conclusion = diagnostic.StatusCritical, diagnostic.ConclusionConfirmed
 		res.Summary = fmt.Sprintf("License status=%s type=%s", info.Status, info.Type)
@@ -299,11 +361,19 @@ func LicenseHealth(info collector.LicenseInfo, t rules.Thresholds, now time.Time
 
 func ReplicaCoverage(indices []collector.IndexReplica) diagnostic.Result {
 	res := diagnostic.Result{ID: "replica_resilience", Title: "Index replica 容錯", Category: "cluster", Source: "raw_api", Docs: []string{docRedYellow}}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.index.replica.evaluated.count", float64(len(indices)), "count", "", "", "", ""))
 	if len(indices) == 0 {
 		return pass(res, "未找到非系統 index")
 	}
 	var noReplica, unsafeAutoExpand []string
+	minReplicas := 0
+	if len(indices) > 0 {
+		minReplicas = indices[0].Replicas
+	}
 	for _, index := range indices {
+		if index.Replicas < minReplicas {
+			minReplicas = index.Replicas
+		}
 		if index.Replicas == 0 {
 			noReplica = append(noReplica, fmt.Sprintf("%s：number_of_replicas=0 auto_expand=%s", index.Index, valueOr(index.AutoExpand, "未設定")))
 		}
@@ -311,6 +381,11 @@ func ReplicaCoverage(indices []collector.IndexReplica) diagnostic.Result {
 			unsafeAutoExpand = append(unsafeAutoExpand, fmt.Sprintf("%s：auto_expand_replicas=%s（上限 all 會忽略 allocation awareness）", index.Index, index.AutoExpand))
 		}
 	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.index.replica.minimum", float64(minReplicas), "count", "", "", "", ""),
+		gauge("elasticsearch.index.replica.zero.count", float64(len(noReplica)), "count", "", "", "", ""),
+		gauge("elasticsearch.index.replica.auto_expand_all.count", float64(len(unsafeAutoExpand)), "count", "", "", "", ""),
+	)
 	if len(noReplica) == 0 && len(unsafeAutoExpand) == 0 {
 		return pass(res, "所有非系統 index 目前至少有 1 個 replica")
 	}
@@ -332,6 +407,7 @@ func ReplicaCoverage(indices []collector.IndexReplica) diagnostic.Result {
 
 func AllocationAwareness(attributes []string, snapshot *collector.NodeTopologySnapshot) diagnostic.Result {
 	res := diagnostic.Result{ID: "allocation_awareness", Title: "Shard allocation awareness", Category: "cluster", Source: "raw_api", Docs: []string{docAwareness}}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.allocation.awareness.attribute.count", float64(len(attributes)), "count", "", "", "", ""))
 	if len(attributes) == 0 {
 		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
 		res.Summary = "未配置 allocation awareness；工具不知道此叢集是否要求跨 failure domain"
@@ -353,17 +429,24 @@ func AllocationAwareness(attributes []string, snapshot *collector.NodeTopologySn
 	if len(dataNodes) == 0 {
 		return unknownStatic(res, "找不到 data node，無法驗證 allocation awareness", nil)
 	}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.allocation.awareness.data_node.count", float64(len(dataNodes)), "count", "", "", "", ""))
 	var findings []string
 	for _, attr := range attributes {
 		values := map[string]bool{}
+		missingCount := 0
 		for _, node := range dataNodes {
 			value := strings.TrimSpace(node.Attributes[attr])
 			if value == "" {
+				missingCount++
 				findings = append(findings, fmt.Sprintf("%s 缺少 node.attr.%s", node.Name, attr))
 				continue
 			}
 			values[value] = true
 		}
+		res.Measurements = append(res.Measurements,
+			gauge("elasticsearch.allocation.awareness.value.count", float64(len(values)), "count", "", "", "", attr),
+			gauge("elasticsearch.allocation.awareness.missing_node.count", float64(missingCount), "count", "", "", "", attr),
+		)
 		if len(values) < 2 {
 			findings = append(findings, fmt.Sprintf("awareness attribute %s 只有 %d 個值，無法形成跨 failure domain 冗餘", attr, len(values)))
 		}

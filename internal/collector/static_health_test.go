@@ -47,10 +47,10 @@ func TestStaticHealthCollectors(t *testing.T) {
 
 	t.Run("SLM policy timestamps", func(t *testing.T) {
 		c := newStaticBundleClient(t, map[string]string{
-			"slm_policies.json": `{"daily":{"modified_date_millis":1000,"next_execution_millis":4000,"last_success":{"snapshot_name":"snap-1","time":"2026-07-22T01:02:03.456Z"},"last_failure":{"snapshot_name":"snap-0","time":1500},"stats":{"snapshots_taken":2,"snapshots_failed":1}}}`,
+			"slm_policies.json": `{"daily":{"policy":{"repository":"backup"},"modified_date_millis":1000,"next_execution_millis":4000,"last_success":{"snapshot_name":"snap-1","time":"2026-07-22T01:02:03.456Z"},"last_failure":{"snapshot_name":"snap-0","time":1500},"stats":{"snapshots_taken":2,"snapshots_failed":1}}}`,
 		})
 		got, err := c.SLMPolicies()
-		if err != nil || len(got) != 1 || got[0].LastSuccessMillis != 1784682123456 || got[0].LastFailureMillis != 1500 || got[0].SnapshotsFailed != 1 {
+		if err != nil || len(got) != 1 || got[0].Repository != "backup" || got[0].LastSuccessMillis != 1784682123456 || got[0].LastFailureMillis != 1500 || got[0].SnapshotsFailed != 1 {
 			t.Fatalf("SLMPolicies() = %+v, %v", got, err)
 		}
 	})

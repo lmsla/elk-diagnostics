@@ -15,6 +15,10 @@ const docUnstableCluster = "https://www.elastic.co/docs/troubleshoot/elasticsear
 // MasterStabilityContext #30：master-eligible 節點數與叢集規模的結構性檢查。
 func MasterStabilityContext(totalNodes, masterEligible int) diagnostic.Result {
 	res := diagnostic.Result{ID: "master_stability_context", Title: "Master 穩定性結構檢查", Category: "cluster", Source: "raw_api", Docs: []string{docUnstableCluster}}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.cluster.node.count", float64(totalNodes), "count", "", "", "", ""),
+		gauge("elasticsearch.cluster.master_eligible_node.count", float64(masterEligible), "count", "", "", "", ""),
+	)
 
 	switch {
 	case masterEligible == 0:

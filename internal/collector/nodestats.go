@@ -2,6 +2,7 @@ package collector
 
 import (
 	"encoding/json"
+	"sort"
 	"strconv"
 )
 
@@ -46,6 +47,7 @@ func (c *Client) NodesJVMOldPool() ([]NodeJVM, error) {
 		}
 		out = append(out, NodeJVM{Name: n.Name, UsedBytes: old.Used, MaxBytes: old.Max, PressurePct: p})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -79,6 +81,12 @@ func (c *Client) NodesBreakers() ([]NodeBreaker, error) {
 			out = append(out, NodeBreaker{Node: n.Name, Breaker: name, Tripped: br.Tripped})
 		}
 	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Node != out[j].Node {
+			return out[i].Node < out[j].Node
+		}
+		return out[i].Breaker < out[j].Breaker
+	})
 	return out, nil
 }
 
@@ -115,6 +123,7 @@ func (c *Client) CatNodesCPU() ([]NodeCPU, error) {
 			AllocatedProcessors: atoi(m["allocated_processors"]),
 		})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
@@ -149,6 +158,7 @@ func (c *Client) CatAllocation() ([]AllocationRow, error) {
 			DiskPercent:     percentInt(m["disk.percent"]),
 		})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Node < out[j].Node })
 	return out, nil
 }
 

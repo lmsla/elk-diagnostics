@@ -20,6 +20,7 @@ func ILM(mode string, errs []collector.IlmError) diagnostic.Result {
 			"https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors",
 		},
 	}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.ilm.error_index.count", float64(len(errs)), "count", "", "", "", ""))
 
 	switch {
 	case mode == "STOPPED":
@@ -54,6 +55,7 @@ func IlmTierMigration(migrating []collector.IlmMigration) diagnostic.Result {
 		ID: "ilm_tier_migration", Title: "ILM Tier 遷移狀態", Category: "management", Source: "raw_api",
 		Docs: []string{"https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors"},
 	}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.ilm.migrating_index.count", float64(len(migrating)), "count", "", "", "", ""))
 	if len(migrating) == 0 {
 		return pass(res, "無 index 處於 tier 遷移中")
 	}
@@ -90,14 +92,18 @@ func Watcher(manuallyStopped bool) diagnostic.Result {
 // Transforms #28：是否有 transform 處於 failed。
 func Transforms(ts []collector.Transform) diagnostic.Result {
 	res := diagnostic.Result{ID: "transforms", Title: "Transforms", Category: "management", Source: "raw_api", Docs: []string{docTransform}}
-	if len(ts) == 0 {
-		return pass(res, "未使用 transform（不適用）")
-	}
 	var failed []string
 	for _, t := range ts {
 		if t.State == "failed" {
 			failed = append(failed, fmt.Sprintf("%s：state=failed", t.ID))
 		}
+	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.transform.count", float64(len(ts)), "count", "", "", "", ""),
+		gauge("elasticsearch.transform.failed.count", float64(len(failed)), "count", "", "", "", ""),
+	)
+	if len(ts) == 0 {
+		return pass(res, "未使用 transform（不適用）")
 	}
 	if len(failed) == 0 {
 		return pass(res, fmt.Sprintf("%d 個 transform 皆正常", len(ts)))
@@ -112,14 +118,18 @@ func Transforms(ts []collector.Transform) diagnostic.Result {
 // RemoteClusters #35：已設定的 remote cluster 連線狀態。
 func RemoteClusters(rcs []collector.RemoteCluster) diagnostic.Result {
 	res := diagnostic.Result{ID: "remote_clusters", Title: "Remote clusters", Category: "management", Source: "raw_api", Docs: []string{docRemote}}
-	if len(rcs) == 0 {
-		return pass(res, "未設定 remote cluster（不適用）")
-	}
 	var down []string
 	for _, r := range rcs {
 		if !r.Connected {
 			down = append(down, fmt.Sprintf("%s：未連線", r.Name))
 		}
+	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.remote_cluster.count", float64(len(rcs)), "count", "", "", "", ""),
+		gauge("elasticsearch.remote_cluster.disconnected.count", float64(len(down)), "count", "", "", "", ""),
+	)
+	if len(rcs) == 0 {
+		return pass(res, "未設定 remote cluster（不適用）")
 	}
 	if len(down) == 0 {
 		return pass(res, fmt.Sprintf("%d 個 remote cluster 皆已連線", len(rcs)))
@@ -143,6 +153,11 @@ func UpgradeDeprecations(deps []collector.Deprecation) diagnostic.Result {
 			warn = append(warn, d.Message)
 		}
 	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.deprecation.count", float64(len(deps)), "count", "", "", "", ""),
+		gauge("elasticsearch.deprecation.critical.count", float64(len(crit)), "count", "", "", "", ""),
+		gauge("elasticsearch.deprecation.warning.count", float64(len(warn)), "count", "", "", "", ""),
+	)
 	res.Findings = append(crit, warn...)
 	switch {
 	case len(crit) > 0:

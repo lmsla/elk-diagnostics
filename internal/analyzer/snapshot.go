@@ -15,6 +15,7 @@ const docRestore = "https://www.elastic.co/docs/troubleshoot/elasticsearch/resto
 // 是否卡住需間隔重查比對進度是否持續推進。
 func RestoreStatus(ops []collector.RestoreOperation) diagnostic.Result {
 	res := diagnostic.Result{ID: "restore_status", Title: "Snapshot 還原狀態", Category: "snapshot", Source: "raw_api", Docs: []string{docRestore}}
+	res.Measurements = append(res.Measurements, gauge("elasticsearch.snapshot.restore.active_shard.count", float64(len(ops)), "count", "", "", "", ""))
 	if len(ops) == 0 {
 		return pass(res, "無進行中的 snapshot 還原操作")
 	}

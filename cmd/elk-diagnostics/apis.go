@@ -12,7 +12,7 @@ import (
 )
 
 // apis 與 collect-script 都由 collector.Endpoints 產生，不另手寫維護——手寫的清單
-// 會跟實作漂移，而一份跟實作對不上的 API 清單交給客戶資安審查，比沒有還糟。
+// 會跟實作漂移，而一份跟實作對不上的 API 清單交給使用者端資安審查，比沒有還糟。
 
 const apisPreamble = `本工具只送出 HTTP GET，不執行任何寫入操作。
 以下為 check 會呼叫的全部端點，皆為叢集／節點層級的中繼資料。
@@ -26,7 +26,7 @@ const apisPreamble = `本工具只送出 HTTP GET，不執行任何寫入操作�
 func newAPIsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apis",
-		Short: "印出本工具會呼叫的所有 Elasticsearch API（供客戶導入審查）",
+		Short: "印出本工具會呼叫的所有 Elasticsearch API（供使用者導入審查）",
 		Long:  "印出 check 會呼叫的全部唯讀端點與用途。內容由程式內的端點清單產生，與實際呼叫一致。",
 	}
 	format := cmd.Flags().String("output", "text", "輸出格式：text | markdown")

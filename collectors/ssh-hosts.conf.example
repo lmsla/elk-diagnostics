@@ -1,0 +1,4 @@
+# 每行：host-id|ssh-user@hostname
+# host-id 只用 A-Z a-z 0-9 . _ -；不填密碼或服務角色。
+es-node-01|elkops@10.0.0.11
+es-node-02|elkops@10.0.0.12

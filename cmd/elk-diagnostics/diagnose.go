@@ -38,7 +38,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string, noColor bool) i
 		return code
 	}
 	t := loadThresholds(cf)
-	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), Host: host, ESVersion: client.Version()}
+	meta := diagnostic.ClusterMeta{Name: client.ClusterName(), UUID: client.ClusterUUID(), Host: host, ESVersion: client.Version()}
 
 	switch symptom {
 	case "red-cluster":
@@ -57,7 +57,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string, noColor bool) i
 			res = append(res, unknownFrom(analyzer.DataAllocationBlocked(""), e, false))
 		}
 		res = append(res, indexAllocationBlockedResult(client, hr, false)) // #20
-		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok {                           // #3
+		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok {       // #3
 			res = append(res, r)
 		}
 		return emit(buildReport(meta, res, "diagnose:red-cluster"), output, outFile, noColor)

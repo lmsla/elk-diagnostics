@@ -4,6 +4,7 @@
     "generated_at": "",
     "cluster": {
       "name": "docker-cluster",
+      "uuid": "UHZAHPBXRpOF11w_HfMEng",
       "host": "",
       "es_version": "8.14.3"
     },
@@ -14,8 +15,8 @@
     "pass": 23,
     "warning": 2,
     "critical": 0,
-    "skipped": 1,
-    "unknown": 26
+    "skipped": 2,
+    "unknown": 30
   },
   "results": [
     {
@@ -32,7 +33,30 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/red-yellow-cluster-status"
       ],
       "source": "health_report",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.health_report.diagnosis.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "shards_availability"
+        },
+        {
+          "metric": "elasticsearch.health_report.impact.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "shards_availability"
+        },
+        {
+          "metric": "elasticsearch.health_report.affected_index.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "shards_availability"
+        }
+      ]
     },
     {
       "id": "disk",
@@ -48,7 +72,30 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/fix-watermark-errors"
       ],
       "source": "health_report",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.health_report.diagnosis.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "disk"
+        },
+        {
+          "metric": "elasticsearch.health_report.impact.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "disk"
+        },
+        {
+          "metric": "elasticsearch.health_report.affected_index.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "disk"
+        }
+      ]
     },
     {
       "id": "shards_capacity",
@@ -64,7 +111,30 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-shards-capacity-issues"
       ],
       "source": "health_report",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.health_report.diagnosis.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "shards_capacity"
+        },
+        {
+          "metric": "elasticsearch.health_report.impact.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "shards_capacity"
+        },
+        {
+          "metric": "elasticsearch.health_report.affected_index.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "shards_capacity"
+        }
+      ]
     },
     {
       "id": "snapshot_repository",
@@ -80,7 +150,30 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-repository"
       ],
       "source": "health_report",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.health_report.diagnosis.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "repository_integrity"
+        },
+        {
+          "metric": "elasticsearch.health_report.impact.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "repository_integrity"
+        },
+        {
+          "metric": "elasticsearch.health_report.affected_index.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "repository_integrity"
+        }
+      ]
     },
     {
       "id": "slm",
@@ -96,7 +189,30 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/repeated-snapshot-failures"
       ],
       "source": "health_report",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.health_report.diagnosis.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "slm"
+        },
+        {
+          "metric": "elasticsearch.health_report.impact.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "slm"
+        },
+        {
+          "metric": "elasticsearch.health_report.affected_index.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "slm"
+        }
+      ]
     },
     {
       "id": "master_stability",
@@ -112,7 +228,30 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-unstable-cluster"
       ],
       "source": "health_report",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.health_report.diagnosis.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "master_is_stable"
+        },
+        {
+          "metric": "elasticsearch.health_report.impact.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "master_is_stable"
+        },
+        {
+          "metric": "elasticsearch.health_report.affected_index.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "master_is_stable"
+        }
+      ]
     },
     {
       "id": "data_stream_lifecycle",
@@ -128,7 +267,30 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier"
       ],
       "source": "health_report",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.health_report.diagnosis.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "data_stream_lifecycle"
+        },
+        {
+          "metric": "elasticsearch.health_report.impact.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "data_stream_lifecycle"
+        },
+        {
+          "metric": "elasticsearch.health_report.affected_index.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "component": "data_stream_lifecycle"
+        }
+      ]
     },
     {
       "id": "ilm_slm_status",
@@ -143,6 +305,32 @@
       "docs": [
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/start-ilm",
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/index-lifecycle-management-errors"
+      ],
+      "source": "raw_api",
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.ilm.error_index.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        }
+      ]
+    },
+    {
+      "id": "ilm_policy_inventory",
+      "title": "ILM Policy 設定概況",
+      "category": "management",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "此版本、功能或端點不可用，無法判定",
+      "findings": [
+        "ES 回應 404: /_ilm/policy?filter_path=*.version,*.modified_date_millis,*.policy.phases,*.in_use_by"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-ilm-get-lifecycle"
       ],
       "source": "raw_api",
       "requires_extra": false
@@ -161,7 +349,49 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/rejected-requests"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.node.thread_pool.rejected",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "search"
+        },
+        {
+          "metric": "elasticsearch.node.thread_pool.completed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "search"
+        },
+        {
+          "metric": "elasticsearch.node.thread_pool.rejected",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "write"
+        },
+        {
+          "metric": "elasticsearch.node.thread_pool.completed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "write"
+        }
+      ]
     },
     {
       "id": "task_backlog",
@@ -177,7 +407,21 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/task-queue-backlog"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.thread_pool.queue.max",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        },
+        {
+          "metric": "elasticsearch.thread_pool.active.max",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count"
+        }
+      ]
     },
     {
       "id": "jvm_memory_pressure",
@@ -193,7 +437,36 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/high-jvm-memory-pressure"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.node.jvm.old_pool.used",
+          "kind": "gauge",
+          "value": 41365128,
+          "unit": "bytes",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879"
+        },
+        {
+          "metric": "elasticsearch.node.jvm.old_pool.max",
+          "kind": "gauge",
+          "value": 536870912,
+          "unit": "bytes",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879"
+        },
+        {
+          "metric": "elasticsearch.node.jvm.old_pool.pressure",
+          "kind": "gauge",
+          "value": 7,
+          "unit": "percent",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879"
+        }
+      ]
     },
     {
       "id": "node_api_coverage",
@@ -205,7 +478,7 @@
       "findings": [
         "Nodes Stats: successful=1/1 failed=0 returned=1",
         "Nodes Info: coverage unavailable returned=0",
-        "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?timeout=5s\u0026filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall"
+        "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?timeout=5s\u0026filter_path=_nodes,nodes.*.name,nodes.*.ip,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall"
       ],
       "root_causes": null,
       "recommendations": null,
@@ -312,6 +585,22 @@
       "requires_extra": false
     },
     {
+      "id": "expected_es_node_coverage",
+      "title": "預期 ES 節點完整性",
+      "category": "node",
+      "status": "skipped",
+      "conclusion": "normal",
+      "summary": "未提供預期 ES 節點清單；只能確認目前在線節點，無法判斷採集前已離線節點",
+      "findings": null,
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/cluster-nodes-info.html"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
       "id": "circuit_breaker",
       "title": "Circuit breaker",
       "category": "performance",
@@ -325,7 +614,106 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/circuit-breaker-errors"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.node.breaker.tripped",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "eql_sequence"
+        },
+        {
+          "metric": "elasticsearch.node.breaker.tripped",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "fielddata"
+        },
+        {
+          "metric": "elasticsearch.node.breaker.tripped",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "inflight_requests"
+        },
+        {
+          "metric": "elasticsearch.node.breaker.tripped",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "model_inference"
+        },
+        {
+          "metric": "elasticsearch.node.breaker.tripped",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "parent"
+        },
+        {
+          "metric": "elasticsearch.node.breaker.tripped",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879",
+          "component": "request"
+        }
+      ]
+    },
+    {
+      "id": "fielddata_memory",
+      "title": "Fielddata 記憶體",
+      "category": "performance",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "此版本、功能或端點不可用，無法判定",
+      "findings": [
+        "ES 回應 404: /_nodes/stats/indices/fielddata?timeout=5s\u0026filter_path=_nodes,nodes.*.name,nodes.*.indices.fielddata.memory_size_in_bytes,nodes.*.indices.fielddata.evictions"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-fielddata.html",
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-nodes-stats"
+      ],
+      "source": "raw_api",
+      "requires_extra": false,
+      "judgment_guide": [
+        {
+          "condition": "單次 evictions \u003e 0",
+          "interpretation": "很可能只是正常 cache 管理，不能單獨判定故障"
+        },
+        {
+          "condition": "一段時間內 evictions 持續增加",
+          "interpretation": "可能有 cache churn，需觀察"
+        },
+        {
+          "condition": "evictions 增加 + JVM Heap 高、GC 或查詢延遲上升",
+          "interpretation": "可能是記憶體壓力"
+        },
+        {
+          "condition": "evictions 增加 + circuit breaker 拒絕查詢或節點不穩",
+          "interpretation": "才接近實際故障"
+        }
+      ]
     },
     {
       "id": "high_cpu",
@@ -341,7 +729,27 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/high-cpu-usage"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.node.cpu",
+          "kind": "gauge",
+          "value": 2,
+          "unit": "percent",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879"
+        },
+        {
+          "metric": "elasticsearch.node.allocated_processors",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "node",
+          "entity_id": "e22c57052879",
+          "entity_name": "e22c57052879"
+        }
+      ]
     },
     {
       "id": "hot_spotting",
@@ -357,7 +765,33 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/hotspotting"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.cluster.node.count",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count"
+        }
+      ],
+      "judgment_guide": [
+        {
+          "condition": "單次節點差距",
+          "interpretation": "可能只是瞬時變化，不能單獨判定故障"
+        },
+        {
+          "condition": "同一節點、同一指標在時間序列中持續偏高",
+          "interpretation": "需觀察，請以 Monitoring 或前後兩次採集確認"
+        },
+        {
+          "condition": "差距同時伴隨 queue、rejected、延遲或 hot threads 上升",
+          "interpretation": "提高處置優先級"
+        },
+        {
+          "condition": "429、circuit breaker、red 或 node unavailable",
+          "interpretation": "由對應診斷卡判定故障"
+        }
+      ]
     },
     {
       "id": "unbalanced_cluster",
@@ -409,7 +843,117 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshoot-ingest-pipelines"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.ingest.pipeline.processed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "behavioral_analytics-events-final_pipeline",
+          "entity_name": "behavioral_analytics-events-final_pipeline"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.failed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "behavioral_analytics-events-final_pipeline",
+          "entity_name": "behavioral_analytics-events-final_pipeline"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.processed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "ent-search-generic-ingestion",
+          "entity_name": "ent-search-generic-ingestion"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.failed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "ent-search-generic-ingestion",
+          "entity_name": "ent-search-generic-ingestion"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.processed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "logs-default-pipeline",
+          "entity_name": "logs-default-pipeline"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.failed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "logs-default-pipeline",
+          "entity_name": "logs-default-pipeline"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.processed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "logs@default-pipeline",
+          "entity_name": "logs@default-pipeline"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.failed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "logs@default-pipeline",
+          "entity_name": "logs@default-pipeline"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.processed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "logs@json-message",
+          "entity_name": "logs@json-message"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.failed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "logs@json-message",
+          "entity_name": "logs@json-message"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.processed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "logs@json-pipeline",
+          "entity_name": "logs@json-pipeline"
+        },
+        {
+          "metric": "elasticsearch.ingest.pipeline.failed",
+          "kind": "counter",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "pipeline",
+          "entity_id": "logs@json-pipeline",
+          "entity_name": "logs@json-pipeline"
+        }
+      ]
     },
     {
       "id": "data_corruption",
@@ -426,7 +970,39 @@
       ],
       "source": "raw_api",
       "requires_extra": true,
-      "extra_reason": "工具僅能偵測狀態異常徵兆；checksum/translog 級 corruption 需由 ES 內部於 merge/recovery/snapshot 時偵測，請留意節點 log 的 CorruptIndexException 等例外"
+      "extra_reason": "工具僅能偵測狀態異常徵兆；checksum/translog 級 corruption 需由 ES 內部於 merge/recovery/snapshot 時偵測，請留意節點 log 的 CorruptIndexException 等例外",
+      "measurements": [
+        {
+          "metric": "elasticsearch.index.health.scanned.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        },
+        {
+          "metric": "elasticsearch.index.health.red.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        }
+      ]
+    },
+    {
+      "id": "data_stream_health",
+      "title": "Data stream 健康",
+      "category": "data",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "此版本、功能或端點不可用，無法判定",
+      "findings": [
+        "ES 回應 404: /_data_stream?filter_path=data_streams.name,data_streams.status,data_streams.template,data_streams.generation,data_streams.ilm_policy,data_streams.next_generation_managed_by,data_streams.indices.index_name,data_streams.indices.ilm_policy,data_streams.indices.managed_by"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-indices-get-data-stream"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
     },
     {
       "id": "watcher",
@@ -458,7 +1034,21 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/transform-troubleshooting"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.transform.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        },
+        {
+          "metric": "elasticsearch.transform.failed.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        }
+      ]
     },
     {
       "id": "remote_clusters",
@@ -474,7 +1064,21 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/remote-clusters"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.remote_cluster.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        },
+        {
+          "metric": "elasticsearch.remote_cluster.disconnected.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        }
+      ]
     },
     {
       "id": "upgrade_deprecations",
@@ -490,7 +1094,27 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/troubleshooting-upgrades"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.deprecation.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        },
+        {
+          "metric": "elasticsearch.deprecation.critical.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        },
+        {
+          "metric": "elasticsearch.deprecation.warning.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        }
+      ]
     },
     {
       "id": "monitoring",
@@ -560,7 +1184,27 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/diagnose-unassigned-shards"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.index.allocation.checked.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        },
+        {
+          "metric": "elasticsearch.index.allocation.blocked.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        },
+        {
+          "metric": "elasticsearch.index.allocation.unprobed.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        }
+      ]
     },
     {
       "id": "allocation_guidance",
@@ -576,7 +1220,15 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/cluster-allocation-api-examples"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.shard.allocation.rejected_decider.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count"
+        }
+      ]
     },
     {
       "id": "ilm_tier_migration",
@@ -618,7 +1270,21 @@
       ],
       "source": "raw_api",
       "requires_extra": true,
-      "extra_reason": "節點拓樸為結構性風險而非當下故障；是否曾實際發生選舉問題需查 master_is_stable indicator 與節點 log"
+      "extra_reason": "節點拓樸為結構性風險而非當下故障；是否曾實際發生選舉問題需查 master_is_stable indicator 與節點 log",
+      "measurements": [
+        {
+          "metric": "elasticsearch.cluster.node.count",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count"
+        },
+        {
+          "metric": "elasticsearch.cluster.master_eligible_node.count",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count"
+        }
+      ]
     },
     {
       "id": "data_tier_availability",
@@ -634,7 +1300,44 @@
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/add-tier"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.data_tier.node.count",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count",
+          "component": "data_content"
+        },
+        {
+          "metric": "elasticsearch.data_tier.node.count",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count",
+          "component": "data_hot"
+        },
+        {
+          "metric": "elasticsearch.data_tier.node.count",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count",
+          "component": "data_warm"
+        },
+        {
+          "metric": "elasticsearch.data_tier.node.count",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count",
+          "component": "data_cold"
+        },
+        {
+          "metric": "elasticsearch.data_tier.node.count",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count",
+          "component": "data_frozen"
+        }
+      ]
     },
     {
       "id": "restore_status",
@@ -716,12 +1419,30 @@
       "conclusion": "normal",
       "summary": "資料抓取失敗，無法判定",
       "findings": [
-        "ES 回應 404: /_slm/policy?filter_path=*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed"
+        "ES 回應 404: /_slm/policy?filter_path=*.policy.repository,*.modified_date_millis,*.next_execution_millis,*.last_success.snapshot_name,*.last_success.time,*.last_failure.snapshot_name,*.last_failure.time,*.stats.snapshots_taken,*.stats.snapshots_failed"
       ],
       "root_causes": null,
       "recommendations": null,
       "docs": [
         "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-slm-get-lifecycle"
+      ],
+      "source": "raw_api",
+      "requires_extra": false
+    },
+    {
+      "id": "snapshot_repository_references",
+      "title": "Snapshot repository 關聯",
+      "category": "snapshot",
+      "status": "unknown",
+      "conclusion": "normal",
+      "summary": "此版本、功能或端點不可用，無法判定",
+      "findings": [
+        "ES 回應 404: /_snapshot/_all?filter_path=*.type,*.uuid"
+      ],
+      "root_causes": null,
+      "recommendations": null,
+      "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-snapshot-get-repository"
       ],
       "source": "raw_api",
       "requires_extra": false
@@ -943,6 +1664,7 @@
       {
         "id": "FeREZjB-R6iUq6viYWnLiQ",
         "name": "e22c57052879",
+        "ip": "172.18.0.3:9300",
         "roles": [
           "data",
           "data_cold",
@@ -996,7 +1718,7 @@
       }
     ],
     "issues": [
-      "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?timeout=5s\u0026filter_path=_nodes,nodes.*.name,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall",
+      "Nodes Info 不可用: ES 回應 404: /_nodes/os,process?timeout=5s\u0026filter_path=_nodes,nodes.*.name,nodes.*.ip,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall",
       "Nodes Info 缺少 _nodes coverage"
     ]
   },

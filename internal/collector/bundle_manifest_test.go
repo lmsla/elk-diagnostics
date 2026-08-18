@@ -19,6 +19,7 @@ func TestNewFromBundle_Manifest(t *testing.T) {
 		manifest := `{
   "collect_script_version": "0.0.5",
   "collected_at": "2026-07-16T02:10:00Z",
+  "services": ["elasticsearch", "kibana"],
   "host": "https://es.example.local:9200",
   "endpoints_total": 24
 }
@@ -35,6 +36,9 @@ func TestNewFromBundle_Manifest(t *testing.T) {
 		}
 		if got := c.CollectScriptVersion(); got != "0.0.5" {
 			t.Errorf("CollectScriptVersion() = %q, want 0.0.5", got)
+		}
+		if got := c.CollectedServices(); len(got) != 2 || got[0] != "elasticsearch" || got[1] != "kibana" {
+			t.Errorf("CollectedServices() = %v, want [elasticsearch kibana]", got)
 		}
 	})
 

@@ -32,6 +32,12 @@ func WriteBottleneck(cpus []collector.NodeCPU, pools []collector.WritePoolRow, t
 	anyQueue := false
 	for _, p := range pools {
 		c := cpuByNode[p.Node]
+		res.Measurements = append(res.Measurements,
+			gauge("elasticsearch.node.write_bottleneck.cpu", float64(c.CPU), "percent", "node", p.Node, p.Node, ""),
+			gauge("elasticsearch.node.write_bottleneck.queue", float64(p.Queue), "count", "node", p.Node, p.Node, ""),
+			gauge("elasticsearch.node.write_bottleneck.allocated_processors", float64(c.AllocatedProcessors), "count", "node", p.Node, p.Node, ""),
+			gauge("elasticsearch.node.write_bottleneck.pool_size", float64(p.Size), "count", "node", p.Node, p.Node, ""),
+		)
 		cpuLow := c.CPU < wbCPULow
 		queueBacklog := p.Queue >= wbWriteQueue
 		procLow := c.AllocatedProcessors > 0 && c.AllocatedProcessors <= wbProcLow
@@ -63,7 +69,7 @@ func WriteBottleneck(cpus []collector.NodeCPU, pools []collector.WritePoolRow, t
 		res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
 		res.Summary = "偵測到 write queue 積壓，但因果鏈未完全成立（非典型 allocated_processors 瓶頸）"
 		res.Findings = partial
-		res.RequiresExtra, res.ExtraReason = true, "queue 為瞬時值；建議以 --interval 雙取樣確認積壓是否持續，並查 _nodes/hot_threads 與 _nodes/stats/indices 佐證"
+		res.RequiresExtra, res.ExtraReason = true, "queue 為瞬時值；建議以 Monitoring 或前後兩次採集確認積壓是否持續，並查 _nodes/hot_threads 與 _nodes/stats/indices 佐證"
 		res.Recommendations = []diagnostic.Recommendation{{Desc: "確認積壓是否持續；檢查是否為流量尖峰、昂貴寫入或 hot spotting（#17）"}}
 	default:
 		res.Status, res.Conclusion = diagnostic.StatusPass, diagnostic.ConclusionNormal

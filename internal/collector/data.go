@@ -2,6 +2,7 @@ package collector
 
 import (
 	"encoding/json"
+	"sort"
 	"strings"
 )
 
@@ -13,13 +14,13 @@ type IndexFieldCount struct {
 
 // MappingFieldCounts 取 GET /_mapping 並逐 index 計算欄位數，排除 ES/Kibana 內部系統
 // index（如 .kibana*、.internal.alerts-*）。這些本來就常態性有上千個欄位（尤其 Kibana
-// alerting 框架自建的 .internal.alerts-*），與客戶資料的 mapping 膨脹無關；真機驗證時
+// alerting 框架自建的 .internal.alerts-*），與使用者資料的 mapping 膨脹無關；真機驗證時
 // 在全新、零資料的 8.14.3/9.0.0 叢集上就已重現這個誤報（見 docs/內部/實作進度.md）。
 //
 // **不能只用「.」開頭判斷**：data stream 的 backing index 也一律是「.」開頭（如
-// .ds-logs-app-2026.07.15-000001），而且客戶用 logs-*-*/metrics-*-* 這類標準範本、
+// .ds-logs-app-2026.07.15-000001），而且使用者用 logs-*-*/metrics-*-* 這類標準範本、
 // Elastic Agent/Fleet 送資料時幾乎都是走 data stream——若無差別排除所有「.」開頭，
-// 會把真正的客戶資料也一起濾掉，是比原本誤報更嚴重的漏判。ES 保證 data stream 的
+// 會把真正的使用者資料也一起濾掉，是比原本誤報更嚴重的漏判。ES 保證 data stream 的
 // backing index 一律是 ".ds-" 開頭（真機建測試 data stream 驗證過），故只排除
 // 「. 開頭但非 .ds- 開頭」者，兩者皆已用真機資料驗證。
 func (c *Client) MappingFieldCounts() ([]IndexFieldCount, error) {
@@ -40,11 +41,12 @@ func (c *Client) MappingFieldCounts() ([]IndexFieldCount, error) {
 		}
 		out = append(out, IndexFieldCount{Index: idx, FieldCount: countTypes(m.Mappings)})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Index < out[j].Index })
 	return out, nil
 }
 
-// isSystemIndex 判斷是否為 ES/Kibana 內部系統 index，而非客戶資料。見 MappingFieldCounts
-// 註解：data stream backing index（.ds- 開頭）一律視為客戶資料，不排除。
+// isSystemIndex 判斷是否為 ES/Kibana 內部系統 index，而非使用者資料。見 MappingFieldCounts
+// 註解：data stream backing index（.ds- 開頭）一律視為使用者資料，不排除。
 func isSystemIndex(name string) bool {
 	return strings.HasPrefix(name, ".") && !strings.HasPrefix(name, ".ds-")
 }
@@ -116,6 +118,7 @@ func (c *Client) IngestPipelineStats() ([]IngestPipeline, error) {
 	for _, e := range agg {
 		out = append(out, *e)
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Pipeline < out[j].Pipeline })
 	return out, nil
 }
 
@@ -128,8 +131,8 @@ type IndexHealth struct {
 
 // CatIndicesHealth 取 GET /_cat/indices，排除 ES/Kibana 內部系統 index（理由同
 // MappingFieldCounts，含 data stream backing index 不應被排除的說明）：系統 index
-// 的健康狀態波動多半是 ES/Kibana 內部機制所致（如升版過渡期），與客戶資料毀損無關，
-// 不該被 #32 當成資料毀損徵兆呈報；但客戶用 data stream 送的資料仍須檢查。
+// 的健康狀態波動多半是 ES/Kibana 內部機制所致（如升版過渡期），與使用者資料毀損無關，
+// 不該被 #32 當成資料毀損徵兆呈報；但使用者用 data stream 送的資料仍須檢查。
 func (c *Client) CatIndicesHealth() ([]IndexHealth, error) {
 	b, err := c.get(EpCatIndices)
 	if err != nil {

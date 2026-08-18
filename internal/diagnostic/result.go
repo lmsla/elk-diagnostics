@@ -12,6 +12,7 @@ type Status string
 
 const (
 	StatusPass     Status = "pass"
+	StatusInfo     Status = "info"
 	StatusWarning  Status = "warning"
 	StatusCritical Status = "critical"
 	StatusSkipped  Status = "skipped"
@@ -31,6 +32,27 @@ type Recommendation struct {
 	Desc string `json:"desc"`
 }
 
+// JudgmentGuide 是診斷卡提供給讀者的簡短判讀對照，不是 analyzer 的判定輸入。
+type JudgmentGuide struct {
+	Condition      string `json:"condition"`
+	Interpretation string `json:"interpretation"`
+}
+
+// Measurement 是可供時間序列保存的結構化觀測值。Findings 仍供人閱讀，
+// 任何趨勢輸出不得反向解析 Findings 文字。
+type Measurement struct {
+	Metric     string  `json:"metric"`
+	Kind       string  `json:"kind"` // gauge | counter
+	Value      float64 `json:"value"`
+	Unit       string  `json:"unit,omitempty"`
+	EntityType string  `json:"entity_type,omitempty"`
+	EntityID   string  `json:"entity_id,omitempty"`
+	EntityName string  `json:"entity_name,omitempty"`
+	Component  string  `json:"component,omitempty"`
+	// PeerGroup 是需要同類節點比較的觀測值所屬群組；空值代表不適用。
+	PeerGroup string `json:"peer_group,omitempty"`
+}
+
 // Result 是單一診斷項目的標準輸出。
 type Result struct {
 	ID              string           `json:"id"`
@@ -47,10 +69,13 @@ type Result struct {
 	RequiresExtra   bool             `json:"requires_extra"`
 	ExtraReason     string           `json:"extra_reason,omitempty"`
 	VersionWarning  string           `json:"version_warning,omitempty"`
+	Measurements    []Measurement    `json:"measurements,omitempty"`
+	JudgmentGuide   []JudgmentGuide  `json:"judgment_guide,omitempty"`
 }
 
 type ClusterMeta struct {
 	Name      string `json:"name"`
+	UUID      string `json:"uuid,omitempty"`
 	Host      string `json:"host"`
 	ESVersion string `json:"es_version"`
 }
@@ -66,12 +91,15 @@ type Meta struct {
 	// 這兩個是採集時間——bundle 可能在採集數天後才被分析，不可混同。僅 --from-bundle
 	// 且 bundle 含 _manifest.json 時才有值；省略代表舊版採集腳本產出的 bundle，不得用
 	// mtime 或目錄名猜測。
-	CollectedAt          string `json:"collected_at,omitempty"`
-	CollectScriptVersion string `json:"collect_script_version,omitempty"`
+	CollectedAt          string   `json:"collected_at,omitempty"`
+	CollectScriptVersion string   `json:"collect_script_version,omitempty"`
+	BundleSchemaVersion  int      `json:"bundle_schema_version,omitempty"`
+	CollectedServices    []string `json:"collected_services,omitempty"`
 }
 
 type Summary struct {
 	Pass     int `json:"pass"`
+	Info     int `json:"info,omitempty"`
 	Warning  int `json:"warning"`
 	Critical int `json:"critical"`
 	Skipped  int `json:"skipped"`
@@ -107,6 +135,8 @@ func NewReport(meta Meta, results []Result) Report {
 		switch res.Status {
 		case StatusPass:
 			r.Summary.Pass++
+		case StatusInfo:
+			r.Summary.Info++
 		case StatusWarning:
 			r.Summary.Warning++
 		case StatusCritical:
@@ -118,7 +148,7 @@ func NewReport(meta Meta, results []Result) Report {
 		}
 	}
 
-	// 收斂：critical > warning > unknown > pass；skipped 不影響。
+	// 收斂：critical > warning > unknown > pass；info 與 skipped 不影響。
 	switch {
 	case r.Summary.Critical > 0:
 		r.OverallStatus = StatusCritical
@@ -136,6 +166,8 @@ func NewReport(meta Meta, results []Result) Report {
 func (r Report) ExitCode() int {
 	switch r.OverallStatus {
 	case StatusPass:
+		return 0
+	case StatusInfo:
 		return 0
 	case StatusWarning:
 		return 1

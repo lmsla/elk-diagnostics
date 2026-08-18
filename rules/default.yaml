@@ -37,7 +37,7 @@ static_health:
   shard_large_warn_gb: 50         # Elastic sizing 常用上緣；非硬限制
   shard_small_max_mb: 1024        # 小 primary shard 定義
   shard_small_count_warn: 100     # 大量小 shard heuristic
-  snapshot_warn_hours: 48         # 預設 RPO heuristic，可依客戶政策覆寫
+  snapshot_warn_hours: 48         # 預設 RPO heuristic，可依使用者政策覆寫
   snapshot_crit_hours: 168
   expiry_warn_days: 30            # TLS／License 到期預警
   indexing_pressure_warn_pct: 80  # 當下 coordinating+primary／replica 各自相對拒絕上限

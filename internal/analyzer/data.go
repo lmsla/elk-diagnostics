@@ -23,6 +23,7 @@ func DataTierAvailability(counts map[string]int) diagnostic.Result {
 	res := diagnostic.Result{ID: "data_tier_availability", Title: "Data tier 節點分布", Category: "data", Source: "raw_api", Docs: []string{docAddTier}}
 	var present, missing []string
 	for _, tier := range []string{"data_content", "data_hot", "data_warm", "data_cold", "data_frozen"} {
+		res.Measurements = append(res.Measurements, gauge("elasticsearch.data_tier.node.count", float64(counts[tier]), "count", "", "", "", tier))
 		if counts[tier] > 0 {
 			present = append(present, fmt.Sprintf("%s=%d", tier, counts[tier]))
 		} else {
@@ -46,14 +47,24 @@ func MappingExplosion(counts []collector.IndexFieldCount, t rules.Thresholds) di
 	res := diagnostic.Result{ID: "mapping_explosion", Title: "Mapping 欄位膨脹", Category: "data", Source: "raw_api", Docs: []string{docMapping}}
 	warnAt := mappingLimit * mappingWarnFrac / 100
 	var crit, warn []string
+	maxFields := 0
 	for _, c := range counts {
+		if c.FieldCount > maxFields {
+			maxFields = c.FieldCount
+		}
 		switch {
 		case c.FieldCount >= mappingLimit:
+			res.Measurements = append(res.Measurements, gauge("elasticsearch.index.mapping.field.count", float64(c.FieldCount), "count", "index", c.Index, c.Index, ""))
 			crit = append(crit, fmt.Sprintf("%s：%d 欄位（已達/超過上限 %d）", c.Index, c.FieldCount, mappingLimit))
 		case c.FieldCount >= warnAt:
+			res.Measurements = append(res.Measurements, gauge("elasticsearch.index.mapping.field.count", float64(c.FieldCount), "count", "index", c.Index, c.Index, ""))
 			warn = append(warn, fmt.Sprintf("%s：%d 欄位（上限 %d 的 %d%%）", c.Index, c.FieldCount, mappingLimit, mappingWarnFrac))
 		}
 	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.index.mapping.scanned.count", float64(len(counts)), "count", "", "", "", ""),
+		gauge("elasticsearch.index.mapping.field.max", float64(maxFields), "count", "", "", "", ""),
+	)
 	res.Findings = append(crit, warn...)
 	switch {
 	case len(crit) > 0:
@@ -77,8 +88,13 @@ func IngestPipelineErrors(pipes []collector.IngestPipeline, t rules.Thresholds) 
 	res := diagnostic.Result{ID: "ingest_pipeline_errors", Title: "Ingest pipeline 失敗", Category: "data", Source: "raw_api", Docs: []string{docIngest}}
 	var hits []string
 	for _, p := range pipes {
+		res.Measurements = append(res.Measurements,
+			counter("elasticsearch.ingest.pipeline.processed", float64(p.Count), "count", "pipeline", p.Pipeline, p.Pipeline, ""),
+			counter("elasticsearch.ingest.pipeline.failed", float64(p.Failed), "count", "pipeline", p.Pipeline, p.Pipeline, ""),
+		)
 		if p.Count > 0 {
 			pct := int(100 * p.Failed / p.Count)
+			res.Measurements = append(res.Measurements, gauge("elasticsearch.ingest.pipeline.failure_rate", float64(pct), "percent", "pipeline", p.Pipeline, p.Pipeline, ""))
 			if pct > ingestFailWarn {
 				hits = append(hits, fmt.Sprintf("%s：failed=%d / count=%d（%d%%）", p.Pipeline, p.Failed, p.Count, pct))
 			}
@@ -104,6 +120,10 @@ func DataCorruption(indices []collector.IndexHealth) diagnostic.Result {
 			hits = append(hits, fmt.Sprintf("%s：health=red status=%s", idx.Index, idx.Status))
 		}
 	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.index.health.scanned.count", float64(len(indices)), "count", "", "", "", ""),
+		gauge("elasticsearch.index.health.red.count", float64(len(hits)), "count", "", "", "", ""),
+	)
 	if len(hits) == 0 {
 		res = pass(res, "無 index 處於 red 狀態")
 		res.RequiresExtra, res.ExtraReason = true, "工具僅能偵測狀態異常徵兆；checksum/translog 級 corruption 需由 ES 內部於 merge/recovery/snapshot 時偵測，請留意節點 log 的 CorruptIndexException 等例外"

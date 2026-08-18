@@ -1,6 +1,9 @@
 package collector
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"sort"
+)
 
 // WatcherManuallyStopped 取 GET /_watcher/stats 的 manually_stopped。
 func (c *Client) WatcherManuallyStopped() (stopped bool, err error) {
@@ -42,6 +45,7 @@ func (c *Client) Transforms() ([]Transform, error) {
 	for _, t := range r.Transforms {
 		out = append(out, Transform{ID: t.ID, State: t.State})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
 }
 
@@ -67,6 +71,7 @@ func (c *Client) RemoteInfo() ([]RemoteCluster, error) {
 	for name, r := range raw {
 		out = append(out, RemoteCluster{Name: name, Connected: r.Connected})
 	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 

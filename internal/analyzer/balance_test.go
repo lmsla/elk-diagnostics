@@ -31,11 +31,36 @@ func TestHotSpotting(t *testing.T) {
 			{Name: "n2", CPU: 20, HeapPercent: 40, DiskPercent: 50},
 		}
 		res := HotSpotting(nodes, th)
-		if res.Status != diagnostic.StatusWarning {
-			t.Errorf("Status = %q, want warning", res.Status)
+		if res.Status != diagnostic.StatusInfo {
+			t.Errorf("Status = %q, want info", res.Status)
 		}
 		if !res.RequiresExtra {
 			t.Error("為瞬時快照，應要求額外確認")
+		}
+	})
+	t.Run("只在同類角色內比較", func(t *testing.T) {
+		nodes := []collector.NodeCPU{
+			{Name: "hot", Role: "data", HeapPercent: 95},
+			{Name: "peer", Role: "data", HeapPercent: 20},
+			{Name: "other-role", Role: "master", HeapPercent: 95},
+		}
+		res := HotSpotting(nodes, th)
+		if res.Status != diagnostic.StatusInfo {
+			t.Fatalf("Status = %q, want info", res.Status)
+		}
+		found := false
+		for _, f := range res.Findings {
+			if f == "hot（node.role=data）：heap.percent=95%（同類節點中位數 57.5%，差距 +37.5 個百分點）" {
+				found = true
+			}
+		}
+		if !found {
+			t.Error("應在 data 角色群組內辨識出 hot 節點")
+		}
+		for _, m := range res.Measurements {
+			if m.Metric == "elasticsearch.node.resource.current" && m.EntityName == "other-role" && m.PeerGroup != "node.role=master" {
+				t.Errorf("other-role PeerGroup = %q", m.PeerGroup)
+			}
 		}
 	})
 }
@@ -76,16 +101,16 @@ func TestMedian(t *testing.T) {
 	cases := []struct {
 		name string
 		in   []int
-		want int
+		want float64
 	}{
 		{"empty", nil, 0},
 		{"odd", []int{3, 1, 2}, 2},
-		{"even", []int{4, 1, 2, 3}, 2},
+		{"even", []int{4, 1, 2, 3}, 2.5},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			if got := median(c.in); got != c.want {
-				t.Errorf("median(%v) = %d, want %d", c.in, got, c.want)
+				t.Errorf("median(%v) = %v, want %v", c.in, got, c.want)
 			}
 		})
 	}

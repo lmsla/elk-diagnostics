@@ -10,7 +10,7 @@ import (
 const nodeStatsFixture = `{
   "_nodes":{"total":2,"successful":2,"failed":0},
   "nodes":{
-    "z-id":{"name":"node-b","roles":["data_hot","master"],
+    "z-id":{"name":"node-b","ip":"10.0.0.2","roles":["data_hot","master"],
 		"os":{"cpu":{"percent":42,"load_average":{"1m":1.5,"5m":1.2,"15m":0.8}},
         "mem":{"total_in_bytes":8000,"used_in_bytes":6000,"free_in_bytes":2000,"used_percent":75,"free_percent":25},
         "swap":{"total_in_bytes":1000,"used_in_bytes":100,"free_in_bytes":900},
@@ -28,7 +28,7 @@ const nodeStatsFixture = `{
 const nodeInfoFixture = `{
   "_nodes":{"total":2,"successful":2,"failed":0},
   "nodes":{
-    "z-id":{"name":"node-b","roles":["master","data_hot"],"os":{"name":"Linux","pretty_name":"Linux","version":"6.8","arch":"aarch64","available_processors":8,"allocated_processors":4},"process":{"id":22,"mlockall":true}},
+    "z-id":{"name":"node-b","ip":"10.0.0.2","roles":["master","data_hot"],"os":{"name":"Linux","pretty_name":"Linux","version":"6.8","arch":"aarch64","available_processors":8,"allocated_processors":4},"process":{"id":22,"mlockall":true}},
     "a-id":{"name":"node-a","roles":["ingest"],"os":{"name":"Linux","pretty_name":"Linux","version":"6.8","arch":"x86_64","available_processors":4,"allocated_processors":2},"process":{"id":11,"mlockall":false}}
   }
 }`
@@ -63,6 +63,9 @@ func TestNodeContextSnapshot_MultiNodeAndOptionalFields(t *testing.T) {
 		t.Fatalf("nodes 未穩定排序: %+v", s.Nodes)
 	}
 	a, b := s.Nodes[0], s.Nodes[1]
+	if b.IP != "10.0.0.2" {
+		t.Errorf("Node IP 未正確解析: %+v", b)
+	}
 	if a.OS.CPUPercent != nil || a.Process.OpenFileDescriptors != nil {
 		t.Error("ES 的 -1 必須正規化為不可得，而不是有效負數")
 	}

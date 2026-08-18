@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"elk-diagnostics/internal/diagnostic"
 	"elk-diagnostics/internal/nodecontext"
 )
 
@@ -16,6 +17,7 @@ func TestHTML_NodeContext(t *testing.T) {
 		InfoCoverage:  nodecontext.Coverage{Available: true, Total: 1, Successful: 1, Returned: 1},
 		Nodes: []nodecontext.Node{{
 			Name:  "node-a",
+			IP:    "10.0.0.1",
 			Roles: []string{"data_content", "data_hot", "ingest", "master", "transform"},
 			OS: nodecontext.OS{
 				CPUPercent: &cpu,
@@ -25,6 +27,7 @@ func TestHTML_NodeContext(t *testing.T) {
 			Filesystem: nodecontext.Filesystem{DataPaths: []nodecontext.DataPath{{Path: "/srv/es-data"}}},
 			JVM:        nodecontext.JVM{HeapUsedPct: &heapUsed},
 		}},
+		MissingNodes: []string{"node-offline"},
 	}
 	out, err := HTML(r)
 	if err != nil {
@@ -38,6 +41,7 @@ func TestHTML_NodeContext(t *testing.T) {
 		`<div class="node-mobile-list">`,
 		`<details class="node-technical-details">`,
 		"node-a",
+		"10.0.0.1",
 		"data_hot",
 		`role-more">+2</span>`,
 		"/srv/es-data",
@@ -49,6 +53,9 @@ func TestHTML_NodeContext(t *testing.T) {
 		"ⓘ 記憶體指標判讀",
 		"不等於 JVM Heap",
 		"單次高值不單獨視為記憶體壓力",
+		"缺失節點：node-offline",
+		`class="node-missing-row"`,
+		"Nodes API 未回應",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("HTML 缺少 %q", want)
@@ -66,6 +73,7 @@ func TestHTML_ReportHeaderSeparatesSummaryAndTechnicalMetadata(t *testing.T) {
 	r.Meta.GeneratedAt = "2026-07-30T17:24:32Z"
 	r.Meta.CollectedAt = "2026-07-30T17:24:29Z"
 	r.Meta.CollectScriptVersion = "0.0.4-mvp"
+	r.Meta.CollectedServices = []string{"elasticsearch", "host"}
 	r.Meta.Cluster.Host = "(bundle) /var/evidence/M07-fault/bundle"
 	r.NodeContext = &nodecontext.Snapshot{Nodes: make([]nodecontext.Node, 4)}
 
@@ -88,6 +96,8 @@ func TestHTML_ReportHeaderSeparatesSummaryAndTechnicalMetadata(t *testing.T) {
 		"elk-diagnostics 0.0.5",
 		"採集器版本",
 		"0.0.4-mvp",
+		"採集模組",
+		"elasticsearch、host",
 		`<details class="technical-info">`,
 		"M07-fault/bundle",
 		"/var/evidence/M07-fault/bundle",
@@ -107,10 +117,96 @@ func TestHTML_DiagnosticCardsHaveExplicitStatusLabels(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(out)
-	for _, label := range []string{"PASS", "WARNING", "CRITICAL", "SKIPPED", "UNKNOWN"} {
+	for _, label := range []string{"PASS", "INFO", "WARNING", "CRITICAL", "SKIPPED", "UNKNOWN"} {
 		want := `<span class="status-label">` + label + `</span>`
 		if !strings.Contains(s, want) {
 			t.Errorf("HTML 診斷卡缺少明確狀態標籤 %q", label)
 		}
+	}
+}
+
+func TestHTML_InfoCardShowsJudgmentGuide(t *testing.T) {
+	out, err := HTML(sampleReport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		`class="card info"`,
+		`<span class="status-label">INFO</span>`,
+		"需觀察",
+		"判定方式",
+		"單次 evictions &gt; 0",
+		"不能單獨判定故障",
+		"modules-fielddata.html",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("INFO 診斷卡缺少 %q", want)
+		}
+	}
+}
+
+func TestHTML_DiagnosticCardShowsCurrentMeasurements(t *testing.T) {
+	r := sampleReport()
+	r.Results[0].Measurements = []diagnostic.Measurement{
+		{Metric: "elasticsearch.node.fielddata.memory", Kind: "gauge", Value: 1024, Unit: "bytes", EntityType: "node", EntityID: "node-1", EntityName: "es-1"},
+		{Metric: "elasticsearch.node.fielddata.evictions", Kind: "counter", Value: 3, Unit: "count", EntityType: "node", EntityID: "node-1", EntityName: "es-1"},
+		{Metric: "elasticsearch.data_stream.status.count", Kind: "gauge", Value: 2, Unit: "count", Component: "green"},
+		{Metric: "elasticsearch.node.resource.deviation_from_median", Kind: "gauge", Value: 1, Unit: "percentage_point", EntityType: "node", EntityID: "node-1", EntityName: "es-1", Component: "cpu"},
+		{Metric: "elasticsearch.node.resource.deviation_from_median", Kind: "gauge", Value: 2, Unit: "percentage_point", EntityType: "node", EntityID: "node-1", EntityName: "es-1", Component: "heap.percent"},
+		{Metric: "elasticsearch.node.resource.deviation_from_median", Kind: "gauge", Value: 3, Unit: "percentage_point", EntityType: "node", EntityID: "node-1", EntityName: "es-1", Component: "disk.used_percent"},
+	}
+
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		"本次觀測值",
+		"節點 Fielddata 記憶體",
+		"節點 Fielddata eviction",
+		"Data stream 狀態數量",
+		"CPU 相對叢集中位數差距",
+		"JVM Heap 相對叢集中位數差距",
+		"磁碟使用率相對叢集中位數差距",
+		"es-1",
+		"green",
+		"1.0 KiB",
+		"當下值",
+		"累積值",
+		"累積值需以前後兩次採集的差值判讀",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("HTML 觀測值區塊缺少 %q", want)
+		}
+	}
+}
+
+func TestHTML_HotspotUsesComparableGroupTable(t *testing.T) {
+	r := sampleReport()
+	r.Results = []diagnostic.Result{{
+		ID: "hot_spotting", Title: "Hot spotting", Category: "performance", Status: diagnostic.StatusInfo,
+		Summary: "偵測到節點資源利用分布不均，需觀察是否持續",
+		Measurements: []diagnostic.Measurement{
+			{Metric: "elasticsearch.cluster.resource.median", Kind: "gauge", Value: 62.5, Unit: "percent", Component: "heap.percent", PeerGroup: "node.role=data"},
+			{Metric: "elasticsearch.node.resource.current", Kind: "gauge", Value: 80, Unit: "percent", EntityType: "node", EntityName: "es-mn1", Component: "heap.percent", PeerGroup: "node.role=data"},
+			{Metric: "elasticsearch.node.resource.deviation_from_median", Kind: "gauge", Value: 17.5, Unit: "percentage_point", EntityType: "node", EntityName: "es-mn1", Component: "heap.percent", PeerGroup: "node.role=data"},
+		},
+	}}
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		"本次比較基準", "節點觀測值", "JVM Heap 使用率", "node.role=data", "62.5%", "80%", "17.5 個百分點", "原始快照＋衍生比較", "單次快照不能單獨判定 hot spotting",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("Hot spotting HTML 缺少 %q", want)
+		}
+	}
+	if strings.Contains(s, "CPU 相對叢集中位數差距") {
+		t.Error("Hot spotting 不應退回舊的泛用差距表")
 	}
 }

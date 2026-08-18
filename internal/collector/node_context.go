@@ -46,6 +46,7 @@ type rawCoverage struct {
 
 type rawStatsNode struct {
 	Name  string   `json:"name"`
+	IP    string   `json:"ip"`
 	Roles []string `json:"roles"`
 	OS    struct {
 		CPU struct {
@@ -164,7 +165,7 @@ func parseNodeResourceStats(body []byte) (*nodecontext.Snapshot, map[string]*nod
 	snapshot := &nodecontext.Snapshot{StatsCoverage: coverageOf(raw.Coverage, len(raw.Nodes))}
 	nodes := make(map[string]*nodecontext.Node, len(raw.Nodes))
 	for id, r := range raw.Nodes {
-		n := &nodecontext.Node{ID: id, Name: r.Name, Roles: append([]string(nil), r.Roles...), StatsAvailable: true}
+		n := &nodecontext.Node{ID: id, Name: r.Name, IP: r.IP, Roles: append([]string(nil), r.Roles...), StatsAvailable: true}
 		n.OS.CPUPercent = nonNegativeInt(r.OS.CPU.Percent)
 		n.OS.Load1m = firstFloat(r.OS.CPU.Load.One, r.OS.Load.One)
 		n.OS.Load5m = firstFloat(r.OS.CPU.Load.Five, r.OS.Load.Five)
@@ -210,6 +211,7 @@ func mergeNodeResourceInfo(snapshot *nodecontext.Snapshot, nodes map[string]*nod
 		Coverage rawCoverage `json:"_nodes"`
 		Nodes    map[string]struct {
 			Name  string   `json:"name"`
+			IP    string   `json:"ip"`
 			Roles []string `json:"roles"`
 			OS    struct {
 				Name                string `json:"name"`
@@ -238,6 +240,9 @@ func mergeNodeResourceInfo(snapshot *nodecontext.Snapshot, nodes map[string]*nod
 		n.InfoAvailable = true
 		if n.Name == "" {
 			n.Name = r.Name
+		}
+		if n.IP == "" {
+			n.IP = r.IP
 		}
 		if len(n.Roles) == 0 {
 			n.Roles = append([]string(nil), r.Roles...)

@@ -2,7 +2,7 @@
 # 內部 Bundle 故障案例控制器。
 #
 # 故障配方只委派給 fault-scenarios.sh；本腳本負責把 trigger、collect、restore
-# 與完整 run 拆成可跨指令執行的安全階段。禁止在客戶或共用環境使用。
+# 與完整 run 拆成可跨指令執行的安全階段。禁止在使用者環境或共用環境使用。
 
 set -euo pipefail
 

@@ -52,7 +52,7 @@ func TestCheckIsReadOnly(t *testing.T) {
 }
 
 // TestCheckDoesNotLeakSecretsOnSuccess 驗證認證成功跑完整輪 check 後，密碼明文與其
-// Basic auth base64 編碼都不會出現在報告輸出裡（報告可能會被交給客戶或留存稽核）。
+// Basic auth base64 編碼都不會出現在報告輸出裡（報告可能會被交給使用者或留存稽核）。
 func TestCheckDoesNotLeakSecretsOnSuccess(t *testing.T) {
 	const username = "svc-account"
 	const secret = "S3cr3t-Pa55w0rd-should-not-leak"
