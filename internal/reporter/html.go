@@ -2,16 +2,23 @@ package reporter
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"html/template"
 	"math"
+	"net/url"
+	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"elk-diagnostics/internal/diagnostic"
 	"elk-diagnostics/internal/nodecontext"
 )
+
+//go:embed webcomm_logo.svg
+var webcommLogoSVG string
 
 // HTML 產出離線可渲染報告（診斷報告規格 §5）：單一檔、CSS 全內嵌、零外部 CDN、
 // 用原生 <details> 折疊（免 JS）、可列印。
@@ -28,12 +35,24 @@ func HTML(r diagnostic.Report) ([]byte, error) {
 	}
 	esGroups := categoryGroups(esResults)
 	kibanaGroups := categoryGroups(kibanaResults)
+	esStart := 1
+	if r.NodeContext != nil {
+		esStart = 2
+	}
 
 	data := struct {
 		R            diagnostic.Report
 		ESGroups     []htmlGroup
 		KibanaGroups []htmlGroup
-	}{r, esGroups, kibanaGroups}
+		ES           htmlGroupSet
+		Kibana       htmlGroupSet
+	}{
+		R:            r,
+		ESGroups:     esGroups,
+		KibanaGroups: kibanaGroups,
+		ES:           htmlGroupSet{Prefix: "es", Start: esStart, Groups: esGroups},
+		Kibana:       htmlGroupSet{Prefix: "kibana", Start: 1, Groups: kibanaGroups},
+	}
 
 	t, err := template.New("report").Funcs(htmlFuncs).Parse(htmlTmpl)
 	if err != nil {
@@ -58,7 +77,13 @@ func categoryGroups(results []diagnostic.Result) []htmlGroup {
 			delete(byCat, c)
 		}
 	}
-	for c, rs := range byCat { // 未知/新增分類，照原 key 附在後面
+	keys := make([]string, 0, len(byCat))
+	for c := range byCat {
+		keys = append(keys, c)
+	}
+	sort.Strings(keys)
+	for _, c := range keys { // 未知/新增分類，按 key 排序後附在後面
+		rs := byCat[c]
 		groups = append(groups, htmlGroup{c, c, rs})
 	}
 	return groups
@@ -70,10 +95,138 @@ type htmlGroup struct {
 	Results []diagnostic.Result
 }
 
-var catOrder = []string{"cluster", "capacity", "data", "management", "performance", "snapshot", "node", "service"}
+type htmlGroupSet struct {
+	Prefix string
+	Start  int
+	Groups []htmlGroup
+}
+
+func groupStatus(results []diagnostic.Result) diagnostic.Status {
+	status := diagnostic.StatusPass
+	for _, result := range results {
+		if statusRank(result.Status) > statusRank(status) {
+			status = result.Status
+		}
+	}
+	return status
+}
+
+func serviceStatus(groups []htmlGroup) diagnostic.Status {
+	status := diagnostic.StatusPass
+	for _, group := range groups {
+		if candidate := groupStatus(group.Results); statusRank(candidate) > statusRank(status) {
+			status = candidate
+		}
+	}
+	return status
+}
+
+func hasNonSkipped(results []diagnostic.Result) bool {
+	for _, result := range results {
+		if result.Status != diagnostic.StatusSkipped {
+			return true
+		}
+	}
+	return false
+}
+
+func serviceNavigable(groups []htmlGroup) bool {
+	for _, group := range groups {
+		if hasNonSkipped(group.Results) {
+			return true
+		}
+	}
+	return false
+}
+
+func resultSummary(results []diagnostic.Result) diagnostic.Summary {
+	var summary diagnostic.Summary
+	for _, result := range results {
+		switch result.Status {
+		case diagnostic.StatusPass:
+			summary.Pass++
+		case diagnostic.StatusInfo:
+			summary.Info++
+		case diagnostic.StatusWarning:
+			summary.Warning++
+		case diagnostic.StatusCritical:
+			summary.Critical++
+		case diagnostic.StatusSkipped:
+			summary.Skipped++
+		default:
+			summary.Unknown++
+		}
+	}
+	return summary
+}
+
+func serviceSummary(groups []htmlGroup) diagnostic.Summary {
+	var results []diagnostic.Result
+	for _, group := range groups {
+		results = append(results, group.Results...)
+	}
+	return resultSummary(results)
+}
+
+func nodeContextStatus(snapshot *nodecontext.Snapshot) diagnostic.Status {
+	if snapshot == nil {
+		return diagnostic.StatusUnknown
+	}
+	if len(snapshot.MissingNodes) > 0 {
+		return diagnostic.StatusCritical
+	}
+	if !snapshot.StatsCoverage.Complete() || !snapshot.InfoCoverage.Complete() {
+		return diagnostic.StatusUnknown
+	}
+	return diagnostic.StatusPass
+}
+
+func totalSummary(summary diagnostic.Summary) int {
+	return summary.Pass + summary.Info + summary.Warning + summary.Critical + summary.Skipped + summary.Unknown
+}
+
+func statusRank(status diagnostic.Status) int {
+	switch status {
+	case diagnostic.StatusCritical:
+		return 5
+	case diagnostic.StatusWarning:
+		return 4
+	case diagnostic.StatusUnknown:
+		return 3
+	case diagnostic.StatusInfo:
+		return 2
+	case diagnostic.StatusSkipped:
+		return 1
+	default:
+		return 0
+	}
+}
+
+func sectionID(prefix, key string) string {
+	var b strings.Builder
+	b.WriteString("section-")
+	b.WriteString(prefix)
+	b.WriteByte('-')
+	lastDash := false
+	for _, r := range strings.ToLower(key) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.TrimSuffix(b.String(), "-")
+}
+
+var catOrder = []string{"cluster", "capacity", "data", "management", "performance", "snapshot", "node", "security", "replication", "machine_learning", "service"}
 var catNames = map[string]string{
 	"cluster": "叢集", "capacity": "容量", "data": "資料",
-	"management": "管理", "performance": "效能", "snapshot": "快照", "node": "節點環境診斷", "service": "服務診斷",
+	"management": "管理", "performance": "效能", "snapshot": "快照", "node": "節點環境診斷",
+	"security": "Security", "replication": "Replication", "machine_learning": "Machine Learning", "service": "服務診斷",
 }
 
 var htmlFuncs = template.FuncMap{
@@ -132,7 +285,43 @@ var htmlFuncs = template.FuncMap{
 		}
 		return "⚠ 需額外條件"
 	},
-	"isOpen": func(s diagnostic.Status) bool { return s != diagnostic.StatusPass && s != diagnostic.StatusSkipped },
+	"isOpen":       func(s diagnostic.Status) bool { return s != diagnostic.StatusPass && s != diagnostic.StatusSkipped },
+	"groupStatus":  groupStatus,
+	"groupVisible": hasNonSkipped,
+	"groupSummary": resultSummary,
+	"sectionID":    sectionID,
+	"sectionNumber": func(index, start int) string {
+		return fmt.Sprintf("%02d", index+start)
+	},
+	"pctOf": func(value, total int) int {
+		if total <= 0 || value <= 0 {
+			return 0
+		}
+		return int(math.Round(float64(value) * 100 / float64(total)))
+	},
+	"addCounts":      totalSummary,
+	"serviceStatus":  serviceStatus,
+	"serviceVisible": serviceNavigable,
+	"serviceSummary": serviceSummary,
+	"nodeStatus":     nodeContextStatus,
+	"docLabel":       documentLabel,
+	"statusIcon": func(status diagnostic.Status) string {
+		switch status {
+		case diagnostic.StatusPass:
+			return "i-check-circle"
+		case diagnostic.StatusInfo:
+			return "i-info"
+		case diagnostic.StatusWarning:
+			return "i-alert-triangle"
+		case diagnostic.StatusCritical:
+			return "i-alert-octagon"
+		case diagnostic.StatusSkipped:
+			return "i-skip-forward"
+		default:
+			return "i-help-circle"
+		}
+	},
+	"brandLogo": func() template.HTML { return template.HTML(webcommLogoSVG) },
 	// isBundleHost 判斷本次分析是否來自 --from-bundle：Host 欄位在 bundle 模式固定帶
 	// "(bundle) " 前綴（見 check.go）。只有 bundle 模式才需要提示「未含採集時間」，
 	// 連線模式本來就沒有採集/分析時間差的問題。
@@ -724,13 +913,31 @@ func humanBytes(v uint64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(v)/float64(div), "KMGTPE"[exp])
 }
 
-const htmlTmpl = `{{define "diagnostic-groups"}}
+func documentLabel(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	cleanPath := strings.TrimRight(u.Path, "/")
+	if cleanPath == "" {
+		return u.Host
+	}
+	label := path.Base(cleanPath)
+	if label == "." || label == "/" || label == "" {
+		return u.Host
+	}
+	return label
+}
+
+const htmlTmpl = `{{define "diagnostic-results"}}
 {{range .}}
-<h2>{{.Name}}</h2>
-{{range .Results}}
-<details class="card {{cls .Status}}"{{if isOpen .Status}} open{{end}}>
-  <summary>{{badge .Status}} <span class="status-label">{{statusLabel .Status}}</span> {{.Title}} <span class="sm">— {{.Summary}}</span><span class="src">{{.Source}}</span></summary>
-  <div class="body">
+<details class="card {{cls .Status}} check" data-status="{{cls .Status}}"{{if isOpen .Status}} open{{end}}>
+  <summary>
+    <svg class="ic ic-16 chev"><use href="#i-chevron-right"/></svg>
+    <span class="check-head"><span class="status-label">{{statusLabel .Status}}</span><span class="check-title">{{.Title}}</span><span class="check-src">{{.Source}}</span></span>
+    <span class="check-desc">{{.Summary}}</span>
+  </summary>
+  <div class="body check-body">
     {{if .Findings}}<h4>發現</h4><ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}
     {{if hasHotspotMeasurements .ID .Measurements}}
     <h4>本次比較基準</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>比較群組</th><th>同類節點中位數</th></tr></thead><tbody>{{range hotspotBaselines .Measurements}}<tr><td>{{.Label}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Value}}</td></tr>{{end}}</tbody></table></div>
@@ -741,10 +948,28 @@ const htmlTmpl = `{{define "diagnostic-groups"}}
     {{if .Recommendations}}<h4>建議（唯讀引導）</h4><ul>{{range .Recommendations}}<li>{{if .Cmd}}<code>{{.Cmd}}</code> — {{end}}{{.Desc}}</li>{{end}}</ul>{{end}}
     {{if .RequiresExtra}}<p class="extra {{cls .Status}}">{{extraLead .Status}}：{{.ExtraReason}}</p>{{end}}
     {{if .VersionWarning}}<p class="vw">版本警告：{{.VersionWarning}}</p>{{end}}
-    {{if .Docs}}<h4>官方文件</h4><ul>{{range .Docs}}<li><a href="{{.}}">{{.}}</a></li>{{end}}</ul>{{end}}
+    {{if .Docs}}<h4>官方文件</h4><ul class="doclist">{{range .Docs}}<li><a class="doclink" href="{{.}}" title="{{.}}"><svg class="ic ic-12"><use href="#i-external-link"/></svg><span>{{docLabel .}}</span></a></li>{{end}}</ul>{{end}}
   </div>
 </details>
 {{end}}
+{{end}}
+{{define "diagnostic-groups"}}
+{{range $i, $group := .Groups}}
+{{$summary := groupSummary .Results}}
+<section id="{{sectionID $.Prefix .Key}}" class="section diagnostic-section" data-status="{{cls (groupStatus .Results)}}">
+  <header class="section-head">
+    <div class="section-heading"><span class="section-id">{{sectionNumber $i $.Start}}</span><h2 class="section-title">{{.Name}}</h2><span class="section-en">{{.Key}}</span></div>
+    <div class="section-counts">
+      {{if $summary.Critical}}<span class="count-chip" data-status="critical"><svg class="ic ic-12"><use href="#i-x-circle"/></svg><b>{{$summary.Critical}}</b></span>{{end}}
+      {{if $summary.Warning}}<span class="count-chip" data-status="warning"><svg class="ic ic-12"><use href="#i-alert-triangle"/></svg><b>{{$summary.Warning}}</b></span>{{end}}
+      {{if $summary.Info}}<span class="count-chip" data-status="info"><svg class="ic ic-12"><use href="#i-info"/></svg><b>{{$summary.Info}}</b></span>{{end}}
+      {{if $summary.Pass}}<span class="count-chip" data-status="pass"><svg class="ic ic-12"><use href="#i-check-circle"/></svg><b>{{$summary.Pass}}</b></span>{{end}}
+      {{if $summary.Skipped}}<span class="count-chip" data-status="skipped"><svg class="ic ic-12"><use href="#i-skip-forward"/></svg><b>{{$summary.Skipped}}</b></span>{{end}}
+      {{if $summary.Unknown}}<span class="count-chip" data-status="unknown"><svg class="ic ic-12"><use href="#i-help-circle"/></svg><b>{{$summary.Unknown}}</b></span>{{end}}
+    </div>
+  </header>
+  <div class="section-body">{{template "diagnostic-results" .Results}}</div>
+</section>
 {{end}}
 {{end}}
 <!DOCTYPE html>
@@ -752,7 +977,7 @@ const htmlTmpl = `{{define "diagnostic-groups"}}
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Elasticsearch 叢集健康診斷報告</title>
+<title>ELK 服務健康診斷報告</title>
 <style>
   :root{--pass:#2e7d32;--info:#1565c0;--warning:#ed6c02;--critical:#c62828;--skipped:#757575;--unknown:#455a64;}
   *{box-sizing:border-box}
@@ -901,47 +1126,156 @@ const htmlTmpl = `{{define "diagnostic-groups"}}
     body{background:#fff}.card,.node-overview-wrap{break-inside:avoid}summary{cursor:default}
     .wrap{max-width:none;padding:0}.node-mobile-list{display:none}.node-overview-wrap{display:block}
   }
+
+  /* UIUX 模板：維持單檔離線輸出，將模板的版面語彙套用到動態診斷資料。 */
+  :root{
+    --ui-brand:#2a6191;--ui-ink:#222b45;--ui-muted:#62748e;--ui-subtle:#8f9bb3;
+    --ui-line:#e4e9f2;--ui-soft:#eef1f6;--ui-canvas:#f7f9fc;--ui-link:#0095ff;
+    --ui-shadow:0 1px 3px 1px rgba(0,0,0,.15),0 1px 2px rgba(0,0,0,.12);
+  }
+  body{font-family:-apple-system,BlinkMacSystemFont,"PingFang TC","Noto Sans TC","Microsoft JhengHei","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;font-size:14px;line-height:1.625;color:var(--ui-ink);background:var(--ui-canvas);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1276px;margin:0 auto;padding:0 24px}
+  .topbar{position:sticky;top:0;z-index:30;height:60px;display:flex;align-items:center;justify-content:center;margin:0 -24px;padding:0 20px;background:#fff;border:0;border-bottom:1px solid var(--ui-line);border-radius:0;box-shadow:var(--ui-shadow)}
+  .topbar-inner{display:flex;align-items:center;gap:16px}
+  .logo{display:block;width:160px;height:41.374px}
+  .topbar-rule{width:1px;height:20px;background:var(--ui-line)}
+  .topbar-title{font-size:16px;font-weight:500;line-height:1.5;color:var(--ui-brand)}
+  .report-meta{margin-top:24px;padding:20px;background:#fff;border:1px solid var(--ui-line);border-radius:8px}.report-meta .header-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.report-meta h1{margin:0;color:var(--ui-ink);font-size:24px;line-height:1.35}.report-meta .cluster-name{margin-top:12px;color:var(--ui-ink);font-size:18px;font-weight:650}.report-meta .cluster-facts{color:var(--ui-muted);font-size:13px}.report-meta .meta-grid{border-top:1px solid var(--ui-line)}
+  .section-nav{position:sticky;top:60px;z-index:20;margin:0 -24px;background:#fff;border-bottom:1px solid var(--ui-line)}
+  .section-nav-inner{display:flex;justify-content:center;gap:4px;height:51px;padding:0 24px;overflow-x:auto;scrollbar-width:none}
+  .section-nav-inner::-webkit-scrollbar{display:none}
+  .nav-item{position:relative;display:flex;align-items:center;gap:8px;flex:none;padding:0 16px;color:var(--ui-muted);font-size:15px;font-weight:500;white-space:nowrap;text-decoration:none}
+  .nav-item:hover{color:var(--ui-brand);text-decoration:none}.nav-dot{width:6px;height:6px;border-radius:999px;background:var(--ui-subtle);opacity:.7}.nav-item[data-status="critical"] .nav-dot{background:#ff3d71}.nav-item[data-status="warning"] .nav-dot{background:#e0930a}.nav-item[data-status="pass"] .nav-dot{background:#00b383}.nav-item[data-status="info"] .nav-dot{background:#8f9bb3}
+  .nav-item::after{content:"";position:absolute;left:8px;right:8px;bottom:0;height:3px;border-radius:999px 999px 0 0;background:var(--ui-brand);opacity:0}.nav-item:hover::after,.nav-item:focus-visible::after{opacity:.35}
+  .banner{margin:24px 0 0;padding:0;background:#dbe1ec;color:var(--ui-ink);border:1px solid var(--ui-line);border-radius:8px;overflow:hidden;display:block;font-size:inherit;font-weight:400}
+  .banner-body{padding:12px 16px 16px}.banner-head{display:flex;gap:12px;align-items:center}.banner-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:999px;background:#e4e9f2;color:#62748e}.banner.pass{background:#cdefe2}.banner.pass .banner-icon{background:#e4f7f0;color:#00875a}.banner.info{background:#dbe1ec}.banner.warning{background:#fbe6c4}.banner.critical{background:#ffd6d9}.banner.unknown{background:#d5dae6}
+  .banner-title{margin:0;font-size:15px;font-weight:700;color:#48566f}.banner.warning .banner-title{color:#8a5708}.banner.critical .banner-title{color:#b81d5b}.banner.pass .banner-title{color:#00694a}.banner-counts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:2px 0 0;color:var(--ui-muted);font-size:12px;line-height:1.5}.banner-counts .count{display:inline-flex;align-items:center;gap:4px}.banner-counts .count b{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:600}.banner-counts .count-total{color:var(--ui-muted)}
+  .deflist{display:flex;flex-wrap:wrap;gap:10px 24px;margin:16px 0 0}.deflist>div{min-width:0}.deflist dt{font-size:11px;color:var(--ui-muted);line-height:1.5}.deflist dd{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--ui-ink);overflow-wrap:anywhere}.technical-info{margin-top:12px;padding-top:12px;border-top:1px solid rgba(34,43,69,.10)}
+  .kpi-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}.kpi{display:flex;flex-direction:column;justify-content:space-between;min-width:0;min-height:120px;padding:16px;background:#fff;border:1px solid var(--ui-line);border-radius:8px}.kpi-rate{width:188px;flex:none}.kpi-stat{flex:1 1 180px}.kpi-label{display:flex;align-items:center;gap:8px;color:var(--ui-muted);font-size:14px}.kpi-rate .kpi-label{font-weight:700}.kpi-icon{width:24px;height:24px;display:grid;place-items:center;border-radius:6px;background:#e4e9f2;color:#62748e}.kpi-figure{display:flex;align-items:flex-end;justify-content:flex-end;gap:8px;padding-top:12px}.kpi-value{font-size:32px;font-weight:700;line-height:1;color:#62748e}.kpi-unit{font-size:13px;color:var(--ui-subtle)}.kpi-track{height:6px;margin-top:12px;border-radius:999px;background:var(--ui-line);overflow:hidden}.kpi-fill{height:100%;border-radius:999px;background:#8f9bb3}.kpi[data-status="pass"] .kpi-value{color:#00875a}.kpi[data-status="pass"] .kpi-fill{background:#00b383}.kpi[data-status="warning"] .kpi-value{color:#b5730a}.kpi[data-status="warning"] .kpi-fill{background:#e0930a}.kpi[data-status="critical"] .kpi-value{color:#db2c5b}.kpi[data-status="critical"] .kpi-fill{background:#ff3d71}
+  .service-nav{display:none}
+  .service-section{margin:16px 0 24px;padding:0;background:#fff;border:1px solid var(--ui-line);border-radius:8px;overflow:visible}.service-section.kibana{background:#fbfdff;border-top:0}.service-section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0;padding:14px 20px;background:var(--ui-brand);color:#fff;border:0;border-radius:8px 8px 0 0}.service-section.kibana .service-section-heading{background:#2a6191}.service-section-heading h2{margin:0;padding:0;border:0;color:#fff;font-size:16px}.service-section-heading p{margin:2px 0 0;color:rgba(255,255,255,.78);font-size:12px}.service-section-count{color:rgba(255,255,255,.85);font-size:12px;font-weight:600}
+  .diagnostic-section{margin:16px 20px;background:#fff;border:1px solid var(--ui-line);border-radius:8px;overflow:hidden;scroll-margin-top:120px}.diagnostic-section .section-head{padding:12px 16px;background:#f7f9fc;color:var(--ui-ink);border-bottom:1px solid var(--ui-line)}.diagnostic-section .section-title{font-size:16px;color:var(--ui-ink)}.diagnostic-section .section-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ui-subtle);font-size:12px}.diagnostic-section .section-en{color:var(--ui-subtle);font-size:11px}.diagnostic-section .section-counts{color:var(--ui-muted)}.diagnostic-section .count-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:#eef1f6;color:var(--ui-muted);font-size:12px}.diagnostic-section .section-body{padding:0 16px}
+  .check{border:0;border-bottom:1px solid var(--ui-line);border-left:0;border-radius:0;margin:0;overflow:visible;padding:16px 0}.check:last-child{border-bottom:0}.check>summary{display:grid;grid-template-columns:16px minmax(0,1fr);gap:4px 8px;align-items:start;padding:0;font-weight:400;list-style:none;cursor:pointer}.check>summary::-webkit-details-marker{display:none}.check>summary .chev{margin-top:3px;color:var(--ui-subtle);font-size:20px;line-height:1;transition:transform .15s ease}.check[open]>summary .chev{transform:rotate(90deg)}.check-head{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;gap:6px}.check-desc{grid-column:2;max-width:768px;color:var(--ui-muted);font-size:14px;line-height:1.625}.check-title{color:var(--ui-ink);font-size:15px;font-weight:500;line-height:1.5}.check-src{display:inline-flex;align-items:center;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ui-subtle);font-size:11px;line-height:1.5}.status-label{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#eef1f6;color:#62748e;font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1.5}.check.pass .status-label{background:#e4f7f0;color:#00875a}.check.info .status-label{background:#e4e9f2;color:#62748e}.check.warning .status-label{background:#fdf1dc;color:#b5730a}.check.critical .status-label{background:#ffe6ee;color:#db2c5b}.check.skipped .status-label{background:#f2f5f9;color:#a8b3c7}.check.unknown .status-label{background:#dfe3ec;color:#465272}
+  .body.check-body{padding:16px 0 0 24px;border:0}.body.check-body h4{margin:16px 0 6px;color:var(--ui-ink);font-size:13px}.body.check-body h4:first-child{margin-top:0}.body.check-body li{color:var(--ui-muted);font-size:14px}.measurement-wrap,.judgment-wrap{border:1px solid var(--ui-line);border-radius:6px;overflow-x:auto}.measurement-table,.judgment-table{font-size:13px;min-width:560px}.measurement-table th,.judgment-table th{padding:8px 12px;background:var(--ui-brand);color:#fff;font-size:12px;font-weight:500}.measurement-table td,.judgment-table td{padding:8px 12px;border-top:1px solid var(--ui-line);color:var(--ui-ink)}.measurement-table .measurement-number{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.measurement-kind{display:inline-flex;padding:1px 8px;border-radius:999px;background:#eef1f6;color:var(--ui-muted);font-size:11px}.measurement-kind.counter{background:#fdf1dc;color:#b5730a}.measurement-note,.extra,.vw{color:var(--ui-muted);font-size:12px}.extra.info{color:#62748e}
+  .footer{margin:24px 0;padding:16px 0;border-top:1px solid var(--ui-line);background:transparent;color:var(--ui-subtle);font-size:12px;line-height:1.75}
+  @media(max-width:980px){.wrap{padding:0 16px}.topbar,.section-nav{margin-left:-16px;margin-right:-16px}.section-nav-inner{justify-content:flex-start}.kpi-rate{width:100%}.diagnostic-section{margin-left:12px;margin-right:12px}.body.check-body{padding-left:0}}
+  @media(max-width:600px){.topbar{height:auto;padding:8px 16px}.topbar-inner{flex-wrap:wrap;justify-content:center;row-gap:4px}.section-nav{top:auto}.banner-head{align-items:flex-start}.deflist{gap:8px 16px}}
+  @media print{.topbar{position:static;box-shadow:none}.section-nav{display:none}.check,.diagnostic-section,.service-section{break-inside:avoid;page-break-inside:avoid}.wrap{max-width:none;padding:0}.node-mobile-list{display:none}.node-overview-wrap{display:block}}
+
+  /* 與核准模板一致的最終版面規則。前述既有樣式保留供舊元件相容，以下規則優先。 */
+  :root{
+    --brand:#2a6191;--ink:#222b45;--ink-2:#62748e;--ink-3:#8f9bb3;
+    --line:#e4e9f2;--line-soft:#eef1f6;--surface:#fff;--canvas:#f7f9fc;--link:#0095ff;
+    --shell:1276px;--topbar-h:60px;--nav-h:51px;
+  }
+  [data-status="pass"]{--s-bg:#e4f7f0;--s-fg:#00875a;--s-bar:#00b383;--s-strong:#cdefe2;--s-deep:#00694a}
+  [data-status="info"]{--s-bg:#e4e9f2;--s-fg:#62748e;--s-bar:#8f9bb3;--s-strong:#dbe1ec;--s-deep:#48566f}
+  [data-status="warning"]{--s-bg:#fdf1dc;--s-fg:#b5730a;--s-bar:#e0930a;--s-strong:#fbe6c4;--s-deep:#8a5708}
+  [data-status="critical"]{--s-bg:#ffe6ee;--s-fg:#db2c5b;--s-bar:#ff3d71;--s-strong:#ffd6d9;--s-deep:#b81d5b}
+  [data-status="skipped"]{--s-bg:#f2f5f9;--s-fg:#a8b3c7;--s-bar:#c3cbd9;--s-strong:#eaeff5;--s-deep:#75808f}
+  [data-status="unknown"]{--s-bg:#dfe3ec;--s-fg:#465272;--s-bar:#7d8aa3;--s-strong:#d5dae6;--s-deep:#333d57}
+  .ic{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+  .ic-12{width:12px;height:12px;stroke-width:2.25}.ic-14{width:14px;height:14px;stroke-width:2.15}.ic-16{width:16px;height:16px}.ic-20{width:20px;height:20px}
+  .shell{max-width:var(--shell);margin:0 auto;padding:0 24px}
+  .topbar{height:var(--topbar-h);margin:0;padding:0 20px;background:var(--surface);border-bottom:1px solid var(--line);box-shadow:var(--ui-shadow)}
+  .section-nav{top:var(--topbar-h);margin:0;background:var(--surface);border-bottom:1px solid var(--line)}
+  .section-nav-inner{height:var(--nav-h);padding:0 24px}
+  .nav-dot{background:var(--s-bar);opacity:.55}.nav-item:hover .nav-dot{opacity:1}
+  .banner{margin-top:24px;background:var(--s-strong);border:1px solid var(--line)}
+  .banner-icon{background:var(--s-bg);color:var(--s-fg)}.banner-title{color:var(--s-deep)}
+  .banner-counts .count{color:var(--s-deep)}
+  .tech>summary{display:flex;align-items:center;gap:6px;color:var(--s-deep);list-style:none;cursor:pointer}.tech>summary::-webkit-details-marker{display:none}
+  .kpi{min-height:142px}.kpi-rate-body{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;padding-top:8px}.kpi-rate-value{font-size:40px;font-weight:700;line-height:.9;color:var(--brand)}.kpi-rate-note{font-size:12px;color:var(--ink-2)}
+  .kpi-icon{background:var(--s-bg);color:var(--s-fg)}.kpi-value{color:var(--s-fg)}.kpi-fill{background:var(--s-bar)}
+  .section,.service-section,.diagnostic-section{margin:16px 0 0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;scroll-margin-top:calc(var(--topbar-h) + var(--nav-h) + 8px)}
+  .section-head,.diagnostic-section .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:var(--brand);color:#fff;border:0}
+  .section-heading{display:flex;align-items:baseline;gap:8px;min-width:0;flex-wrap:wrap}.section-id,.diagnostic-section .section-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;color:inherit;opacity:1}.section-title,.diagnostic-section .section-title{margin:0;padding-bottom:0;border-bottom:0;color:#fff;font-size:16px;font-weight:700;line-height:1.5}.section-en,.diagnostic-section .section-en{color:#fff;font-size:11px;opacity:.75}.section-counts{display:flex;align-items:center;gap:6px;flex:none}.count-chip,.diagnostic-section .count-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--s-bg);color:var(--s-fg);font-size:12px;font-weight:500;line-height:1.5}
+  .section-body,.diagnostic-section .section-body{padding:0 20px}.node-context-body{padding-bottom:16px}
+  .service-section.kibana{margin-top:16px;background:var(--surface);border-top:1px solid var(--line)}
+  .check{padding:16px 0}.check>summary{gap:8px}.check>summary .chev{font-size:inherit}.check-head{gap:10px}.body.check-body{padding:12px 0 0 24px;max-width:1024px}
+  .doclist{display:flex;flex-direction:column;gap:4px;list-style:none;margin:0;padding:0}.doclink{display:inline-flex;align-items:center;gap:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.doclink .ic{color:var(--link)}
+  .node-overview{border-collapse:collapse}.node-overview thead th{background:var(--brand);color:#fff}.node-missing-row{background:#fff2f6;color:#db2c5b}
+  @media(max-width:980px){.shell{padding:0 16px}.topbar,.section-nav{margin:0}.section-nav-inner{justify-content:flex-start}.diagnostic-section{margin-left:0;margin-right:0}}
+  @media print{.shell{max-width:none;padding:0}.topbar{position:static}.section,.check{break-inside:avoid;page-break-inside:avoid}}
 </style>
 </head>
 <body>
-<div class="wrap">
-<header>
-  <div class="header-title">
-    <h1>Elasticsearch 叢集健康診斷報告</h1>
-    <span class="report-status {{cls .R.OverallStatus}}">{{statusLabel .R.OverallStatus}} · {{statusText .R.OverallStatus}}</span>
+<svg width="0" height="0" aria-hidden="true" focusable="false" style="position:absolute">
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></symbol>
+  <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line></symbol>
+  <symbol id="i-alert-triangle" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></symbol>
+  <symbol id="i-x-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="15" y1="9" x2="9" y2="15"></line><line x1="9" y1="9" x2="15" y2="15"></line></symbol>
+  <symbol id="i-skip-forward" viewBox="0 0 24 24"><polygon points="5 4 15 12 5 20 5 4"></polygon><line x1="19" y1="5" x2="19" y2="19"></line></symbol>
+  <symbol id="i-help-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></symbol>
+  <symbol id="i-alert-octagon" viewBox="0 0 24 24"><polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"></polygon><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></symbol>
+  <symbol id="i-external-link" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></symbol>
+  <symbol id="i-chevron-right" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></symbol>
+</svg>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    {{brandLogo}}
+    <span class="topbar-rule"></span>
+    <span class="topbar-title">ELK 服務健康診斷報告</span>
   </div>
-  <div class="cluster-name">{{clusterName .R.Meta.Cluster.Name}}</div>
-  <div class="cluster-facts">
-    <span>ES {{.R.Meta.Cluster.ESVersion}}</span>
-    {{with .R.NodeContext}}<span>{{len .Nodes}} 個節點</span>{{end}}
-    <span>{{analysisMode .R.Meta.Mode .R.Meta.Cluster.Host}}</span>
-  </div>
-  <div class="meta-grid">
-    {{if .R.Meta.CollectedAt}}
-    <div class="meta-item"><span class="meta-label">資料採集時間</span><time class="meta-value" datetime="{{.R.Meta.CollectedAt}}">{{localTime .R.Meta.CollectedAt}}</time></div>
-    {{else if isBundleHost .R.Meta.Cluster.Host}}
-    <div class="meta-item"><span class="meta-label">資料採集時間</span><span class="meta-value vw">bundle 未含採集時間（舊版採集腳本）</span></div>
-    {{end}}
-    <div class="meta-item"><span class="meta-label">報告產生時間</span><time class="meta-value" datetime="{{.R.Meta.GeneratedAt}}">{{localTime .R.Meta.GeneratedAt}}</time></div>
-    <div class="meta-item"><span class="meta-label">工具版本</span><span class="meta-value">elk-diagnostics {{.R.Meta.ToolVersion}}</span></div>
-    {{if .R.Meta.CollectScriptVersion}}<div class="meta-item"><span class="meta-label">採集器版本</span><span class="meta-value">{{.R.Meta.CollectScriptVersion}}</span></div>{{end}}
-  </div>
-  <details class="technical-info">
-    <summary>技術資訊</summary>
-    <dl class="technical-grid">
-      <dt>診斷模式</dt><dd>{{analysisMode .R.Meta.Mode .R.Meta.Cluster.Host}}</dd>
-      <dt>資料來源</dt><dd><span title="{{sourcePath .R.Meta.Cluster.Host}}">{{sourceShort .R.Meta.Cluster.Host}}</span></dd>
-      <dt>完整來源</dt><dd>{{sourcePath .R.Meta.Cluster.Host}}</dd>
-      {{if .R.Meta.BundleSchemaVersion}}<dt>採集包格式</dt><dd>schema v{{.R.Meta.BundleSchemaVersion}}</dd>{{end}}
-      {{if .R.Meta.CollectedServices}}<dt>採集模組</dt><dd>{{range $i, $service := .R.Meta.CollectedServices}}{{if $i}}、{{end}}{{$service}}{{end}}</dd>{{end}}
-    </dl>
-  </details>
 </header>
 
-<div class="banner {{cls .R.OverallStatus}}">
-  <span>整體狀態：{{statusText .R.OverallStatus}}</span>
-  <span class="counts">✅ <b>{{.R.Summary.Pass}}</b>　<span class="info-count">ℹ️ <b>{{.R.Summary.Info}}</b></span>　⚠️ <b>{{.R.Summary.Warning}}</b>　❌ <b>{{.R.Summary.Critical}}</b>　⏭️ <b>{{.R.Summary.Skipped}}</b>　❓ <b>{{.R.Summary.Unknown}}</b></span>
-</div>
+<nav class="section-nav" aria-label="報告區段導覽">
+  <div class="section-nav-inner">
+    {{with .R.NodeContext}}<a class="nav-item" href="#section-node-context" data-status="{{cls (nodeStatus .)}}"><span class="nav-dot"></span>節點概況</a>{{end}}
+    {{range .ESGroups}}{{if groupVisible .Results}}<a class="nav-item" href="#{{sectionID "es" .Key}}" data-status="{{cls (groupStatus .Results)}}"><span class="nav-dot"></span>{{.Name}}</a>{{end}}{{end}}
+    {{if serviceVisible .KibanaGroups}}<a class="nav-item" href="#service-kibana" data-status="{{cls (serviceStatus .KibanaGroups)}}"><span class="nav-dot"></span>Kibana</a>{{end}}
+  </div>
+</nav>
+
+<main class="shell">
+
+<section class="banner {{cls .R.OverallStatus}}" data-status="{{cls .R.OverallStatus}}">
+  <div class="banner-body">
+    <div class="banner-head">
+      <span class="banner-icon" aria-hidden="true"><svg class="ic ic-20"><use href="#{{statusIcon .R.OverallStatus}}"/></svg></span>
+      <div>
+        <h1 class="banner-title">整體狀態：{{statusText .R.OverallStatus}}</h1>
+        <p class="banner-counts">
+          <span class="count-total">共 <b>{{addCounts .R.Summary}}</b> 項檢查</span>
+          <span class="count" data-status="pass"><svg class="ic ic-12"><use href="#i-check-circle"/></svg>通過 <b>{{.R.Summary.Pass}}</b></span>
+          <span class="count" data-status="info"><svg class="ic ic-12"><use href="#i-info"/></svg>資訊 <b>{{.R.Summary.Info}}</b></span>
+          <span class="count" data-status="warning"><svg class="ic ic-12"><use href="#i-alert-triangle"/></svg>警告 <b>{{.R.Summary.Warning}}</b></span>
+          <span class="count" data-status="critical"><svg class="ic ic-12"><use href="#i-x-circle"/></svg>失敗 <b>{{.R.Summary.Critical}}</b></span>
+          <span class="count" data-status="skipped"><svg class="ic ic-12"><use href="#i-skip-forward"/></svg>略過 <b>{{.R.Summary.Skipped}}</b></span>
+          <span class="count" data-status="unknown"><svg class="ic ic-12"><use href="#i-help-circle"/></svg>未知 <b>{{.R.Summary.Unknown}}</b></span>
+        </p>
+      </div>
+    </div>
+    <dl class="deflist">
+      <div><dt>叢集名稱</dt><dd>{{clusterName .R.Meta.Cluster.Name}}</dd></div>
+      <div><dt>ES 版本</dt><dd>{{.R.Meta.Cluster.ESVersion}}</dd></div>
+      {{with .R.NodeContext}}<div><dt>節點數</dt><dd>{{len .Nodes}} 個節點</dd></div>{{end}}
+      <div><dt>診斷模式</dt><dd>{{analysisMode .R.Meta.Mode .R.Meta.Cluster.Host}}</dd></div>
+      {{if .R.Meta.CollectedAt}}<div><dt>資料採集時間</dt><dd><time datetime="{{.R.Meta.CollectedAt}}">{{localTime .R.Meta.CollectedAt}}</time></dd></div>{{else if isBundleHost .R.Meta.Cluster.Host}}<div><dt>資料採集時間</dt><dd class="vw">bundle 未含採集時間（舊版採集腳本）</dd></div>{{end}}
+      <div><dt>報告產生時間</dt><dd><time datetime="{{.R.Meta.GeneratedAt}}">{{localTime .R.Meta.GeneratedAt}}</time></dd></div>
+      <div><dt>工具版本</dt><dd>elk-diagnostics {{.R.Meta.ToolVersion}}</dd></div>
+      {{if .R.Meta.CollectScriptVersion}}<div><dt>採集器版本</dt><dd>{{.R.Meta.CollectScriptVersion}}</dd></div>{{end}}
+    </dl>
+    <details class="tech technical-info">
+      <summary><svg class="ic ic-12 chev"><use href="#i-chevron-right"/></svg>技術資訊</summary>
+      <dl class="tech-grid technical-grid">
+        <dt>診斷模式</dt><dd>{{analysisMode .R.Meta.Mode .R.Meta.Cluster.Host}}</dd>
+        <dt>資料來源</dt><dd><span title="{{sourcePath .R.Meta.Cluster.Host}}">{{sourceShort .R.Meta.Cluster.Host}}</span></dd>
+        <dt>完整來源</dt><dd>{{sourcePath .R.Meta.Cluster.Host}}</dd>
+        {{if .R.Meta.BundleSchemaVersion}}<dt>採集包格式</dt><dd>schema v{{.R.Meta.BundleSchemaVersion}}</dd>{{end}}
+        {{if .R.Meta.CollectedServices}}<dt>採集模組</dt><dd>{{range $i, $service := .R.Meta.CollectedServices}}{{if $i}}、{{end}}{{$service}}{{end}}</dd>{{end}}
+      </dl>
+    </details>
+  </div>
+</section>
+
+<section class="kpi-row" aria-label="檢查結果統計">
+  <div class="kpi kpi-rate"><span class="kpi-label">通過率</span><div class="kpi-rate-body"><span class="kpi-rate-value">{{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%</span><span class="kpi-rate-note">{{.R.Summary.Pass}} / {{addCounts .R.Summary}} 項</span></div></div>
+  <div class="kpi kpi-stat" data-status="pass"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-check-circle"/></svg></span>通過</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Pass}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%"></div></div></div></div>
+  <div class="kpi kpi-stat" data-status="warning"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-alert-triangle"/></svg></span>警告</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Warning}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Warning (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Warning (addCounts .R.Summary)}}%"></div></div></div></div>
+  <div class="kpi kpi-stat" data-status="critical"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-x-circle"/></svg></span>失敗</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Critical}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%"></div></div></div></div>
+</section>
 
 {{if .R.VersionNotice}}
 <div class="version-notice">⚠ {{.R.VersionNotice}}</div>
@@ -956,20 +1290,13 @@ const htmlTmpl = `{{define "diagnostic-groups"}}
 </div>
 {{end}}
 
-<nav class="service-nav" aria-label="服務區塊導覽">
-  <span class="service-nav-label">服務區塊</span>
-  <a class="service-nav-link elasticsearch" href="#service-elasticsearch">Elasticsearch <span>{{len .ESGroups}} 類</span></a>
-  {{if .KibanaGroups}}<a class="service-nav-link kibana" href="#service-kibana">Kibana <span>{{len .KibanaGroups}} 類</span></a>{{end}}
-</nav>
-
-<section id="service-elasticsearch" class="service-section elasticsearch">
-  <div class="service-section-heading">
-    <div><h2>Elasticsearch <span class="section-en">Cluster</span></h2><p>叢集、節點與 Elasticsearch 診斷</p></div>
-    <span class="service-section-count">{{len .ESGroups}} 類診斷</span>
-  </div>
-
 {{with .R.NodeContext}}
-<h2>節點概況 <span class="section-en">Node Context</span></h2>
+<section id="section-node-context" class="section node-context-section" data-status="{{cls (nodeStatus .)}}">
+<header class="section-head">
+  <div class="section-heading"><span class="section-id">01</span><h2 class="section-title">節點概況</h2><span class="section-en">Node Context</span></div>
+  <div class="section-counts">{{if .MissingNodes}}<span class="count-chip" data-status="critical"><svg class="ic ic-12"><use href="#i-x-circle"/></svg><b>{{len .MissingNodes}}</b></span>{{end}}{{if .Nodes}}<span class="count-chip" data-status="pass"><svg class="ic ic-12"><use href="#i-check-circle"/></svg><b>{{len .Nodes}}</b></span>{{end}}</div>
+</header>
+<div class="section-body node-context-body">
 <div class="node-coverage">
   <div class="coverage-line">
     <span class="coverage-title">API 覆蓋</span>
@@ -1056,23 +1383,32 @@ const htmlTmpl = `{{define "diagnostic-groups"}}
 {{end}}
 </div>
 </details>
+</div>
+</section>
 {{end}}
 
-{{template "diagnostic-groups" .ESGroups}}
-</section>
+{{template "diagnostic-groups" .ES}}
 
 {{if .KibanaGroups}}
-<section id="service-kibana" class="service-section kibana">
-  <div class="service-section-heading">
-    <div><h2>Kibana <span class="section-en">Service</span></h2><p>Kibana 核心服務與執行狀態</p></div>
-    <span class="service-section-count">{{len .KibanaGroups}} 類診斷</span>
-  </div>
-{{template "diagnostic-groups" .KibanaGroups}}
+{{$summary := serviceSummary .KibanaGroups}}
+<section id="service-kibana" class="section service-section kibana" data-status="{{cls (serviceStatus .KibanaGroups)}}">
+  <header class="section-head">
+    <div class="section-heading"><h2 class="section-title">Kibana</h2><span class="section-en">Service</span></div>
+    <div class="section-counts">
+      {{if $summary.Critical}}<span class="count-chip" data-status="critical"><svg class="ic ic-12"><use href="#i-x-circle"/></svg><b>{{$summary.Critical}}</b></span>{{end}}
+      {{if $summary.Warning}}<span class="count-chip" data-status="warning"><svg class="ic ic-12"><use href="#i-alert-triangle"/></svg><b>{{$summary.Warning}}</b></span>{{end}}
+      {{if $summary.Info}}<span class="count-chip" data-status="info"><svg class="ic ic-12"><use href="#i-info"/></svg><b>{{$summary.Info}}</b></span>{{end}}
+      {{if $summary.Pass}}<span class="count-chip" data-status="pass"><svg class="ic ic-12"><use href="#i-check-circle"/></svg><b>{{$summary.Pass}}</b></span>{{end}}
+      {{if $summary.Skipped}}<span class="count-chip" data-status="skipped"><svg class="ic ic-12"><use href="#i-skip-forward"/></svg><b>{{$summary.Skipped}}</b></span>{{end}}
+      {{if $summary.Unknown}}<span class="count-chip" data-status="unknown"><svg class="ic ic-12"><use href="#i-help-circle"/></svg><b>{{$summary.Unknown}}</b></span>{{end}}
+    </div>
+  </header>
+  <div class="section-body">{{range .KibanaGroups}}{{template "diagnostic-results" .Results}}{{end}}</div>
 </section>
 {{end}}
 
-<footer>{{.R.Disclaimer}}</footer>
-</div>
+<footer class="footer">{{.R.Disclaimer}}</footer>
+</main>
 </body>
 </html>
 `

@@ -83,11 +83,12 @@ func TestHTML_ReportHeaderSeparatesSummaryAndTechnicalMetadata(t *testing.T) {
 	}
 	s := string(out)
 	for _, want := range []string{
-		"<title>Elasticsearch 叢集健康診斷報告</title>",
-		"<h1>Elasticsearch 叢集健康診斷報告</h1>",
-		`class="report-status critical">CRITICAL · 嚴重`,
-		`<div class="cluster-name">docker-cluster</div>`,
-		"<span>4 個節點</span>",
+		"<title>ELK 服務健康診斷報告</title>",
+		`<span class="topbar-title">ELK 服務健康診斷報告</span>`,
+		`<section class="banner critical" data-status="critical">`,
+		`<h1 class="banner-title">整體狀態：嚴重</h1>`,
+		`<dt>叢集名稱</dt><dd>docker-cluster</dd>`,
+		`<dt>節點數</dt><dd>4 個節點</dd>`,
 		"Bundle 離線分析",
 		"資料採集時間",
 		`datetime="2026-07-30T17:24:29Z"`,
@@ -98,7 +99,7 @@ func TestHTML_ReportHeaderSeparatesSummaryAndTechnicalMetadata(t *testing.T) {
 		"0.0.4-mvp",
 		"採集模組",
 		"elasticsearch、host",
-		`<details class="technical-info">`,
+		`<details class="tech technical-info">`,
 		"M07-fault/bundle",
 		"/var/evidence/M07-fault/bundle",
 	} {
@@ -108,6 +109,29 @@ func TestHTML_ReportHeaderSeparatesSummaryAndTechnicalMetadata(t *testing.T) {
 	}
 	if strings.Contains(s, "模式：check") {
 		t.Error("HTML 不應對使用者顯示內部模式名稱 check")
+	}
+	if strings.Contains(s, `class="report-meta"`) {
+		t.Error("模板版面不應保留重複的報告摘要卡")
+	}
+}
+
+func TestDocumentLabelUsesReadablePathSegment(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "file", url: "https://www.elastic.co/guide/en/elasticsearch/reference/current/size-your-shards.html", want: "size-your-shards.html"},
+		{name: "api", url: "https://www.elastic.co/docs/api/doc/elasticsearch/operation/operation-nodes-stats", want: "operation-nodes-stats"},
+		{name: "host", url: "https://www.elastic.co/", want: "www.elastic.co"},
+		{name: "invalid", url: "not a URL", want: "not a URL"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := documentLabel(tt.url); got != tt.want {
+				t.Fatalf("documentLabel(%q) = %q, want %q", tt.url, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -127,6 +151,9 @@ func TestHTML_DiagnosticCardsHaveExplicitStatusLabels(t *testing.T) {
 
 func TestHTML_SeparatesElasticsearchAndKibanaSections(t *testing.T) {
 	r := sampleReport()
+	for i := range r.Results {
+		r.Results[i].Category = "cluster"
+	}
 	r.Results = append(r.Results,
 		diagnostic.Result{ID: "kibana_status", Title: "Kibana 核心健康", Category: "service", Status: diagnostic.StatusPass, Summary: "1 個 Kibana instance 均可用"},
 		diagnostic.Result{ID: "kibana_stats", Title: "Kibana 執行觀測", Category: "service", Status: diagnostic.StatusInfo, Summary: "僅供趨勢"},
@@ -137,12 +164,11 @@ func TestHTML_SeparatesElasticsearchAndKibanaSections(t *testing.T) {
 	}
 	s := string(out)
 	for _, want := range []string{
-		`href="#service-elasticsearch"`,
+		`href="#section-es-cluster"`,
 		`href="#service-kibana"`,
-		`id="service-elasticsearch"`,
+		`id="section-es-cluster"`,
 		`id="service-kibana"`,
-		`<h2>Elasticsearch <span class="section-en">Cluster</span></h2>`,
-		`<h2>Kibana <span class="section-en">Service</span></h2>`,
+		`<h2 class="section-title">Kibana</h2><span class="section-en">Service</span>`,
 		"Kibana 核心健康",
 		"Kibana 執行觀測",
 	} {
@@ -150,8 +176,72 @@ func TestHTML_SeparatesElasticsearchAndKibanaSections(t *testing.T) {
 			t.Errorf("HTML 服務區塊缺少 %q", want)
 		}
 	}
-	if strings.Index(s, `id="service-elasticsearch"`) > strings.Index(s, `id="service-kibana"`) {
+	if strings.Contains(s, `service-elasticsearch`) || strings.Contains(s, `>Elasticsearch</a>`) {
+		t.Error("導航與內容不應增加 Elasticsearch 服務包裝層")
+	}
+	if strings.Index(s, `id="section-es-cluster"`) > strings.Index(s, `id="service-kibana"`) {
 		t.Error("Elasticsearch 區塊應先於 Kibana 區塊")
+	}
+}
+
+func TestHTML_UsesUIUXShellAndDynamicCategoryNavigation(t *testing.T) {
+	r := sampleReport()
+	for i := range r.Results {
+		r.Results[i].Category = "cluster"
+	}
+	r.Results = append(r.Results, diagnostic.Result{
+		ID: "kibana_status", Title: "Kibana 核心健康", Category: "service",
+		Status: diagnostic.StatusSkipped, Summary: "未採集 Kibana",
+	})
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		"<title>ELK 服務健康診斷報告</title>",
+		`class="topbar"`,
+		`class="kpi-row"`,
+		`class="section-nav"`,
+		`href="#section-es-cluster"`,
+		`id="section-es-cluster"`,
+		`id="service-kibana"`,
+		`data-status="skipped"`,
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("UIUX HTML 缺少 %q", want)
+		}
+	}
+	if strings.Contains(s, `href="#service-kibana"`) {
+		t.Error("Kibana 全為 skipped 時不應顯示在動態導航")
+	}
+	if strings.Contains(s, `section-kibana-service`) {
+		t.Error("Kibana 不應再拆成 category 導航")
+	}
+}
+
+func TestHTML_NavigationOmitsOnlyAllSkippedCategory(t *testing.T) {
+	r := sampleReport()
+	for i := range r.Results {
+		r.Results[i].Category = "cluster"
+	}
+	r.Results = append(r.Results,
+		diagnostic.Result{ID: "snapshot_skipped", Title: "Snapshot", Category: "snapshot", Status: diagnostic.StatusSkipped},
+		diagnostic.Result{ID: "security_info", Title: "Security", Category: "security", Status: diagnostic.StatusInfo},
+	)
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if strings.Contains(s, `href="#section-es-snapshot"`) {
+		t.Error("全為 skipped 的 ES 分類不應顯示在導航")
+	}
+	if !strings.Contains(s, `id="section-es-snapshot"`) || !strings.Contains(s, ">Snapshot</span>") {
+		t.Error("全為 skipped 的 ES 分類與診斷卡仍須保留在報告內容")
+	}
+	if !strings.Contains(s, `href="#section-es-security"`) {
+		t.Error("含非 skipped 結果的 ES 分類應顯示在導航")
 	}
 }
 
@@ -173,13 +263,15 @@ func TestHTML_InfoCardShowsJudgmentGuide(t *testing.T) {
 	}
 	s := string(out)
 	for _, want := range []string{
-		`class="card info"`,
+		`class="card info check"`,
 		`<span class="status-label">INFO</span>`,
 		"需觀察",
 		"判定方式",
 		"單次 evictions &gt; 0",
 		"不能單獨判定故障",
-		"modules-fielddata.html",
+		`class="doclink"`,
+		`title="https://www.elastic.co/guide/en/elasticsearch/reference/current/modules-fielddata.html"`,
+		">modules-fielddata.html</span>",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("INFO 診斷卡缺少 %q", want)
