@@ -108,6 +108,66 @@ func TestCheckFromBundleUsesEmbeddedExpectedESNodes(t *testing.T) {
 	}
 }
 
+func TestCheckFromBundleAnalyzesKibanaWhenCollected(t *testing.T) {
+	bundle := copyFixtureBundle(t, "es8-health")
+	kibanaDir := filepath.Join(bundle, "kibana", "kibana-1")
+	if err := os.MkdirAll(kibanaDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(bundle, collector.BundleManifestFile), []byte(`{
+  "bundle_schema_version": 1,
+  "services": ["elasticsearch", "kibana"]
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kibanaDir, collector.BundleStatusFile), []byte("status.json 200\nstats.json 200\ntask_manager_health.json 200\nalerting_health.json 200\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kibanaDir, "status.json"), []byte(`{
+  "name": "kibana", "version": {"number": "8.14.3"},
+  "status": {"overall": {"level": "available", "summary": "All services are available"}}
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kibanaDir, "stats.json"), []byte(`{
+  "process": {"memory": {"heap": {"used_bytes": 10, "size_limit": 100}}, "uptime_ms": 1000},
+  "requests": {"total": 2}
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kibanaDir, "task_manager_health.json"), []byte(`{
+  "status": "OK", "last_update": "2026-08-19T00:00:00Z"
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kibanaDir, "alerting_health.json"), []byte(`{
+  "alerting_framework_health": {
+    "decryption_health": {"status": "ok"},
+    "execution_health": {"status": "ok"},
+    "read_health": {"status": "ok"}
+  },
+  "has_permanent_encryption_key": true,
+  "is_sufficiently_secure": true
+}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	report, _ := runBundleCheck(t, bundle)
+	byID := resultsByID(report.Results)
+	if got := byID["kibana_status"]; got.Status != diagnostic.StatusPass {
+		t.Fatalf("kibana_status=%+v, want pass", got)
+	}
+	if got := byID["kibana_stats"]; got.Status != diagnostic.StatusInfo || len(got.Measurements) == 0 {
+		t.Fatalf("kibana_stats=%+v, want info with measurements", got)
+	}
+	if got := byID["kibana_task_manager"]; got.Status != diagnostic.StatusPass {
+		t.Fatalf("kibana_task_manager=%+v, want pass", got)
+	}
+	if got := byID["kibana_alerting"]; got.Status != diagnostic.StatusPass {
+		t.Fatalf("kibana_alerting=%+v, want pass", got)
+	}
+}
+
 // TestCheckStaticHealthFromBundle 驗證新增的單次快照檢查只依賴 bundle 檔案，
 // 不會在離線分析階段偷偷回連 Elasticsearch。
 func TestCheckStaticHealthFromBundle(t *testing.T) {

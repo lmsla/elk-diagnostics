@@ -65,6 +65,18 @@ func TestWatcher(t *testing.T) {
 			t.Errorf("Status = %q, want warning", res.Status)
 		}
 	})
+	t.Run("排隊中的 watch 只提示需觀察", func(t *testing.T) {
+		res := WatcherHealth(collector.WatcherStats{NodesTotal: 1, NodesSuccessful: 1, Nodes: []collector.WatcherNodeStats{{NodeID: "n1", WatcherState: "started", WatchCount: 2, QueueSize: 1}}})
+		if res.Status != diagnostic.StatusInfo || !res.RequiresExtra {
+			t.Fatalf("result=%+v, want info with extra observation", res)
+		}
+	})
+	t.Run("節點部分失敗無法完整判定", func(t *testing.T) {
+		res := WatcherHealth(collector.WatcherStats{NodesTotal: 2, NodesSuccessful: 1, NodesFailed: 1})
+		if res.Status != diagnostic.StatusUnknown {
+			t.Fatalf("Status = %q, want unknown", res.Status)
+		}
+	})
 }
 
 func TestTransforms(t *testing.T) {

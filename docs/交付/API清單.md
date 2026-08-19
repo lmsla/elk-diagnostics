@@ -25,7 +25,7 @@
 | GET | `/_mapping` | 各 index 的 mapping（僅欄位結構，不含文件內容） |
 | GET | `/_nodes/stats/ingest?timeout=5s&filter_path=nodes.*.ingest.pipelines` | ingest pipeline 處理數與失敗數 |
 | GET | `/_cat/indices?format=json&h=index,health,status` | 各 index 健康與開關狀態 |
-| GET | `/_watcher/stats` | Watcher 服務是否被手動停止 |
+| GET | `/_watcher/stats` | Watcher 狀態、註冊 watch 數與執行佇列 |
 | GET | `/_transform/_stats` | transform 執行狀態 |
 | GET | `/_remote/info` | remote cluster 連線狀態 |
 | GET | `/_migration/deprecations` | 升版 deprecation 警告 |
@@ -63,3 +63,14 @@
 
   僅在 health_report 點名有受影響 index 時才會查詢，最多 20 個 index。
   叢集健康時完全不會呼叫。
+
+## 選配服務 API
+
+以下端點不計入 Elasticsearch 固定端點；只有 collect.sh --services ... 指定 Kibana 時才呼叫。
+
+| 服務 | 方法 | 端點 | 用途 |
+|---|---|---|---|
+| Kibana | GET | /api/status | 核心服務與 plugin 健康狀態 |
+| Kibana | GET | /api/stats?extended=true&legacy=true | runtime 觀測值（僅供趨勢） |
+| Kibana | GET | /api/task_manager/_health | Task Manager 健康狀態 |
+| Kibana | GET | /api/alerting/_health | Alerting framework 健康狀態 |

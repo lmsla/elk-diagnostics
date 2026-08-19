@@ -216,10 +216,10 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 	} else {
 		results = append(results, optionalUnknownFrom(analyzer.DataStreamHealth(nil), e, isBundle, "index view_index_metadata"))
 	}
-	if stopped, e := client.WatcherManuallyStopped(); e == nil {
-		results = append(results, analyzer.Watcher(stopped))
+	if watcher, e := client.WatcherStats(); e == nil {
+		results = append(results, analyzer.WatcherHealth(watcher))
 	} else {
-		results = append(results, unknownf(analyzer.Watcher(false), e))
+		results = append(results, unknownf(analyzer.WatcherHealth(collector.WatcherStats{}), e))
 	}
 	if ts, e := client.Transforms(); e == nil {
 		results = append(results, analyzer.Transforms(ts))
@@ -395,6 +395,27 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 		results = append(results, unknownf(analyzer.VotingExclusionsHealth(nil), e))
 	}
 
+	// Kibana 是選配服務：只有採集包明確要求 kibana，或確實存在 kibana/目錄時，
+	// 才加入服務診斷；ES-only bundle 的既有報告不增加空白卡片。
+	if isBundle {
+		kibana, e := collector.ReadKibanaBundle(fromBundle)
+		if e != nil {
+			results = append(results,
+				kibanaReadFailure(analyzer.KibanaStatus(nil), e),
+				analyzer.KibanaStats(nil),
+				kibanaReadFailure(analyzer.KibanaTaskManagerHealth(nil), e),
+				kibanaReadFailure(analyzer.KibanaAlertingHealth(nil), e),
+			)
+		} else if len(kibana) > 0 || hasService(client.CollectedServices(), "kibana") {
+			results = append(results,
+				analyzer.KibanaStatus(kibana),
+				analyzer.KibanaStats(kibana),
+				analyzer.KibanaTaskManagerHealth(kibana),
+				analyzer.KibanaAlertingHealth(kibana),
+			)
+		}
+	}
+
 	var pools []collector.WritePoolRow
 	if p, e := client.WritePool(); e == nil {
 		pools = p
@@ -414,6 +435,24 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 	report.VersionNotice = versionNotice
 	report.SuggestedSymptoms = suggestSymptoms(results, cpus, pools, t)
 	return emitCheck(report, output, outFile, noColor, metricsOut)
+}
+
+func hasService(services []string, want string) bool {
+	for _, service := range services {
+		if service == want {
+			return true
+		}
+	}
+	return false
+}
+
+func kibanaReadFailure(zero diagnostic.Result, err error) diagnostic.Result {
+	zero.Status = diagnostic.StatusUnknown
+	zero.Conclusion = diagnostic.ConclusionNormal
+	zero.Summary = "Kibana bundle 資料讀取失敗，無法判定"
+	zero.Findings = []string{err.Error()}
+	zero.Measurements = nil
+	return zero
 }
 
 func emitCheck(report diagnostic.Report, output, outFile string, noColor bool, metricsOut string) int {

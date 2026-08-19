@@ -84,7 +84,7 @@ var Endpoints = []Endpoint{
 	{EpMapping, "mapping.json", "各 index 的 mapping（僅欄位結構，不含文件內容）"},
 	{EpNodesIngest, "nodes_stats_ingest.json", "ingest pipeline 處理數與失敗數"},
 	{EpCatIndices, "cat_indices.json", "各 index 健康與開關狀態"},
-	{EpWatcherStats, "watcher_stats.json", "Watcher 服務是否被手動停止"},
+	{EpWatcherStats, "watcher_stats.json", "Watcher 狀態、註冊 watch 數與執行佇列"},
 	{EpTransformStats, "transform_stats.json", "transform 執行狀態"},
 	{EpRemoteInfo, "remote_info.json", "remote cluster 連線狀態"},
 	{EpMigrationDeprecations, "migration_deprecations.json", "升版 deprecation 警告"},

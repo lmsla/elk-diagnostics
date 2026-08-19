@@ -26,7 +26,7 @@ docs/交付/            # 使用者操作手冊與 API 清單
 
 ## 能力邊界
 
-- 現行診斷只分析 Elasticsearch API；選配模組可採 Host／Kibana／Logstash 原始證據，但尚未產生對應診斷卡。
+- 現行診斷分析 Elasticsearch API；Kibana bundle 可分析 `/api/status` 核心健康並保存 `/api/stats` runtime measurements。Host／Logstash 目前仍只保存原始證據。
 - ES 8.4+ 可使用完整 `_health_report`；部分單次快照指標仍需 Monitoring／時間序列佐證。
 - `implemented` 不等於 `verified`；異常分支的真機狀態以內部驗證狀態為準。
 - 採集包中可能包含 index、node、host 與 mapping 欄位名稱，外傳前需審閱；`--redact` 尚未完成。

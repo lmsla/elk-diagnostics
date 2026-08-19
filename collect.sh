@@ -17,11 +17,13 @@
 #     ./collect.sh --services es,kibana,logstash -h https://es:9200 \
 #       --kibana-url https://kibana:5601 --logstash-url http://logstash:9600
 #
-# 認證（擇一；密碼檔優先，避免密碼出現在 ps 輸出、環境變數與 shell 歷史）：
+# 認證（擇一；互動式 Terminal 可安全輸入，非互動執行請用密碼檔或 API key，
+# 避免密碼出現在 ps 輸出、環境變數與 shell 歷史）：
 #     ES_PASSWORD_FILE=/path/to/mode-600-file ./collect.sh -h https://... -u elastic
 #     ES_API_KEY='...'  ./collect.sh -h https://...
+#   Kibana／Logstash 在互動式 Terminal 未提供密碼檔時也會詢問（不回顯）；
+#   非互動執行則必須提供對應 password file 或 API key。
 #   既有受控自動化仍可由秘密管理系統注入 ES_PASSWORD；不要手動輸入含密碼的指令。
-#   -u 未給密碼檔或 ES_PASSWORD 時會互動詢問（不回顯）。
 #
 # 產出內容（交付前請確認）：
 #   - 全部為叢集／節點層級的中繼資料，不含任何文件（document）內容
@@ -75,6 +77,9 @@ usage() {
   KIBANA_USERNAME / KIBANA_PASSWORD_FILE / KIBANA_API_KEY / KIBANA_CA_CERT
   LOGSTASH_USERNAME / LOGSTASH_PASSWORD_FILE / LOGSTASH_API_KEY / LOGSTASH_CA_CERT
   COLLECT_MODULE_DIR / SSH_CONNECT_TIMEOUT
+
+互動式 Terminal：KIBANA／LOGSTASH 設定 username 且未提供 password file 時會不回顯詢問密碼。
+非互動執行：請提供 password file 或 API key，避免程序停在 prompt。
 USAGE
 }
 
@@ -299,7 +304,7 @@ fetch '/_mapping' 'mapping.json' '30'
 fetch '/_nodes/stats/ingest?timeout=5s&filter_path=nodes.*.ingest.pipelines' 'nodes_stats_ingest.json' '10'
 # 各 index 健康與開關狀態
 fetch '/_cat/indices?format=json&h=index,health,status' 'cat_indices.json' '30'
-# Watcher 服務是否被手動停止
+# Watcher 狀態、註冊 watch 數與執行佇列
 fetch '/_watcher/stats' 'watcher_stats.json' '30'
 # transform 執行狀態
 fetch '/_transform/_stats' 'transform_stats.json' '30'

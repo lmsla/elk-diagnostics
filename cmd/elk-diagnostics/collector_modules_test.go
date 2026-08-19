@@ -82,6 +82,8 @@ func TestCollectScriptRunsOptionalAPIModules(t *testing.T) {
 		"elasticsearch/version.json",
 		"kibana/default/status.json",
 		"kibana/default/stats.json",
+		"kibana/default/task_manager_health.json",
+		"kibana/default/alerting_health.json",
 		"logstash/default/node_info.json",
 		"logstash/default/node_stats.json",
 		"logstash/default/hot_threads.txt",
@@ -103,6 +105,29 @@ func TestCollectScriptRunsOptionalAPIModules(t *testing.T) {
 	}
 	if got := strings.Join(manifest.Services, ","); got != "elasticsearch,kibana,logstash" {
 		t.Errorf("services = %q", got)
+	}
+}
+
+func TestKibanaCollectorRejectsPasswordPromptWithoutTTY(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("本機未安裝 sh")
+	}
+	tmp := t.TempDir()
+	cmd := exec.Command(sh, filepath.Join(collectorModuleDir(t), "kibana.sh"),
+		"--url", "http://127.0.0.1:1", "--output", filepath.Join(tmp, "kibana"))
+	cmd.Env = append(os.Environ(),
+		"KIBANA_USERNAME=elastic",
+		"KIBANA_PASSWORD_FILE=",
+		"KIBANA_API_KEY=",
+	)
+	cmd.Stdin = strings.NewReader("should-not-be-used\n")
+	log, err := cmd.CombinedOutput()
+	if err == nil || !strings.Contains(string(log), "不是互動式 Terminal") {
+		t.Fatalf("非互動模式應要求 password file 或 API key: err=%v output=%s", err, log)
+	}
+	if strings.Contains(string(log), "should-not-be-used") {
+		t.Fatal("密碼不應出現在錯誤輸出")
 	}
 }
 

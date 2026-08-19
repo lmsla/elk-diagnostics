@@ -5,19 +5,94 @@ import (
 	"sort"
 )
 
-// WatcherManuallyStopped 取 GET /_watcher/stats 的 manually_stopped。
-func (c *Client) WatcherManuallyStopped() (stopped bool, err error) {
+// WatcherNodeStats 是 _watcher/stats 回應中的單節點摘要。
+type WatcherNodeStats struct {
+	NodeID         string
+	WatcherState   string
+	WatchCount     int
+	QueueSize      int
+	MaxQueueSize   int
+	CurrentWatches int
+	QueuedWatches  int
+}
+
+// WatcherStats 取 GET /_watcher/stats 的服務與節點執行摘要。
+// 端點本身一定回傳基本 metrics；部分版本或權限只會提供 manually_stopped，
+// 因此欄位不足時保留零值，交由 analyzer 以「無法判定」或相容的基本判定處理。
+type WatcherStats struct {
+	ManuallyStopped bool
+	NodesTotal      int
+	NodesSuccessful int
+	NodesFailed     int
+	Nodes           []WatcherNodeStats
+}
+
+// WatcherStats 取 GET /_watcher/stats。
+func (c *Client) WatcherStats() (WatcherStats, error) {
 	b, err := c.get(EpWatcherStats)
 	if err != nil {
-		return false, err
+		return WatcherStats{}, err
 	}
-	var r struct {
+	var raw struct {
+		Nodes struct {
+			Total      int `json:"total"`
+			Successful int `json:"successful"`
+			Failed     int `json:"failed"`
+		} `json:"_nodes"`
 		ManuallyStopped bool `json:"manually_stopped"`
+		Stats           []struct {
+			NodeID              string `json:"node_id"`
+			WatcherState        string `json:"watcher_state"`
+			WatchCount          int    `json:"watch_count"`
+			ExecutionThreadPool struct {
+				QueueSize int `json:"queue_size"`
+				MaxSize   int `json:"max_size"`
+			} `json:"execution_thread_pool"`
+			CurrentWatches []json.RawMessage `json:"current_watches"`
+			QueuedWatches  []json.RawMessage `json:"queued_watches"`
+		} `json:"stats"`
+		WatcherState        string `json:"watcher_state"`
+		WatchCount          int    `json:"watch_count"`
+		ExecutionThreadPool struct {
+			QueueSize int `json:"queue_size"`
+			MaxSize   int `json:"max_size"`
+		} `json:"execution_thread_pool"`
 	}
-	if err := json.Unmarshal(b, &r); err != nil {
-		return false, err
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return WatcherStats{}, err
 	}
-	return r.ManuallyStopped, nil
+	out := WatcherStats{
+		ManuallyStopped: raw.ManuallyStopped,
+		NodesTotal:      raw.Nodes.Total,
+		NodesSuccessful: raw.Nodes.Successful,
+		NodesFailed:     raw.Nodes.Failed,
+	}
+	for _, node := range raw.Stats {
+		out.Nodes = append(out.Nodes, WatcherNodeStats{
+			NodeID:         node.NodeID,
+			WatcherState:   node.WatcherState,
+			WatchCount:     node.WatchCount,
+			QueueSize:      node.ExecutionThreadPool.QueueSize,
+			MaxQueueSize:   node.ExecutionThreadPool.MaxSize,
+			CurrentWatches: len(node.CurrentWatches),
+			QueuedWatches:  len(node.QueuedWatches),
+		})
+	}
+	if len(out.Nodes) == 0 && (raw.WatcherState != "" || raw.WatchCount != 0 || raw.ExecutionThreadPool.QueueSize != 0) {
+		out.Nodes = append(out.Nodes, WatcherNodeStats{
+			WatcherState: raw.WatcherState,
+			WatchCount:   raw.WatchCount,
+			QueueSize:    raw.ExecutionThreadPool.QueueSize,
+			MaxQueueSize: raw.ExecutionThreadPool.MaxSize,
+		})
+	}
+	return out, nil
+}
+
+// WatcherManuallyStopped 保留既有呼叫介面，取 GET /_watcher/stats 的 manually_stopped。
+func (c *Client) WatcherManuallyStopped() (stopped bool, err error) {
+	stats, err := c.WatcherStats()
+	return stats.ManuallyStopped, err
 }
 
 // Transform：單一 transform 的狀態。

@@ -11,8 +11,9 @@ import (
 	"elk-diagnostics/internal/collector"
 )
 
-// apis 與 collect-script 都由 collector.Endpoints 產生，不另手寫維護——手寫的清單
-// 會跟實作漂移，而一份跟實作對不上的 API 清單交給使用者端資安審查，比沒有還糟。
+// Elasticsearch 固定端點與 collect-script 都由 collector.Endpoints 產生，不另手寫維護；
+// 選配服務端點則在下方明確列出，避免把 Kibana／Logstash 的選配範圍誤算進 ES 固定清單。
+// 一份跟實作對不上的 API 清單交給使用者端資安審查，比沒有還糟。
 
 const apisPreamble = `本工具只送出 HTTP GET，不執行任何寫入操作。
 以下為 check 會呼叫的全部端點，皆為叢集／節點層級的中繼資料。
@@ -62,6 +63,7 @@ func apisText() string {
 
 	fmt.Fprintf(&b, "\n共 %d 個固定端點。\n", len(collector.Endpoints))
 	b.WriteString(dynamicEndpointNote)
+	b.WriteString(serviceEndpointNote)
 	return b.String()
 }
 
@@ -77,6 +79,7 @@ func apisMarkdown() string {
 	}
 	fmt.Fprintf(&b, "\n共 %d 個固定端點。\n", len(collector.Endpoints))
 	b.WriteString(dynamicEndpointNote)
+	b.WriteString(serviceEndpointMarkdown)
 	return b.String()
 }
 
@@ -89,4 +92,26 @@ const dynamicEndpointNote = `
 
   僅在 health_report 點名有受影響 index 時才會查詢，最多 ` + maxIndexAllocationScanStr + ` 個 index。
   叢集健康時完全不會呼叫。
+`
+
+const serviceEndpointNote = `
+選配服務端點（不計入上述 Elasticsearch 固定端點；只有 collect.sh 指定對應服務時才呼叫）：
+
+  Kibana  GET /api/status                       核心服務與 plugin 健康狀態
+  Kibana  GET /api/stats?extended=true&legacy=true  runtime 觀測值（僅供趨勢）
+  Kibana  GET /api/task_manager/_health           Task Manager 健康狀態
+  Kibana  GET /api/alerting/_health               Alerting framework 健康狀態
+`
+
+const serviceEndpointMarkdown = `
+## 選配服務 API
+
+以下端點不計入 Elasticsearch 固定端點；只有 collect.sh --services ... 指定 Kibana 時才呼叫。
+
+| 服務 | 方法 | 端點 | 用途 |
+|---|---|---|---|
+| Kibana | GET | /api/status | 核心服務與 plugin 健康狀態 |
+| Kibana | GET | /api/stats?extended=true&legacy=true | runtime 觀測值（僅供趨勢） |
+| Kibana | GET | /api/task_manager/_health | Task Manager 健康狀態 |
+| Kibana | GET | /api/alerting/_health | Alerting framework 健康狀態 |
 `

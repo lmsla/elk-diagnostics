@@ -27,11 +27,15 @@ http_init() {
     if [ -n "$HTTP_API_KEY" ]; then
         printf 'header = "Authorization: ApiKey %s"\n' "$HTTP_API_KEY" >> "$HTTP_CFG"
     elif [ -n "$HTTP_USERNAME" ]; then
-        if [ -z "$HTTP_PASSWORD_FILE" ] || [ ! -r "$HTTP_PASSWORD_FILE" ]; then
-            echo "已設定 API 帳號，但密碼檔不存在或不可讀" >&2
-            return 2
+        if [ -n "$HTTP_PASSWORD_FILE" ]; then
+            if [ ! -r "$HTTP_PASSWORD_FILE" ]; then
+                echo "密碼檔不可讀：$HTTP_PASSWORD_FILE" >&2
+                return 2
+            fi
+            HTTP_PASSWORD="$(cat "$HTTP_PASSWORD_FILE")"
+        else
+            http_prompt_password "$HTTP_USERNAME" || return 2
         fi
-        HTTP_PASSWORD="$(cat "$HTTP_PASSWORD_FILE")"
         case "$HTTP_PASSWORD" in
             *'
 '*) echo "API 密碼不可包含換行" >&2; return 2 ;;
@@ -48,6 +52,33 @@ http_init() {
         printf 'insecure\n' >> "$HTTP_CFG"
     fi
     return 0
+}
+
+http_prompt_password() {
+    http_prompt_user="$1"
+    if [ ! -t 0 ]; then
+        echo "已設定 API 帳號，但目前不是互動式 Terminal；請提供密碼檔或 API key" >&2
+        return 2
+    fi
+    printf '%s 的密碼: ' "$http_prompt_user" >&2
+    http_tty_state="$(stty -g 2>/dev/null || true)"
+    if ! stty -echo 2>/dev/null; then
+        echo >&2
+        echo "無法關閉終端回顯；請改用密碼檔或 API key" >&2
+        return 2
+    fi
+    if IFS= read -r HTTP_PASSWORD; then
+        http_read_status=0
+    else
+        http_read_status=$?
+    fi
+    if [ -n "$http_tty_state" ]; then
+        stty "$http_tty_state" 2>/dev/null || stty echo 2>/dev/null || true
+    else
+        stty echo 2>/dev/null || true
+    fi
+    echo >&2
+    return "$http_read_status"
 }
 
 http_cleanup() {

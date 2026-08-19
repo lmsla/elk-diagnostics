@@ -77,16 +77,98 @@ const (
 	docRemote     = "https://www.elastic.co/docs/troubleshoot/elasticsearch/remote-clusters"
 )
 
-// Watcher #27：Watcher 服務是否被手動停止。
-func Watcher(manuallyStopped bool) diagnostic.Result {
-	res := diagnostic.Result{ID: "watcher", Title: "Watcher", Category: "management", Source: "raw_api", Docs: []string{docWatcher}}
-	if manuallyStopped {
+// Watcher #27：Watcher 服務狀態、節點執行佇列與註冊 watch 數。
+func WatcherHealth(stats collector.WatcherStats) diagnostic.Result {
+	res := diagnostic.Result{ID: "watcher", Title: "Watcher", Category: "management", Source: "raw_api", Docs: []string{
+		"https://www.elastic.co/docs/api/doc/elasticsearch/v8/operation/operation-watcher-stats",
+		docWatcher,
+	}}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.watcher.node.count", float64(len(stats.Nodes)), "count", "cluster", "", "Watcher", "nodes"),
+		gauge("elasticsearch.watcher.failed_node.count", float64(stats.NodesFailed), "count", "cluster", "", "Watcher", "failed_nodes"),
+		gauge("elasticsearch.watcher.manually_stopped", boolGauge(stats.ManuallyStopped), "boolean", "cluster", "", "Watcher", "manually_stopped"),
+	)
+	if stats.NodesTotal > 0 {
+		res.Measurements = append(res.Measurements, gauge("elasticsearch.watcher.nodes.total", float64(stats.NodesTotal), "count", "cluster", "", "Watcher", "nodes_total"))
+	}
+
+	if stats.NodesFailed > 0 {
+		res.Status, res.Conclusion = diagnostic.StatusUnknown, diagnostic.ConclusionNormal
+		res.Summary = fmt.Sprintf("Watcher 節點回應不完整：%d/%d 個節點失敗", stats.NodesFailed, stats.NodesTotal)
+		res.Findings = []string{"/_watcher/stats 部分節點未回應，無法完整判讀 Watcher 狀態"}
+		res.Recommendations = []diagnostic.Recommendation{{Desc: "確認健檢帳號具備 monitor_watcher，並檢查失敗節點的服務與網路"}}
+		return res
+	}
+	if stats.ManuallyStopped {
 		res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
 		res.Summary = "Watcher 已手動停止，watch 不會執行"
+		res.Findings = []string{"manually_stopped=true"}
 		res.Recommendations = []diagnostic.Recommendation{{Cmd: "POST _watcher/_start", Desc: "確認非維護中後重啟 Watcher"}}
 		return res
 	}
-	return pass(res, "Watcher 運作中")
+
+	var stopped, transitioning, unknownState, watchCount, queueSize, queuedCount int
+	for _, node := range stats.Nodes {
+		watchCount += node.WatchCount
+		queueSize += node.QueueSize
+		queuedCount += node.QueuedWatches
+		state := node.WatcherState
+		res.Findings = append(res.Findings, fmt.Sprintf("%s：state=%s watch_count=%d queue=%d", watcherNodeName(node.NodeID), state, node.WatchCount, node.QueueSize))
+		switch state {
+		case "started", "":
+		case "starting", "stopping":
+			transitioning++
+		case "stopped":
+			stopped++
+		default:
+			unknownState++
+		}
+	}
+	res.Measurements = append(res.Measurements,
+		gauge("elasticsearch.watcher.watch.count", float64(watchCount), "count", "cluster", "", "Watcher", "watch_count"),
+		gauge("elasticsearch.watcher.queue.size", float64(queueSize), "count", "cluster", "", "Watcher", "queue_size"),
+		gauge("elasticsearch.watcher.queued_watch.count", float64(queuedCount), "count", "cluster", "", "Watcher", "queued_watches"),
+	)
+	switch {
+	case unknownState > 0:
+		res.Status, res.Conclusion = diagnostic.StatusUnknown, diagnostic.ConclusionNormal
+		res.Summary = "Watcher 回應包含無法識別的狀態"
+		res.Recommendations = []diagnostic.Recommendation{{Desc: "確認 Elasticsearch 版本與 _watcher/stats 回應格式"}}
+	case stopped > 0 || transitioning > 0:
+		res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
+		res.Summary = fmt.Sprintf("%d 個 Watcher 節點處於停止或過渡狀態", stopped+transitioning)
+		res.Recommendations = []diagnostic.Recommendation{{Desc: "確認是否為維護操作；若非預期，檢查 Watcher 與 Elasticsearch 節點 log"}}
+	case queueSize > 0 || queuedCount > 0:
+		res.Status, res.Conclusion = diagnostic.StatusInfo, diagnostic.ConclusionNormal
+		res.Summary = fmt.Sprintf("Watcher 正常運作，但目前有 %d 個 watch 排隊", queueSize+queuedCount)
+		res.RequiresExtra, res.ExtraReason = true, "單次快照無法確認佇列是否持續增加，需搭配後續採集或 Monitoring 趨勢"
+	default:
+		if watchCount == 0 {
+			return pass(res, "Watcher 已啟動，目前未註冊 watch（不適用）")
+		}
+		res.Status, res.Conclusion = diagnostic.StatusPass, diagnostic.ConclusionNormal
+		res.Summary = fmt.Sprintf("Watcher 已啟動，%d 個 watch 已註冊", watchCount)
+	}
+	return res
+}
+
+// Watcher 保留既有 analyzer 介面，供舊測試與舊呼叫端使用。
+func Watcher(manuallyStopped bool) diagnostic.Result {
+	return WatcherHealth(collector.WatcherStats{ManuallyStopped: manuallyStopped})
+}
+
+func boolGauge(value bool) float64 {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+func watcherNodeName(id string) string {
+	if id == "" {
+		return "Watcher"
+	}
+	return id
 }
 
 // Transforms #28：是否有 transform 處於 failed。

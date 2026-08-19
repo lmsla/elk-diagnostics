@@ -125,6 +125,47 @@ func TestHTML_DiagnosticCardsHaveExplicitStatusLabels(t *testing.T) {
 	}
 }
 
+func TestHTML_SeparatesElasticsearchAndKibanaSections(t *testing.T) {
+	r := sampleReport()
+	r.Results = append(r.Results,
+		diagnostic.Result{ID: "kibana_status", Title: "Kibana 核心健康", Category: "service", Status: diagnostic.StatusPass, Summary: "1 個 Kibana instance 均可用"},
+		diagnostic.Result{ID: "kibana_stats", Title: "Kibana 執行觀測", Category: "service", Status: diagnostic.StatusInfo, Summary: "僅供趨勢"},
+	)
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		`href="#service-elasticsearch"`,
+		`href="#service-kibana"`,
+		`id="service-elasticsearch"`,
+		`id="service-kibana"`,
+		`<h2>Elasticsearch <span class="section-en">Cluster</span></h2>`,
+		`<h2>Kibana <span class="section-en">Service</span></h2>`,
+		"Kibana 核心健康",
+		"Kibana 執行觀測",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("HTML 服務區塊缺少 %q", want)
+		}
+	}
+	if strings.Index(s, `id="service-elasticsearch"`) > strings.Index(s, `id="service-kibana"`) {
+		t.Error("Elasticsearch 區塊應先於 Kibana 區塊")
+	}
+}
+
+func TestHTML_HidesEmptyKibanaSection(t *testing.T) {
+	out, err := HTML(sampleReport())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	if strings.Contains(s, `id="service-kibana"`) || strings.Contains(s, `href="#service-kibana"`) {
+		t.Error("未採集 Kibana 時不應顯示空的 Kibana 區塊")
+	}
+}
+
 func TestHTML_InfoCardShowsJudgmentGuide(t *testing.T) {
 	out, err := HTML(sampleReport())
 	if err != nil {

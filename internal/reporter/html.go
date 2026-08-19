@@ -16,25 +16,24 @@ import (
 // HTML 產出離線可渲染報告（診斷報告規格 §5）：單一檔、CSS 全內嵌、零外部 CDN、
 // 用原生 <details> 折疊（免 JS）、可列印。
 func HTML(r diagnostic.Report) ([]byte, error) {
-	byCat := map[string][]diagnostic.Result{}
+	var esResults, kibanaResults []diagnostic.Result
 	for _, res := range r.Results {
-		byCat[res.Category] = append(byCat[res.Category], res)
-	}
-	var groups []htmlGroup
-	for _, c := range catOrder {
-		if rs, ok := byCat[c]; ok {
-			groups = append(groups, htmlGroup{c, catNames[c], rs})
-			delete(byCat, c)
+		// 目前 category=service 代表 Kibana；ES 的所有既有分類維持原樣。
+		// 未來新增其他服務診斷時，應在這裡再建立對應的服務區塊。
+		if res.Category == "service" {
+			kibanaResults = append(kibanaResults, res)
+		} else {
+			esResults = append(esResults, res)
 		}
 	}
-	for c, rs := range byCat { // 未知/新增分類，照原 key 附在後面
-		groups = append(groups, htmlGroup{c, c, rs})
-	}
+	esGroups := categoryGroups(esResults)
+	kibanaGroups := categoryGroups(kibanaResults)
 
 	data := struct {
-		R      diagnostic.Report
-		Groups []htmlGroup
-	}{r, groups}
+		R            diagnostic.Report
+		ESGroups     []htmlGroup
+		KibanaGroups []htmlGroup
+	}{r, esGroups, kibanaGroups}
 
 	t, err := template.New("report").Funcs(htmlFuncs).Parse(htmlTmpl)
 	if err != nil {
@@ -47,16 +46,34 @@ func HTML(r diagnostic.Report) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+func categoryGroups(results []diagnostic.Result) []htmlGroup {
+	byCat := map[string][]diagnostic.Result{}
+	for _, res := range results {
+		byCat[res.Category] = append(byCat[res.Category], res)
+	}
+	var groups []htmlGroup
+	for _, c := range catOrder {
+		if rs, ok := byCat[c]; ok {
+			groups = append(groups, htmlGroup{c, catNames[c], rs})
+			delete(byCat, c)
+		}
+	}
+	for c, rs := range byCat { // 未知/新增分類，照原 key 附在後面
+		groups = append(groups, htmlGroup{c, c, rs})
+	}
+	return groups
+}
+
 type htmlGroup struct {
 	Key     string
 	Name    string
 	Results []diagnostic.Result
 }
 
-var catOrder = []string{"cluster", "capacity", "data", "management", "performance", "snapshot", "node"}
+var catOrder = []string{"cluster", "capacity", "data", "management", "performance", "snapshot", "node", "service"}
 var catNames = map[string]string{
 	"cluster": "叢集", "capacity": "容量", "data": "資料",
-	"management": "管理", "performance": "效能", "snapshot": "快照", "node": "節點環境診斷",
+	"management": "管理", "performance": "效能", "snapshot": "快照", "node": "節點環境診斷", "service": "服務診斷",
 }
 
 var htmlFuncs = template.FuncMap{
@@ -637,6 +654,28 @@ var measurementLabels = map[string]string{
 	"elasticsearch.node.fielddata.memory":                            "節點 Fielddata 記憶體",
 	"elasticsearch.node.fielddata.evictions":                         "節點 Fielddata eviction",
 	"elasticsearch.fielddata.memory":                                 "Fielddata 記憶體總量",
+	"kibana.instance.count":                                          "Kibana instance 總數",
+	"kibana.instance.response.status":                                "Kibana status HTTP 狀態碼",
+	"kibana.instance.available.count":                                "Kibana 可用 instance 數量",
+	"kibana.instance.degraded.count":                                 "Kibana 降級 instance 數量",
+	"kibana.instance.unavailable.count":                              "Kibana 不可用 instance 數量",
+	"kibana.instance.unknown.count":                                  "Kibana 無法判定 instance 數量",
+	"kibana.process.heap.used":                                       "Kibana Heap 已用",
+	"kibana.process.heap.limit":                                      "Kibana Heap 上限",
+	"kibana.process.resident_set_size":                               "Kibana Resident Set Size",
+	"kibana.process.uptime":                                          "Kibana 程序 uptime",
+	"kibana.process.event_loop_delay":                                "Kibana Event loop delay",
+	"kibana.process.event_loop_utilization":                          "Kibana Event loop utilization",
+	"kibana.os.memory.used":                                          "Kibana OS 記憶體已用",
+	"kibana.os.memory.total":                                         "Kibana OS 記憶體總量",
+	"kibana.os.load.1m":                                              "Kibana OS Load 1m",
+	"kibana.os.load.5m":                                              "Kibana OS Load 5m",
+	"kibana.os.load.15m":                                             "Kibana OS Load 15m",
+	"kibana.requests.total":                                          "Kibana 請求總數",
+	"kibana.requests.disconnects":                                    "Kibana 連線中斷數",
+	"kibana.elasticsearch.active_sockets":                            "Kibana Elasticsearch active sockets",
+	"kibana.elasticsearch.idle_sockets":                              "Kibana Elasticsearch idle sockets",
+	"kibana.elasticsearch.queued_requests":                           "Kibana Elasticsearch queued requests",
 }
 
 func formatMeasurementValue(m diagnostic.Measurement) string {
@@ -685,7 +724,30 @@ func humanBytes(v uint64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(v)/float64(div), "KMGTPE"[exp])
 }
 
-const htmlTmpl = `<!DOCTYPE html>
+const htmlTmpl = `{{define "diagnostic-groups"}}
+{{range .}}
+<h2>{{.Name}}</h2>
+{{range .Results}}
+<details class="card {{cls .Status}}"{{if isOpen .Status}} open{{end}}>
+  <summary>{{badge .Status}} <span class="status-label">{{statusLabel .Status}}</span> {{.Title}} <span class="sm">— {{.Summary}}</span><span class="src">{{.Source}}</span></summary>
+  <div class="body">
+    {{if .Findings}}<h4>發現</h4><ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}
+    {{if hasHotspotMeasurements .ID .Measurements}}
+    <h4>本次比較基準</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>比較群組</th><th>同類節點中位數</th></tr></thead><tbody>{{range hotspotBaselines .Measurements}}<tr><td>{{.Label}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Value}}</td></tr>{{end}}</tbody></table></div>
+    <h4>節點觀測值</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>節點</th><th>比較群組</th><th>當下值</th><th>同類節點中位數</th><th>差距（百分點）</th><th>資料屬性</th></tr></thead><tbody>{{range hotspotRows .Measurements}}<tr><td>{{.Label}}</td><td>{{.Node}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Current}}</td><td class="measurement-number">{{if .Median}}{{.Median}}{{else}}—{{end}}</td><td class="measurement-number">{{if .Difference}}{{.Difference}}{{else}}—{{end}}</td><td>{{.Nature}}</td></tr>{{end}}</tbody></table></div><p class="measurement-note">中位數是本次同類節點的比較基準；差距以百分點表示。單次快照不能單獨判定 hot spotting。</p>
+    {{else if .Measurements}}<h4>本次觀測值</h4><div class="measurement-wrap"><table class="measurement-table"><thead><tr><th>指標</th><th>對象</th><th>數值</th><th>性質</th></tr></thead><tbody>{{range .Measurements}}<tr><td>{{measurementLabel .}}</td><td>{{measurementTarget .}}</td><td class="measurement-number">{{measurementValue .}}</td><td><span class="measurement-kind {{measurementKindClass .Kind}}">{{measurementKind .Kind}}</span></td></tr>{{end}}</tbody></table></div>{{if hasCounter .Measurements}}<p class="measurement-note">累積值需以前後兩次採集的差值判讀；節點或程序重啟後計數可能歸零。</p>{{end}}{{end}}
+    {{if .JudgmentGuide}}<h4>判定方式</h4><div class="judgment-wrap"><table class="judgment-table"><thead><tr><th>情況</th><th>判讀</th></tr></thead><tbody>{{range .JudgmentGuide}}<tr><td>{{.Condition}}</td><td>{{.Interpretation}}</td></tr>{{end}}</tbody></table></div>{{end}}
+    {{if .RootCauses}}<h4>可能根因（假設）</h4><ul>{{range .RootCauses}}<li>{{.}}</li>{{end}}</ul>{{end}}
+    {{if .Recommendations}}<h4>建議（唯讀引導）</h4><ul>{{range .Recommendations}}<li>{{if .Cmd}}<code>{{.Cmd}}</code> — {{end}}{{.Desc}}</li>{{end}}</ul>{{end}}
+    {{if .RequiresExtra}}<p class="extra {{cls .Status}}">{{extraLead .Status}}：{{.ExtraReason}}</p>{{end}}
+    {{if .VersionWarning}}<p class="vw">版本警告：{{.VersionWarning}}</p>{{end}}
+    {{if .Docs}}<h4>官方文件</h4><ul>{{range .Docs}}<li><a href="{{.}}">{{.}}</a></li>{{end}}</ul>{{end}}
+  </div>
+</details>
+{{end}}
+{{end}}
+{{end}}
+<!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
 <meta charset="utf-8">
@@ -724,6 +786,18 @@ const htmlTmpl = `<!DOCTYPE html>
   .hints h4{margin:0 0 6px;font-size:13px;color:#795548}
   .hints ul{margin:0;padding-left:20px}
   .hints li{font-size:14px;margin:2px 0}
+	.service-nav{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:20px 0 12px;padding:10px 12px;background:#fff;border:1px solid #d8dee4;border-radius:8px}
+	.service-nav-label{color:#555;font-size:12px;font-weight:700;margin-right:2px}
+	.service-nav-link{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;text-decoration:none;font-size:12px;font-weight:700}
+	.service-nav-link.elasticsearch{background:#eceff1;color:#263238}.service-nav-link.kibana{background:#e3f2fd;color:#0d47a1}
+	.service-nav-link span{font-weight:600;opacity:.8}
+	.service-section{margin:22px 0 30px;padding:0 14px 14px;background:#fff;border:1px solid #d8dee4;border-top:5px solid #263238;border-radius:8px}
+	.service-section.kibana{border-top-color:#1565c0;background:#fbfdff}
+	.service-section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 -14px 12px;padding:12px 14px 10px;border-bottom:1px solid #e4e9ee;background:#f7f9fb}
+	.service-section.kibana .service-section-heading{background:#eef7ff}
+	.service-section-heading h2{margin:0;padding:0;border:0;font-size:20px}
+	.service-section-heading p{margin:2px 0 0;color:#66717a;font-size:12px}
+	.service-section-count{flex:none;color:#66717a;font-size:12px;font-weight:600;white-space:nowrap}
 	h2{font-size:17px;margin:24px 0 8px;padding-bottom:4px;border-bottom:2px solid #ddd}
   .section-en{font-size:12px;font-weight:400;color:#777}
 	.node-coverage{background:#fff;border:1px solid #e0e0e0;border-radius:8px;padding:12px 14px;font-size:13px;margin:8px 0}
@@ -882,6 +956,18 @@ const htmlTmpl = `<!DOCTYPE html>
 </div>
 {{end}}
 
+<nav class="service-nav" aria-label="服務區塊導覽">
+  <span class="service-nav-label">服務區塊</span>
+  <a class="service-nav-link elasticsearch" href="#service-elasticsearch">Elasticsearch <span>{{len .ESGroups}} 類</span></a>
+  {{if .KibanaGroups}}<a class="service-nav-link kibana" href="#service-kibana">Kibana <span>{{len .KibanaGroups}} 類</span></a>{{end}}
+</nav>
+
+<section id="service-elasticsearch" class="service-section elasticsearch">
+  <div class="service-section-heading">
+    <div><h2>Elasticsearch <span class="section-en">Cluster</span></h2><p>叢集、節點與 Elasticsearch 診斷</p></div>
+    <span class="service-section-count">{{len .ESGroups}} 類診斷</span>
+  </div>
+
 {{with .R.NodeContext}}
 <h2>節點概況 <span class="section-en">Node Context</span></h2>
 <div class="node-coverage">
@@ -972,26 +1058,17 @@ const htmlTmpl = `<!DOCTYPE html>
 </details>
 {{end}}
 
-{{range .Groups}}
-<h2>{{.Name}}</h2>
-{{range .Results}}
-<details class="card {{cls .Status}}"{{if isOpen .Status}} open{{end}}>
-  <summary>{{badge .Status}} <span class="status-label">{{statusLabel .Status}}</span> {{.Title}} <span class="sm">— {{.Summary}}</span><span class="src">{{.Source}}</span></summary>
-  <div class="body">
-    {{if .Findings}}<h4>發現</h4><ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}
-    {{if hasHotspotMeasurements .ID .Measurements}}
-    <h4>本次比較基準</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>比較群組</th><th>同類節點中位數</th></tr></thead><tbody>{{range hotspotBaselines .Measurements}}<tr><td>{{.Label}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Value}}</td></tr>{{end}}</tbody></table></div>
-    <h4>節點觀測值</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>節點</th><th>比較群組</th><th>當下值</th><th>同類節點中位數</th><th>差距（百分點）</th><th>資料屬性</th></tr></thead><tbody>{{range hotspotRows .Measurements}}<tr><td>{{.Label}}</td><td>{{.Node}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Current}}</td><td class="measurement-number">{{if .Median}}{{.Median}}{{else}}—{{end}}</td><td class="measurement-number">{{if .Difference}}{{.Difference}}{{else}}—{{end}}</td><td>{{.Nature}}</td></tr>{{end}}</tbody></table></div><p class="measurement-note">中位數是本次同類節點的比較基準；差距以百分點表示。單次快照不能單獨判定 hot spotting。</p>
-    {{else if .Measurements}}<h4>本次觀測值</h4><div class="measurement-wrap"><table class="measurement-table"><thead><tr><th>指標</th><th>對象</th><th>數值</th><th>性質</th></tr></thead><tbody>{{range .Measurements}}<tr><td>{{measurementLabel .}}</td><td>{{measurementTarget .}}</td><td class="measurement-number">{{measurementValue .}}</td><td><span class="measurement-kind {{measurementKindClass .Kind}}">{{measurementKind .Kind}}</span></td></tr>{{end}}</tbody></table></div>{{if hasCounter .Measurements}}<p class="measurement-note">累積值需以前後兩次採集的差值判讀；節點或程序重啟後計數可能歸零。</p>{{end}}{{end}}
-    {{if .JudgmentGuide}}<h4>判定方式</h4><div class="judgment-wrap"><table class="judgment-table"><thead><tr><th>情況</th><th>判讀</th></tr></thead><tbody>{{range .JudgmentGuide}}<tr><td>{{.Condition}}</td><td>{{.Interpretation}}</td></tr>{{end}}</tbody></table></div>{{end}}
-    {{if .RootCauses}}<h4>可能根因（假設）</h4><ul>{{range .RootCauses}}<li>{{.}}</li>{{end}}</ul>{{end}}
-    {{if .Recommendations}}<h4>建議（唯讀引導）</h4><ul>{{range .Recommendations}}<li>{{if .Cmd}}<code>{{.Cmd}}</code> — {{end}}{{.Desc}}</li>{{end}}</ul>{{end}}
-    {{if .RequiresExtra}}<p class="extra {{cls .Status}}">{{extraLead .Status}}：{{.ExtraReason}}</p>{{end}}
-    {{if .VersionWarning}}<p class="vw">版本警告：{{.VersionWarning}}</p>{{end}}
-    {{if .Docs}}<h4>官方文件</h4><ul>{{range .Docs}}<li><a href="{{.}}">{{.}}</a></li>{{end}}</ul>{{end}}
+{{template "diagnostic-groups" .ESGroups}}
+</section>
+
+{{if .KibanaGroups}}
+<section id="service-kibana" class="service-section kibana">
+  <div class="service-section-heading">
+    <div><h2>Kibana <span class="section-en">Service</span></h2><p>Kibana 核心服務與執行狀態</p></div>
+    <span class="service-section-count">{{len .KibanaGroups}} 類診斷</span>
   </div>
-</details>
-{{end}}
+{{template "diagnostic-groups" .KibanaGroups}}
+</section>
 {{end}}
 
 <footer>{{.R.Disclaimer}}</footer>

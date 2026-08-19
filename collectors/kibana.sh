@@ -36,5 +36,7 @@ http_init "$OUT" "${KIBANA_USERNAME:-}" "${KIBANA_PASSWORD_FILE:-}" \
 echo "Kibana 採集目標：${URL%/}"
 http_fetch "$URL" '/api/status' 'status.json' 30
 http_fetch "$URL" '/api/stats?extended=true&legacy=true' 'stats.json' 30
+http_fetch "$URL" '/api/task_manager/_health' 'task_manager_health.json' 30
+http_fetch "$URL" '/api/alerting/_health' 'alerting_health.json' 30
 
-echo "Kibana 完成：2 個端點，其中 $HTTP_FAILED 個非 2xx。"
+echo "Kibana 完成：4 個端點，其中 $HTTP_FAILED 個非 2xx。"
