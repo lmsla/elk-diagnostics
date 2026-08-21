@@ -184,6 +184,36 @@ func TestHTML_SeparatesElasticsearchAndKibanaSections(t *testing.T) {
 	}
 }
 
+func TestHTML_SeparatesLogstashSection(t *testing.T) {
+	r := sampleReport()
+	for i := range r.Results {
+		r.Results[i].Category = "cluster"
+	}
+	r.Results = append(r.Results,
+		diagnostic.Result{ID: "logstash_status", Title: "Logstash 核心健康", Category: "service", Status: diagnostic.StatusPass, Summary: "1 個 Logstash instance API 可用"},
+		diagnostic.Result{ID: "logstash_pipeline_stats", Title: "Logstash Pipeline 觀測", Category: "service", Status: diagnostic.StatusInfo, Summary: "僅供趨勢"},
+	)
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		`href="#service-logstash"`,
+		`id="service-logstash"`,
+		`<h2 class="section-title">Logstash</h2><span class="section-en">Service</span>`,
+		"Logstash 核心健康",
+		"Logstash Pipeline 觀測",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("HTML Logstash 服務區塊缺少 %q", want)
+		}
+	}
+	if strings.Index(s, `id="service-kibana"`) >= 0 && strings.Index(s, `id="service-kibana"`) > strings.Index(s, `id="service-logstash"`) {
+		t.Error("Logstash 區塊不應排在已存在的 Kibana 區塊之前")
+	}
+}
+
 func TestHTML_UsesUIUXShellAndDynamicCategoryNavigation(t *testing.T) {
 	r := sampleReport()
 	for i := range r.Results {

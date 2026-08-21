@@ -416,6 +416,25 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 		}
 	}
 
+	// Logstash 是選配服務：只有採集包明確要求 logstash，或確實存在
+	// logstash/目錄時才加入服務診斷；ES-only／ES+Kibana 報告不增加空白卡片。
+	if isBundle {
+		logstash, e := collector.ReadLogstashBundle(fromBundle)
+		if e != nil {
+			results = append(results,
+				logstashReadFailure(analyzer.LogstashStatus(nil), e),
+				logstashReadFailure(analyzer.LogstashHealthReport(nil), e),
+				logstashReadFailure(analyzer.LogstashPipelineStats(nil), e),
+			)
+		} else if len(logstash) > 0 || hasService(client.CollectedServices(), "logstash") {
+			results = append(results,
+				analyzer.LogstashStatus(logstash),
+				analyzer.LogstashHealthReport(logstash),
+				analyzer.LogstashPipelineStats(logstash),
+			)
+		}
+	}
+
 	var pools []collector.WritePoolRow
 	if p, e := client.WritePool(); e == nil {
 		pools = p
@@ -450,6 +469,15 @@ func kibanaReadFailure(zero diagnostic.Result, err error) diagnostic.Result {
 	zero.Status = diagnostic.StatusUnknown
 	zero.Conclusion = diagnostic.ConclusionNormal
 	zero.Summary = "Kibana bundle 資料讀取失敗，無法判定"
+	zero.Findings = []string{err.Error()}
+	zero.Measurements = nil
+	return zero
+}
+
+func logstashReadFailure(zero diagnostic.Result, err error) diagnostic.Result {
+	zero.Status = diagnostic.StatusUnknown
+	zero.Conclusion = diagnostic.ConclusionNormal
+	zero.Summary = "Logstash bundle 資料讀取失敗，無法判定"
 	zero.Findings = []string{err.Error()}
 	zero.Measurements = nil
 	return zero

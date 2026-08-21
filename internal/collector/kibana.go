@@ -1,14 +1,11 @@
 package collector
 
 import (
-	"bufio"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 )
 
 // KibanaEvidence 是 Kibana 子採集器寫入的原始證據。collector 只負責讀檔，
@@ -44,7 +41,7 @@ func ReadKibanaBundle(dir string) ([]KibanaEvidence, error) {
 			continue
 		}
 		instanceDir := filepath.Join(root, entry.Name())
-		codes, err := readKibanaStatuses(filepath.Join(instanceDir, BundleStatusFile))
+		codes, err := readServiceStatuses(filepath.Join(instanceDir, BundleStatusFile))
 		if err != nil {
 			return nil, fmt.Errorf("讀取 Kibana %s 狀態清單失敗: %w", entry.Name(), err)
 		}
@@ -55,66 +52,24 @@ func ReadKibanaBundle(dir string) ([]KibanaEvidence, error) {
 			TaskManagerCode: http.StatusOK,
 			AlertingCode:    http.StatusOK,
 		}
-		ev.StatusCode = statusOrDefault(codes, "status.json")
-		ev.StatsCode = statusOrDefault(codes, "stats.json")
-		ev.TaskManagerCode = statusOrDefault(codes, "task_manager_health.json")
-		ev.AlertingCode = statusOrDefault(codes, "alerting_health.json")
-		if ev.StatusBody, err = readOptional(filepath.Join(instanceDir, "status.json")); err != nil {
+		ev.StatusCode = serviceStatusOrDefault(codes, "status.json")
+		ev.StatsCode = serviceStatusOrDefault(codes, "stats.json")
+		ev.TaskManagerCode = serviceStatusOrDefault(codes, "task_manager_health.json")
+		ev.AlertingCode = serviceStatusOrDefault(codes, "alerting_health.json")
+		if ev.StatusBody, err = readServiceOptional(filepath.Join(instanceDir, "status.json")); err != nil {
 			return nil, fmt.Errorf("讀取 Kibana %s status.json 失敗: %w", entry.Name(), err)
 		}
-		if ev.StatsBody, err = readOptional(filepath.Join(instanceDir, "stats.json")); err != nil {
+		if ev.StatsBody, err = readServiceOptional(filepath.Join(instanceDir, "stats.json")); err != nil {
 			return nil, fmt.Errorf("讀取 Kibana %s stats.json 失敗: %w", entry.Name(), err)
 		}
-		if ev.TaskManagerBody, err = readOptional(filepath.Join(instanceDir, "task_manager_health.json")); err != nil {
+		if ev.TaskManagerBody, err = readServiceOptional(filepath.Join(instanceDir, "task_manager_health.json")); err != nil {
 			return nil, fmt.Errorf("讀取 Kibana %s task_manager_health.json 失敗: %w", entry.Name(), err)
 		}
-		if ev.AlertingBody, err = readOptional(filepath.Join(instanceDir, "alerting_health.json")); err != nil {
+		if ev.AlertingBody, err = readServiceOptional(filepath.Join(instanceDir, "alerting_health.json")); err != nil {
 			return nil, fmt.Errorf("讀取 Kibana %s alerting_health.json 失敗: %w", entry.Name(), err)
 		}
 		out = append(out, ev)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out, nil
-}
-
-func readOptional(path string) ([]byte, error) {
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	return b, err
-}
-
-func readKibanaStatuses(path string) (map[string]int, error) {
-	b, err := os.ReadFile(path)
-	if os.IsNotExist(err) {
-		return map[string]int{}, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	out := map[string]int{}
-	scanner := bufio.NewScanner(strings.NewReader(string(b)))
-	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		if len(fields) != 2 {
-			continue
-		}
-		code, err := strconv.Atoi(fields[1])
-		if err != nil {
-			continue
-		}
-		out[fields[0]] = code
-	}
-	if err := scanner.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func statusOrDefault(statuses map[string]int, file string) int {
-	if code, ok := statuses[file]; ok {
-		return code
-	}
-	return http.StatusOK
 }

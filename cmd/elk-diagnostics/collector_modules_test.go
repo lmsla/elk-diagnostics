@@ -87,6 +87,10 @@ func TestCollectScriptRunsOptionalAPIModules(t *testing.T) {
 		"logstash/default/node_info.json",
 		"logstash/default/node_stats.json",
 		"logstash/default/hot_threads.txt",
+		"logstash/default/root.json",
+		"logstash/default/health_report.json",
+		"logstash/default/node_plugins.json",
+		"logstash/default/node_pipelines.json",
 		"logstash/default/pipelines_sample_1.json",
 	} {
 		if _, err := os.Stat(filepath.Join(out, file)); err != nil {

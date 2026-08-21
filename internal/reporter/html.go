@@ -23,35 +23,44 @@ var webcommLogoSVG string
 // HTML 產出離線可渲染報告（診斷報告規格 §5）：單一檔、CSS 全內嵌、零外部 CDN、
 // 用原生 <details> 折疊（免 JS）、可列印。
 func HTML(r diagnostic.Report) ([]byte, error) {
-	var esResults, kibanaResults []diagnostic.Result
+	var esResults, kibanaResults, logstashResults []diagnostic.Result
 	for _, res := range r.Results {
-		// 目前 category=service 代表 Kibana；ES 的所有既有分類維持原樣。
-		// 未來新增其他服務診斷時，應在這裡再建立對應的服務區塊。
 		if res.Category == "service" {
-			kibanaResults = append(kibanaResults, res)
+			switch {
+			case strings.HasPrefix(res.ID, "logstash_"):
+				logstashResults = append(logstashResults, res)
+			default:
+				// 既有 Kibana 結果與未帶服務前綴的舊 bundle 都歸入 Kibana。
+				kibanaResults = append(kibanaResults, res)
+			}
 		} else {
 			esResults = append(esResults, res)
 		}
 	}
 	esGroups := categoryGroups(esResults)
 	kibanaGroups := categoryGroups(kibanaResults)
+	logstashGroups := categoryGroups(logstashResults)
 	esStart := 1
 	if r.NodeContext != nil {
 		esStart = 2
 	}
 
 	data := struct {
-		R            diagnostic.Report
-		ESGroups     []htmlGroup
-		KibanaGroups []htmlGroup
-		ES           htmlGroupSet
-		Kibana       htmlGroupSet
+		R              diagnostic.Report
+		ESGroups       []htmlGroup
+		KibanaGroups   []htmlGroup
+		LogstashGroups []htmlGroup
+		ES             htmlGroupSet
+		Kibana         htmlGroupSet
+		Logstash       htmlGroupSet
 	}{
-		R:            r,
-		ESGroups:     esGroups,
-		KibanaGroups: kibanaGroups,
-		ES:           htmlGroupSet{Prefix: "es", Start: esStart, Groups: esGroups},
-		Kibana:       htmlGroupSet{Prefix: "kibana", Start: 1, Groups: kibanaGroups},
+		R:              r,
+		ESGroups:       esGroups,
+		KibanaGroups:   kibanaGroups,
+		LogstashGroups: logstashGroups,
+		ES:             htmlGroupSet{Prefix: "es", Start: esStart, Groups: esGroups},
+		Kibana:         htmlGroupSet{Prefix: "kibana", Start: 1, Groups: kibanaGroups},
+		Logstash:       htmlGroupSet{Prefix: "logstash", Start: 1, Groups: logstashGroups},
 	}
 
 	t, err := template.New("report").Funcs(htmlFuncs).Parse(htmlTmpl)
@@ -865,6 +874,25 @@ var measurementLabels = map[string]string{
 	"kibana.elasticsearch.active_sockets":                            "Kibana Elasticsearch active sockets",
 	"kibana.elasticsearch.idle_sockets":                              "Kibana Elasticsearch idle sockets",
 	"kibana.elasticsearch.queued_requests":                           "Kibana Elasticsearch queued requests",
+	"logstash.instance.count":                                        "Logstash instance 總數",
+	"logstash.instance.response.status":                              "Logstash root HTTP 狀態碼",
+	"logstash.instance.available.count":                              "Logstash 可用 instance 數量",
+	"logstash.instance.degraded.count":                               "Logstash 降級 instance 數量",
+	"logstash.instance.unavailable.count":                            "Logstash 不可用 instance 數量",
+	"logstash.instance.unknown.count":                                "Logstash 無法判定 instance 數量",
+	"logstash.health_report.response.status":                         "Logstash Health Report HTTP 狀態碼",
+	"logstash.health_report.instance.count":                          "Logstash Health Report instance 數量",
+	"logstash.health_report.indicator.count":                         "Logstash Health Report indicator 數量",
+	"logstash.health_report.impact.count":                            "Logstash Health Report impact 數量",
+	"logstash.health_report.skipped.count":                           "Logstash Health Report 不適用數量",
+	"logstash.pipeline.sample.count":                                 "Logstash pipeline 取樣次數",
+	"logstash.pipeline.count":                                        "Logstash pipeline 觀測數",
+	"logstash.pipeline.events.in":                                    "Logstash pipeline 輸入事件累積數",
+	"logstash.pipeline.events.out":                                   "Logstash pipeline 輸出事件累積數",
+	"logstash.pipeline.queue.events":                                 "Logstash pipeline Queue 事件數",
+	"logstash.pipeline.queue.size":                                   "Logstash pipeline Queue 大小",
+	"logstash.pipeline.flow.input.current":                           "Logstash pipeline 目前輸入流量",
+	"logstash.pipeline.flow.output.current":                          "Logstash pipeline 目前輸出流量",
 }
 
 func formatMeasurementValue(m diagnostic.Measurement) string {
@@ -1018,6 +1046,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
 	.service-nav-link span{font-weight:600;opacity:.8}
 	.service-section{margin:22px 0 30px;padding:0 14px 14px;background:#fff;border:1px solid #d8dee4;border-top:5px solid #263238;border-radius:8px}
 	.service-section.kibana{border-top-color:#1565c0;background:#fbfdff}
+	.service-section.logstash{border-top-color:#2a6191;background:#fbfdff}
 	.service-section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 -14px 12px;padding:12px 14px 10px;border-bottom:1px solid #e4e9ee;background:#f7f9fb}
 	.service-section.kibana .service-section-heading{background:#eef7ff}
 	.service-section-heading h2{margin:0;padding:0;border:0;font-size:20px}
@@ -1153,7 +1182,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   .deflist{display:flex;flex-wrap:wrap;gap:10px 24px;margin:16px 0 0}.deflist>div{min-width:0}.deflist dt{font-size:11px;color:var(--ui-muted);line-height:1.5}.deflist dd{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--ui-ink);overflow-wrap:anywhere}.technical-info{margin-top:12px;padding-top:12px;border-top:1px solid rgba(34,43,69,.10)}
   .kpi-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}.kpi{display:flex;flex-direction:column;justify-content:space-between;min-width:0;min-height:120px;padding:16px;background:#fff;border:1px solid var(--ui-line);border-radius:8px}.kpi-rate{width:188px;flex:none}.kpi-stat{flex:1 1 180px}.kpi-label{display:flex;align-items:center;gap:8px;color:var(--ui-muted);font-size:14px}.kpi-rate .kpi-label{font-weight:700}.kpi-icon{width:24px;height:24px;display:grid;place-items:center;border-radius:6px;background:#e4e9f2;color:#62748e}.kpi-figure{display:flex;align-items:flex-end;justify-content:flex-end;gap:8px;padding-top:12px}.kpi-value{font-size:32px;font-weight:700;line-height:1;color:#62748e}.kpi-unit{font-size:13px;color:var(--ui-subtle)}.kpi-track{height:6px;margin-top:12px;border-radius:999px;background:var(--ui-line);overflow:hidden}.kpi-fill{height:100%;border-radius:999px;background:#8f9bb3}.kpi[data-status="pass"] .kpi-value{color:#00875a}.kpi[data-status="pass"] .kpi-fill{background:#00b383}.kpi[data-status="warning"] .kpi-value{color:#b5730a}.kpi[data-status="warning"] .kpi-fill{background:#e0930a}.kpi[data-status="critical"] .kpi-value{color:#db2c5b}.kpi[data-status="critical"] .kpi-fill{background:#ff3d71}
   .service-nav{display:none}
-  .service-section{margin:16px 0 24px;padding:0;background:#fff;border:1px solid var(--ui-line);border-radius:8px;overflow:visible}.service-section.kibana{background:#fbfdff;border-top:0}.service-section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0;padding:14px 20px;background:var(--ui-brand);color:#fff;border:0;border-radius:8px 8px 0 0}.service-section.kibana .service-section-heading{background:#2a6191}.service-section-heading h2{margin:0;padding:0;border:0;color:#fff;font-size:16px}.service-section-heading p{margin:2px 0 0;color:rgba(255,255,255,.78);font-size:12px}.service-section-count{color:rgba(255,255,255,.85);font-size:12px;font-weight:600}
+  .service-section{margin:16px 0 24px;padding:0;background:#fff;border:1px solid var(--ui-line);border-radius:8px;overflow:visible}.service-section.kibana,.service-section.logstash{background:#fbfdff;border-top:0}.service-section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0;padding:14px 20px;background:var(--ui-brand);color:#fff;border:0;border-radius:8px 8px 0 0}.service-section.kibana .service-section-heading,.service-section.logstash .service-section-heading{background:#2a6191}.service-section-heading h2{margin:0;padding:0;border:0;color:#fff;font-size:16px}.service-section-heading p{margin:2px 0 0;color:rgba(255,255,255,.78);font-size:12px}.service-section-count{color:rgba(255,255,255,.85);font-size:12px;font-weight:600}
   .diagnostic-section{margin:16px 20px;background:#fff;border:1px solid var(--ui-line);border-radius:8px;overflow:hidden;scroll-margin-top:120px}.diagnostic-section .section-head{padding:12px 16px;background:#f7f9fc;color:var(--ui-ink);border-bottom:1px solid var(--ui-line)}.diagnostic-section .section-title{font-size:16px;color:var(--ui-ink)}.diagnostic-section .section-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ui-subtle);font-size:12px}.diagnostic-section .section-en{color:var(--ui-subtle);font-size:11px}.diagnostic-section .section-counts{color:var(--ui-muted)}.diagnostic-section .count-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:#eef1f6;color:var(--ui-muted);font-size:12px}.diagnostic-section .section-body{padding:0 16px}
   .check{border:0;border-bottom:1px solid var(--ui-line);border-left:0;border-radius:0;margin:0;overflow:visible;padding:16px 0}.check:last-child{border-bottom:0}.check>summary{display:grid;grid-template-columns:16px minmax(0,1fr);gap:4px 8px;align-items:start;padding:0;font-weight:400;list-style:none;cursor:pointer}.check>summary::-webkit-details-marker{display:none}.check>summary .chev{margin-top:3px;color:var(--ui-subtle);font-size:20px;line-height:1;transition:transform .15s ease}.check[open]>summary .chev{transform:rotate(90deg)}.check-head{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;gap:6px}.check-desc{grid-column:2;max-width:768px;color:var(--ui-muted);font-size:14px;line-height:1.625}.check-title{color:var(--ui-ink);font-size:15px;font-weight:500;line-height:1.5}.check-src{display:inline-flex;align-items:center;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ui-subtle);font-size:11px;line-height:1.5}.status-label{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#eef1f6;color:#62748e;font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1.5}.check.pass .status-label{background:#e4f7f0;color:#00875a}.check.info .status-label{background:#e4e9f2;color:#62748e}.check.warning .status-label{background:#fdf1dc;color:#b5730a}.check.critical .status-label{background:#ffe6ee;color:#db2c5b}.check.skipped .status-label{background:#f2f5f9;color:#a8b3c7}.check.unknown .status-label{background:#dfe3ec;color:#465272}
   .body.check-body{padding:16px 0 0 24px;border:0}.body.check-body h4{margin:16px 0 6px;color:var(--ui-ink);font-size:13px}.body.check-body h4:first-child{margin-top:0}.body.check-body li{color:var(--ui-muted);font-size:14px}.measurement-wrap,.judgment-wrap{border:1px solid var(--ui-line);border-radius:6px;overflow-x:auto}.measurement-table,.judgment-table{font-size:13px;min-width:560px}.measurement-table th,.judgment-table th{padding:8px 12px;background:var(--ui-brand);color:#fff;font-size:12px;font-weight:500}.measurement-table td,.judgment-table td{padding:8px 12px;border-top:1px solid var(--ui-line);color:var(--ui-ink)}.measurement-table .measurement-number{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.measurement-kind{display:inline-flex;padding:1px 8px;border-radius:999px;background:#eef1f6;color:var(--ui-muted);font-size:11px}.measurement-kind.counter{background:#fdf1dc;color:#b5730a}.measurement-note,.extra,.vw{color:var(--ui-muted);font-size:12px}.extra.info{color:#62748e}
@@ -1191,7 +1220,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   .section-head,.diagnostic-section .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:var(--brand);color:#fff;border:0}
   .section-heading{display:flex;align-items:baseline;gap:8px;min-width:0;flex-wrap:wrap}.section-id,.diagnostic-section .section-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;color:inherit;opacity:1}.section-title,.diagnostic-section .section-title{margin:0;padding-bottom:0;border-bottom:0;color:#fff;font-size:16px;font-weight:700;line-height:1.5}.section-en,.diagnostic-section .section-en{color:#fff;font-size:11px;opacity:.75}.section-counts{display:flex;align-items:center;gap:6px;flex:none}.count-chip,.diagnostic-section .count-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:var(--s-bg);color:var(--s-fg);font-size:12px;font-weight:500;line-height:1.5}
   .section-body,.diagnostic-section .section-body{padding:0 20px}.node-context-body{padding-bottom:16px}
-  .service-section.kibana{margin-top:16px;background:var(--surface);border-top:1px solid var(--line)}
+	.service-section.kibana,.service-section.logstash{margin-top:16px;background:var(--surface);border-top:1px solid var(--line)}
   .check{padding:16px 0}.check>summary{gap:8px}.check>summary .chev{font-size:inherit}.check-head{gap:10px}.body.check-body{padding:12px 0 0 24px;max-width:1024px}
   .doclist{display:flex;flex-direction:column;gap:4px;list-style:none;margin:0;padding:0}.doclink{display:inline-flex;align-items:center;gap:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.doclink .ic{color:var(--link)}
   .node-overview{border-collapse:collapse}.node-overview thead th{background:var(--brand);color:#fff}.node-missing-row{background:#fff2f6;color:#db2c5b}
@@ -1225,6 +1254,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
     {{with .R.NodeContext}}<a class="nav-item" href="#section-node-context" data-status="{{cls (nodeStatus .)}}"><span class="nav-dot"></span>節點概況</a>{{end}}
     {{range .ESGroups}}{{if groupVisible .Results}}<a class="nav-item" href="#{{sectionID "es" .Key}}" data-status="{{cls (groupStatus .Results)}}"><span class="nav-dot"></span>{{.Name}}</a>{{end}}{{end}}
     {{if serviceVisible .KibanaGroups}}<a class="nav-item" href="#service-kibana" data-status="{{cls (serviceStatus .KibanaGroups)}}"><span class="nav-dot"></span>Kibana</a>{{end}}
+    {{if serviceVisible .LogstashGroups}}<a class="nav-item" href="#service-logstash" data-status="{{cls (serviceStatus .LogstashGroups)}}"><span class="nav-dot"></span>Logstash</a>{{end}}
   </div>
 </nav>
 
@@ -1404,6 +1434,24 @@ const htmlTmpl = `{{define "diagnostic-results"}}
     </div>
   </header>
   <div class="section-body">{{range .KibanaGroups}}{{template "diagnostic-results" .Results}}{{end}}</div>
+</section>
+{{end}}
+
+{{if .LogstashGroups}}
+{{$summary := serviceSummary .LogstashGroups}}
+<section id="service-logstash" class="section service-section logstash" data-status="{{cls (serviceStatus .LogstashGroups)}}">
+  <header class="section-head">
+    <div class="section-heading"><h2 class="section-title">Logstash</h2><span class="section-en">Service</span></div>
+    <div class="section-counts">
+      {{if $summary.Critical}}<span class="count-chip" data-status="critical"><svg class="ic ic-12"><use href="#i-x-circle"/></svg><b>{{$summary.Critical}}</b></span>{{end}}
+      {{if $summary.Warning}}<span class="count-chip" data-status="warning"><svg class="ic ic-12"><use href="#i-alert-triangle"/></svg><b>{{$summary.Warning}}</b></span>{{end}}
+      {{if $summary.Info}}<span class="count-chip" data-status="info"><svg class="ic ic-12"><use href="#i-info"/></svg><b>{{$summary.Info}}</b></span>{{end}}
+      {{if $summary.Pass}}<span class="count-chip" data-status="pass"><svg class="ic ic-12"><use href="#i-check-circle"/></svg><b>{{$summary.Pass}}</b></span>{{end}}
+      {{if $summary.Skipped}}<span class="count-chip" data-status="skipped"><svg class="ic ic-12"><use href="#i-skip-forward"/></svg><b>{{$summary.Skipped}}</b></span>{{end}}
+      {{if $summary.Unknown}}<span class="count-chip" data-status="unknown"><svg class="ic ic-12"><use href="#i-help-circle"/></svg><b>{{$summary.Unknown}}</b></span>{{end}}
+    </div>
+  </header>
+  <div class="section-body">{{range .LogstashGroups}}{{template "diagnostic-results" .Results}}{{end}}</div>
 </section>
 {{end}}
 

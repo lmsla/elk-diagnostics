@@ -37,9 +37,13 @@ http_init "$OUT" "${LOGSTASH_USERNAME:-}" "${LOGSTASH_PASSWORD_FILE:-}" \
     "${LOGSTASH_API_KEY:-}" "$CA_CERT" "$INSECURE"
 
 echo "Logstash 採集目標：${URL%/}"
+http_fetch "$URL" '/' 'root.json' 30
+http_fetch "$URL" '/_health_report' 'health_report.json' 30
 http_fetch "$URL" '/_node' 'node_info.json' 30
 http_fetch "$URL" '/_node/stats' 'node_stats.json' 30
 http_fetch "$URL" '/_node/hot_threads?human=true' 'hot_threads.txt' 60
+http_fetch "$URL" '/_node/plugins' 'node_plugins.json' 30
+http_fetch "$URL" '/_node/pipelines' 'node_pipelines.json' 30
 http_fetch "$URL" '/_node/stats/pipelines' 'pipelines_sample_1.json' 30
 if [ "$SAMPLE_INTERVAL" -gt 0 ]; then
     sleep "$SAMPLE_INTERVAL"

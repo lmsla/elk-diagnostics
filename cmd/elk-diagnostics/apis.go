@@ -101,12 +101,21 @@ const serviceEndpointNote = `
   Kibana  GET /api/stats?extended=true&legacy=true  runtime 觀測值（僅供趨勢）
   Kibana  GET /api/task_manager/_health           Task Manager 健康狀態
   Kibana  GET /api/alerting/_health               Alerting framework 健康狀態
+
+  Logstash GET /                         服務可用性與版本
+  Logstash GET /_health_report           Logstash 健康指標（8.16.0+；舊版可能 404）
+  Logstash GET /_node                    Node 設定與節點資訊
+  Logstash GET /_node/stats              Node runtime／pipeline 統計
+  Logstash GET /_node/hot_threads?human=true  Hot threads 原始快照
+  Logstash GET /_node/stats/pipelines    Pipeline counters／queue 統計（可雙取樣）
+  Logstash GET /_node/plugins            已載入 plugin 清單
+  Logstash GET /_node/pipelines          Pipeline 設定摘要
 `
 
 const serviceEndpointMarkdown = `
 ## 選配服務 API
 
-以下端點不計入 Elasticsearch 固定端點；只有 collect.sh --services ... 指定 Kibana 時才呼叫。
+以下端點不計入 Elasticsearch 固定端點；只有 collect.sh --services ... 指定對應服務時才呼叫。
 
 | 服務 | 方法 | 端點 | 用途 |
 |---|---|---|---|
@@ -114,4 +123,12 @@ const serviceEndpointMarkdown = `
 | Kibana | GET | /api/stats?extended=true&legacy=true | runtime 觀測值（僅供趨勢） |
 | Kibana | GET | /api/task_manager/_health | Task Manager 健康狀態 |
 | Kibana | GET | /api/alerting/_health | Alerting framework 健康狀態 |
+| Logstash | GET | / | 服務可用性與版本 |
+| Logstash | GET | /_health_report | Health indicators（Logstash 8.16.0+；舊版可能 404） |
+| Logstash | GET | /_node | Node 設定與節點資訊 |
+| Logstash | GET | /_node/stats | Node runtime／pipeline 統計 |
+| Logstash | GET | /_node/hot_threads?human=true | Hot threads 原始快照 |
+| Logstash | GET | /_node/stats/pipelines | Pipeline counters／queue 統計（可雙取樣） |
+| Logstash | GET | /_node/plugins | 已載入 plugin 清單 |
+| Logstash | GET | /_node/pipelines | Pipeline 設定摘要 |
 `
