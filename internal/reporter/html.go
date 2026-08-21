@@ -3,10 +3,14 @@ package reporter
 import (
 	"bytes"
 	_ "embed"
+	"encoding/base64"
 	"fmt"
 	"html/template"
 	"math"
+	"mime"
+	"net/http"
 	"net/url"
+	"os"
 	"path"
 	"path/filepath"
 	"sort"
@@ -23,6 +27,20 @@ var webcommLogoSVG string
 // HTML 產出離線可渲染報告（診斷報告規格 §5）：單一檔、CSS 全內嵌、零外部 CDN、
 // 用原生 <details> 折疊（免 JS）、可列印。
 func HTML(r diagnostic.Report) ([]byte, error) {
+	return HTMLWithOptions(r, HTMLOptions{})
+}
+
+// HTMLOptions controls optional report branding. The logo is embedded in the
+// generated HTML so the report remains a standalone offline artifact.
+type HTMLOptions struct {
+	ClientLogoPath string
+}
+
+func HTMLWithOptions(r diagnostic.Report, opts HTMLOptions) ([]byte, error) {
+	clientLogo, err := clientLogoDataURI(opts.ClientLogoPath)
+	if err != nil {
+		return nil, err
+	}
 	var esResults, kibanaResults, logstashResults []diagnostic.Result
 	for _, res := range r.Results {
 		if res.Category == "service" {
@@ -53,6 +71,7 @@ func HTML(r diagnostic.Report) ([]byte, error) {
 		ES             htmlGroupSet
 		Kibana         htmlGroupSet
 		Logstash       htmlGroupSet
+		ClientLogo     template.URL
 	}{
 		R:              r,
 		ESGroups:       esGroups,
@@ -61,6 +80,7 @@ func HTML(r diagnostic.Report) ([]byte, error) {
 		ES:             htmlGroupSet{Prefix: "es", Start: esStart, Groups: esGroups},
 		Kibana:         htmlGroupSet{Prefix: "kibana", Start: 1, Groups: kibanaGroups},
 		Logstash:       htmlGroupSet{Prefix: "logstash", Start: 1, Groups: logstashGroups},
+		ClientLogo:     clientLogo,
 	}
 
 	t, err := template.New("report").Funcs(htmlFuncs).Parse(htmlTmpl)
@@ -72,6 +92,40 @@ func HTML(r diagnostic.Report) ([]byte, error) {
 		return nil, err
 	}
 	return buf.Bytes(), nil
+}
+
+const maxClientLogoBytes = 512 * 1024
+
+func clientLogoDataURI(filename string) (template.URL, error) {
+	if strings.TrimSpace(filename) == "" {
+		return "", nil
+	}
+	b, err := os.ReadFile(filename)
+	if err != nil {
+		return "", fmt.Errorf("讀取客戶 Logo 失敗：%w", err)
+	}
+	if len(b) == 0 {
+		return "", fmt.Errorf("客戶 Logo 檔案是空的：%s", filename)
+	}
+	if len(b) > maxClientLogoBytes {
+		return "", fmt.Errorf("客戶 Logo 超過 512 KiB：%s", filename)
+	}
+
+	mediaType := mime.TypeByExtension(strings.ToLower(filepath.Ext(filename)))
+	if mediaType == "" || mediaType == "text/xml" || mediaType == "application/xml" {
+		mediaType = http.DetectContentType(b)
+	}
+	if strings.EqualFold(filepath.Ext(filename), ".svg") {
+		mediaType = "image/svg+xml"
+	}
+	switch mediaType {
+	case "image/svg+xml", "image/png", "image/jpeg":
+	default:
+		return "", fmt.Errorf("不支援的客戶 Logo 格式 %q（僅支援 SVG、PNG、JPEG）", mediaType)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(b)
+	return template.URL("data:" + mediaType + ";base64," + encoded), nil
 }
 
 func categoryGroups(results []diagnostic.Result) []htmlGroup {
@@ -1167,6 +1221,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   .topbar{position:sticky;top:0;z-index:30;height:60px;display:flex;align-items:center;justify-content:center;margin:0 -24px;padding:0 20px;background:#fff;border:0;border-bottom:1px solid var(--ui-line);border-radius:0;box-shadow:var(--ui-shadow)}
   .topbar-inner{display:flex;align-items:center;gap:16px}
   .logo{display:block;width:160px;height:41.374px}
+  .client-logo{display:block;max-width:160px;max-height:41.374px;width:auto;height:auto;object-fit:contain}
   .topbar-rule{width:1px;height:20px;background:var(--ui-line)}
   .topbar-title{font-size:16px;font-weight:500;line-height:1.5;color:var(--ui-brand)}
   .report-meta{margin-top:24px;padding:20px;background:#fff;border:1px solid var(--ui-line);border-radius:8px}.report-meta .header-title{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}.report-meta h1{margin:0;color:var(--ui-ink);font-size:24px;line-height:1.35}.report-meta .cluster-name{margin-top:12px;color:var(--ui-ink);font-size:18px;font-weight:650}.report-meta .cluster-facts{color:var(--ui-muted);font-size:13px}.report-meta .meta-grid{border-top:1px solid var(--ui-line)}
@@ -1244,6 +1299,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
 <header class="topbar">
   <div class="topbar-inner">
     {{brandLogo}}
+    {{if .ClientLogo}}<span class="topbar-rule"></span><img class="client-logo" src="{{.ClientLogo}}" alt="客戶 Logo">{{end}}
     <span class="topbar-rule"></span>
     <span class="topbar-title">ELK 服務健康診斷報告</span>
   </div>

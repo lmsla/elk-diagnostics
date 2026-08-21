@@ -32,6 +32,7 @@ func rootCmd() *cobra.Command {
 
 type connFlags struct {
 	cfgPath, username, password, apiKey, caCert, rulesPath *string
+	clientLogo                                             *string
 	hosts                                                  *[]string
 	insecure                                               *bool
 	timeout                                                *int
@@ -41,15 +42,16 @@ type connFlags struct {
 func addConnFlags(cmd *cobra.Command) *connFlags {
 	fs := cmd.Flags()
 	cf := &connFlags{
-		cfgPath:   fs.String("config", "config.yaml", "設定檔路徑"),
-		hosts:     fs.StringSlice("host", nil, "ES base URL（可重複，或以逗號分隔，依序故障轉移）"),
-		username:  fs.String("username", "", "basic auth 帳號"),
-		password:  fs.String("password", "", "basic auth 密碼（已棄用；請改用互動輸入）"),
-		apiKey:    fs.String("api-key", "", "API key 認證"),
-		caCert:    fs.String("ca-cert", "", "自簽 CA 憑證路徑"),
-		insecure:  fs.Bool("insecure", false, "略過 TLS 憑證驗證（不建議）"),
-		timeout:   fs.Int("timeout", 0, "單請求逾時秒數（覆寫設定）"),
-		rulesPath: fs.String("rules", "", "覆寫 C 類診斷閾值的 YAML（僅覆寫檔案中出現的欄位；A/B 類不受影響）"),
+		cfgPath:    fs.String("config", "config.yaml", "設定檔路徑"),
+		hosts:      fs.StringSlice("host", nil, "ES base URL（可重複，或以逗號分隔，依序故障轉移）"),
+		username:   fs.String("username", "", "basic auth 帳號"),
+		password:   fs.String("password", "", "basic auth 密碼（已棄用；請改用互動輸入）"),
+		apiKey:     fs.String("api-key", "", "API key 認證"),
+		caCert:     fs.String("ca-cert", "", "自簽 CA 憑證路徑"),
+		clientLogo: fs.String("client-logo", "", "HTML 客戶 Logo 路徑（SVG、PNG 或 JPEG；僅影響 HTML）"),
+		insecure:   fs.Bool("insecure", false, "略過 TLS 憑證驗證（不建議）"),
+		timeout:    fs.Int("timeout", 0, "單請求逾時秒數（覆寫設定）"),
+		rulesPath:  fs.String("rules", "", "覆寫 C 類診斷閾值的 YAML（僅覆寫檔案中出現的欄位；A/B 類不受影響）"),
 	}
 	_ = fs.MarkDeprecated("password", "命令列密碼可能進入 shell history 或程序清單；請省略並由終端安全輸入")
 	return cf
@@ -126,7 +128,7 @@ func buildReport(meta diagnostic.ClusterMeta, results []diagnostic.Result, mode 
 	}, results)
 }
 
-func emit(report diagnostic.Report, format, outFile string, noColor bool) int {
+func emit(report diagnostic.Report, format, outFile string, noColor bool, clientLogo ...string) int {
 	var (
 		out []byte
 		err error
@@ -135,7 +137,11 @@ func emit(report diagnostic.Report, format, outFile string, noColor bool) int {
 	case "json":
 		out, err = reporter.JSON(report)
 	case "html":
-		out, err = reporter.HTML(report)
+		logoPath := ""
+		if len(clientLogo) > 0 {
+			logoPath = clientLogo[0]
+		}
+		out, err = reporter.HTMLWithOptions(report, reporter.HTMLOptions{ClientLogoPath: logoPath})
 	case "text":
 		out = reporter.Text(report, colorEnabled(outFile, noColor, stdoutIsTTY()))
 	default:
@@ -159,6 +165,13 @@ func emit(report diagnostic.Report, format, outFile string, noColor bool) int {
 		}
 	}
 	return report.ExitCode()
+}
+
+func clientLogoPath(cf *connFlags) string {
+	if cf != nil && cf.clientLogo != nil {
+		return *cf.clientLogo
+	}
+	return ""
 }
 
 // colorEnabled 依 診斷報告規格 §5.1：僅在 stdout 為 TTY、無 --no-color、無 NO_COLOR

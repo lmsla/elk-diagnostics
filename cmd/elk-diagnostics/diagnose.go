@@ -60,7 +60,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string, noColor bool) i
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok {       // #3
 			res = append(res, r)
 		}
-		return emit(buildReport(meta, res, "diagnose:red-cluster"), output, outFile, noColor)
+		return emit(buildReport(meta, res, "diagnose:red-cluster"), output, outFile, noColor, clientLogoPath(cf))
 
 	case "write-bottleneck":
 		cpus, e1 := client.CatNodesCPU()
@@ -75,7 +75,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string, noColor bool) i
 			}
 			res = append(res, unknownFrom(analyzer.WriteBottleneck(nil, nil, t), err, false))
 		}
-		return emit(buildReport(meta, res, "diagnose:write-bottleneck"), output, outFile, noColor)
+		return emit(buildReport(meta, res, "diagnose:write-bottleneck"), output, outFile, noColor, clientLogoPath(cf))
 
 	case "high-heap":
 		var res []diagnostic.Result
@@ -94,7 +94,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string, noColor bool) i
 		} else {
 			res = append(res, unknownFrom(analyzer.RejectedRequests(nil), e, false))
 		}
-		return emit(buildReport(meta, res, "diagnose:high-heap"), output, outFile, noColor)
+		return emit(buildReport(meta, res, "diagnose:high-heap"), output, outFile, noColor, clientLogoPath(cf))
 
 	case "ingest-lag":
 		hr, err := client.HealthReport()
@@ -117,7 +117,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string, noColor bool) i
 		if r, ok := analyzer.HealthReportIndicator(hr, "disk"); ok { // #3
 			res = append(res, r)
 		}
-		return emit(buildReport(meta, res, "diagnose:ingest-lag"), output, outFile, noColor)
+		return emit(buildReport(meta, res, "diagnose:ingest-lag"), output, outFile, noColor, clientLogoPath(cf))
 
 	case "ilm-stuck":
 		hr, err := client.HealthReport()
@@ -138,7 +138,7 @@ func runDiagnose(cf *connFlags, symptom, output, outFile string, noColor bool) i
 		if r, ok := analyzer.HealthReportIndicator(hr, "shards_capacity"); ok { // #10
 			res = append(res, r)
 		}
-		return emit(buildReport(meta, res, "diagnose:ilm-stuck"), output, outFile, noColor)
+		return emit(buildReport(meta, res, "diagnose:ilm-stuck"), output, outFile, noColor, clientLogoPath(cf))
 
 	default:
 		fmt.Fprintln(os.Stderr, "不支援的症狀:", symptom, "（目前支援："+supportedSymptoms+"）")

@@ -66,7 +66,7 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 			return 11
 		}
 		meta := diagnostic.ClusterMeta{Host: "(from-file) " + fromFile, ESVersion: "unknown"}
-		return emitCheck(buildReport(meta, analyzer.FromHealthReport(hr), "check"), output, outFile, noColor, metricsOut)
+		return emitCheck(buildReport(meta, analyzer.FromHealthReport(hr), "check"), output, outFile, noColor, metricsOut, clientLogoPath(cf))
 	}
 
 	// bundle 模式與連線模式共用底下完整的診斷流程——差別只在 client 的資料來源，
@@ -453,7 +453,7 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 	report.NodeContext = nodeSnapshot
 	report.VersionNotice = versionNotice
 	report.SuggestedSymptoms = suggestSymptoms(results, cpus, pools, t)
-	return emitCheck(report, output, outFile, noColor, metricsOut)
+	return emitCheck(report, output, outFile, noColor, metricsOut, clientLogoPath(cf))
 }
 
 func hasService(services []string, want string) bool {
@@ -483,8 +483,8 @@ func logstashReadFailure(zero diagnostic.Result, err error) diagnostic.Result {
 	return zero
 }
 
-func emitCheck(report diagnostic.Report, output, outFile string, noColor bool, metricsOut string) int {
-	code := emit(report, output, outFile, noColor)
+func emitCheck(report diagnostic.Report, output, outFile string, noColor bool, metricsOut string, clientLogo ...string) int {
+	code := emit(report, output, outFile, noColor, clientLogo...)
 	if code >= 10 || metricsOut == "" {
 		return code
 	}

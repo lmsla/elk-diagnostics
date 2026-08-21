@@ -1,12 +1,52 @@
 package reporter
 
 import (
+	"html"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"elk-diagnostics/internal/diagnostic"
 	"elk-diagnostics/internal/nodecontext"
 )
+
+func TestHTML_ClientLogo(t *testing.T) {
+	logoPath := filepath.Join(t.TempDir(), "client.svg")
+	if err := os.WriteFile(logoPath, []byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" fill="#123456"/></svg>`), 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := HTMLWithOptions(sampleReport(), HTMLOptions{ClientLogoPath: logoPath})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	decoded := html.UnescapeString(s)
+	for _, want := range []string{
+		`class="client-logo"`,
+		`alt="客戶 Logo"`,
+		`data:image/svg+xml;base64,`,
+		`ELK 服務健康診斷報告`,
+	} {
+		if !strings.Contains(decoded, want) {
+			t.Errorf("HTML 缺少客戶 Logo 標記 %q", want)
+		}
+	}
+	if strings.Contains(s, logoPath) {
+		t.Error("HTML 不應暴露客戶 Logo 的本機路徑")
+	}
+}
+
+func TestHTML_ClientLogoRejectsUnsupportedFormat(t *testing.T) {
+	logoPath := filepath.Join(t.TempDir(), "client.txt")
+	if err := os.WriteFile(logoPath, []byte("not an image"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := HTMLWithOptions(sampleReport(), HTMLOptions{ClientLogoPath: logoPath}); err == nil {
+		t.Fatal("不支援的 Logo 格式應回傳錯誤")
+	}
+}
 
 func TestHTML_NodeContext(t *testing.T) {
 	r := sampleReport()
