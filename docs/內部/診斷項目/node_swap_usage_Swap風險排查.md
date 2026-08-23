@@ -59,11 +59,11 @@ numbering: engineering
 | `swap_used_bytes` | > 0 B | 當前已有記憶體頁面被置換至硬碟 |
 | `swap_free_bytes` | 接近 0 | Swap 空間即將耗盡，OOM-Killer 即將觸發 |
 
-# 客戶溝通話術與情境模擬
+# 業務影響與技術說明建議
 
-## 話術範例：伺服器記憶體超額配置引發換頁
+## 說明範例：伺服器記憶體超額配置引發換頁
 
-> **顧問說明範例**：
+> **技術說明範例**：
 > 「維運同仁您好，報告中顯示 `data-node-01` 已經使用了 2.5GB 的 Swap 交換空間。
 > 
 > 經分析，主機的實體記憶體為 32GB，但 Elasticsearch 的 JVM Heap 設了 28GB，同時主機上還運行著 Logstash。這導致作業系統在記憶體不足時，將部分 Elasticsearch 行程強制置換到硬碟中。

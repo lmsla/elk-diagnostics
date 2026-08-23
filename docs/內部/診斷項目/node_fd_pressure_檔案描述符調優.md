@@ -64,11 +64,11 @@ numbering: engineering
 | `max_file_descriptors` | < 65,535 | 系統上限設得太低 | 必須立即調大至 65535+ |
 | `open_file_descriptors_pct` | > 80%（Warning）<br>> 90%（Critical） | 檔案描述符即將耗盡 | 需合併分片或調大上限 |
 
-# 客戶溝通話術與情境模擬
+# 業務影響與技術說明建議
 
-## 話術範例：系統預設上限過低或分片過多
+## 說明範例：系統預設上限過低或分片過多
 
-> **顧問說明範例**：
+> **技術說明範例**：
 > 「維運同仁您好，報告中顯示 `es-data-01` 的檔案描述符（File Descriptors）使用率已達到 88%，即將觸發系統硬上限。
 > 
 > Elasticsearch 的搜尋引擎特性需要同時開啟大量索引檔案與網路連線。一旦檔案描述符耗盡，系統會拋出 `java.io.IOException: Too many open files`，導致所有新查詢與寫入被瞬間拒絕。

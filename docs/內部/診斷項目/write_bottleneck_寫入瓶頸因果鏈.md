@@ -14,7 +14,7 @@ numbering: engineering
 
 | 修訂日期 | 版號 | 修訂內容 | 修訂者 |
 |---|---|---|---|
-| 2026/08/23 | 1.0 | 初版：寫入瓶頸因果鏈、容器 Cgroup 機制與客戶溝通話術 | 診斷工具架構組 |
+| 2026/08/23 | 1.0 | 初版：寫入瓶頸因果鏈、容器 Cgroup 機制與技術溝通建議 | 診斷工具架構組 |
 
 # 文件說明
 
@@ -91,16 +91,16 @@ allocated_processors <= 2 核心
 | `write_bottleneck.allocated_processors` | count | 與硬體相符 | <= 2 | 核心數偵測過低 |
 | `write_bottleneck.pool_size` | count | `processors + 1` | <= 3 | 寫入併發通道過窄 |
 
-# 客戶溝通話術與情境模擬
+# 業務影響與技術說明建議
 
-## 溝通策略原則
+## 說明要點與原則
 
-- **避免純黑話**：不要對非技術主管講「CFS Bandwidth quota 導致 runtime availableProcessors 被截斷」。
+- **避免使用過度晦澀的底層代碼術語**：不要對非技術主管講「CFS Bandwidth quota 導致 runtime availableProcessors 被截斷」。
 - **採用交通車道比喻**：將 write thread pool 比喻為「收費站的收費車道」，將 CPU 比喻為「工作人員的速度」。
 
-## 話術範例：對客戶 IT 主管 / 維運窗口
+## 說明範例：對客戶 IT 主管 / 維運窗口
 
-> **顧問說明範例**：
+> **技術說明範例**：
 > 「主管您好，我們在健檢報告中發現，叢集雖然硬體規格充足，但寫入經常卡住且出現 429 報警。
 > 
 > 這好比我們的主機明明有 8 線道的馬路空間，但容器配置將 Elasticsearch 限制在只有 2 個收費收費亭（執行緒）工作。當瞬間車流湧入時，收費亭立刻塞滿排隊（Queue 積壓），但整座主機的 CPU 大部分都還閒置著。

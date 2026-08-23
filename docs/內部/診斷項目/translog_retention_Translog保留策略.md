@@ -66,11 +66,11 @@ Lucene In-memory Segment   Lucene Segment 落盤 (fsync)
 | `deprecated_retention_settings` | 存在已廢棄 key | 建議清除以避免升級阻礙 |
 | `flush_threshold_size` | 預設 512MB | Flush 觸發門檻是否合理 |
 
-# 客戶溝通話術與情境模擬
+# 業務影響與技術說明建議
 
-## 話術範例：清除舊版 Translog 殘留參數
+## 說明範例：清除舊版 Translog 殘留參數
 
-> **顧問說明範例**：
+> **技術說明範例**：
 > 「維運同仁您好，報告中顯示部分舊索引設定中依然保留了 `index.translog.retention.size` 等早期參數。
 > 
 > 在 Elasticsearch 7.4 之後，系統已經全面升級為更先進的 Soft Deletes 機制進行節點快速同步，舊版的 Translog 保留設定已經被官方廢棄且不再生效。

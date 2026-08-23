@@ -79,16 +79,16 @@ Cgroup Memory Usage = JVM Heap + JVM Native 記憶體 + Page Cache (Lucene 檔�
 判讀原則：
 - 單次快照標記為 `WARNING` 作為預警，不直接判定為 Critical，需結合是否曾發生 Pod Restart（OOMKilled）綜合評估。
 
-# 客戶溝通話術與情境模擬
+# 業務影響與技術說明建議
 
-## 溝通策略原則
+## 說明要點與原則
 
 - **科普 Page Cache 機制**：解釋 Linux 的哲學是「沒用到的記憶體就是浪費」，快取佔用 90% 是常態。
 - **檢查容器 Heap 與 Limit 比例**：指出若 Limit 設得太貼近 Heap（如 Heap 16G 但 Limit 只給 18G），隨時會被 OOM 殺死。
 
-## 話術範例：解釋 K8s 容器記憶體佔用
+## 說明範例：解釋 K8s 容器記憶體佔用
 
-> **顧問說明範例**：
+> **技術說明範例**：
 > 「K8s 維運主管您好，報告中顯示 Elasticsearch Pod 的記憶體使用率達到了 92%。
 > 
 > 請不用過度擔心，在 Linux 容器架構中，這 92% 的大部分空間是被用作 Lucene 的硬碟讀取加速快取（Page Cache），當系統需要新記憶體時會自動秒級釋放。

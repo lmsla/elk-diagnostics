@@ -30,7 +30,7 @@ numbering: engineering
 
 ## 文件目的
 
-本手札提供第一線工程師在 Stack Monitoring 監控功能未啟用時的判定原則、客戶說明話術與動態啟用指令。
+本手札提供第一線工程師在 Stack Monitoring 監控功能未啟用時的判定原則、技術說明指引與動態啟用指令。
 
 ## 適用範圍
 
@@ -47,9 +47,9 @@ xpack.monitoring.collection.enabled: true
 供 Kibana Stack Monitoring 介面繪製時間序列折線圖！
 ```
 
-# 客戶溝通公版話術
+# 業務影響與技術說明建議
 
-> **顧問說明範例**：
+> **技術說明範例**：
 > 「維運主管您好，報告中顯示叢集的 `Stack Monitoring` 歷史指標採集功能目前未開啟。
 > 
 > 這會使 Kibana 上的叢集歷史效能監控圖表無法顯示。

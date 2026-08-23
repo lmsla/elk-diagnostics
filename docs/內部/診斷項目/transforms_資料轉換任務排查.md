@@ -69,11 +69,11 @@ Elasticsearch Transform 是將現有索引資料進行 **即時透視（Pivot）
 | `state` | `failed` | 當前狀態（已停擺） | 需立即介入 |
 | `reason` | `Search timeout after 30s...` | 具體底層報錯訊息 | 依據原因修復 |
 
-# 客戶溝通話術與情境模擬
+# 業務影響與技術說明建議
 
-## 話術範例：Transform 任務失敗停滯
+## 說明範例：Transform 任務失敗停滯
 
-> **顧問說明範例**：
+> **技術說明範例**：
 > 「資料工程團隊您好，報告中顯示 `user-daily-metrics` 的 Transform 資料轉換任務目前處於 `failed` 停止狀態。
 > 
 > 經分析底層錯誤日誌，是因為昨天來源索引中有部分日誌的 `response_time` 欄位送入了字串格式，導致 Transform 在進行平均值計算時發生型態錯誤而中斷。
