@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於所有自建（On-Premise）、容器化（ECK/K8s）與雲端部署之 Elasticsearch 7.x 及 8.x 叢集。
+本手札適用於所有自建（On-Premise）、容器化（ECK/K8s）與雲端部署之 Elasticsearch 8.x 及 9.x 叢集。
 
 # 核心原理與 Deciders 機制深拆
 

@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於所有使用 ILM 管理日誌與時間序列資料之 Elasticsearch 7.x 及 8.x 叢集。
+本手札適用於所有使用 ILM 管理日誌與時間序列資料之 Elasticsearch 8.x 及 9.x 叢集。
 
 # 核心原理與 ILM 五階段標準架構
 

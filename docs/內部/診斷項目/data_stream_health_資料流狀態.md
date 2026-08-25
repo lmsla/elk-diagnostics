@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於所有採用 Data Stream（日誌、指標、Traces）之 Elasticsearch 7.9+ 及 8.x 叢集。
+本手札適用於所有採用 Data Stream（日誌、指標、Traces）之 Elasticsearch 8.x 及 9.x 叢集。
 
 # 核心原理與 Data Stream 機制
 

@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於所有運行在 Linux 或容器環境中之 Elasticsearch 7.x 及 8.x 節點。
+本手札適用於所有運行在 Linux 或容器環境中之 Elasticsearch 8.x 及 9.x 節點。
 
 # 核心原理與 File Descriptors 機制
 

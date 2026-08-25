@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於從 7.x 升級至 8.x，或混用自訂 Node Attribute 之 Elasticsearch 叢集。
+本手札適用於Elasticsearch 8.x 及 9.x 叢集。
 
 # 核心原理與架構演進衝突
 

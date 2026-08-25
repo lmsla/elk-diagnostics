@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於採用 Raft 協調協議之 Elasticsearch 7.x 與 8.x 叢集。
+本手札適用於採用 Raft 協調協議之 Elasticsearch 8.x 與 9.x 叢集。
 
 # 核心原理與 Raft 投票機制
 

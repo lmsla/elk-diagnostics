@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於所有執行於 HotSpot JVM 或 OpenJDK 上之 Elasticsearch 7.x 及 8.x 節點。
+本手札適用於所有執行於 HotSpot JVM 或 OpenJDK 上之 Elasticsearch 8.x 及 9.x 節點。
 
 # 核心原理與 JVM 記憶體體系
 

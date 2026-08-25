@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於啟用 Platinum / Enterprise License 之 Elasticsearch 7.x 及 8.x 跨叢集複製環境。
+本手札適用於啟用 Platinum / Enterprise License 之 Elasticsearch 8.x 及 9.x 跨叢集複製環境。
 
 # 核心原理與 CCR 機制
 

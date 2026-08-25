@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於所有版本之 Logstash 7.x 及 8.x 實例。
+本手札適用於所有版本之 Logstash 8.x 及 9.x 實例。
 
 # 核心概念與 Logstash 健檢
 

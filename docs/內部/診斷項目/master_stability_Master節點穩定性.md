@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於中大型或生產環境之 Elasticsearch 7.x 及 8.x 叢集。
+本手札適用於中大型或生產環境之 Elasticsearch 8.x 及 9.x 叢集。
 
 # 核心原理與 Master 架構規範
 

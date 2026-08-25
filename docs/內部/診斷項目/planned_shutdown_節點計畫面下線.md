@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於 Elasticsearch 8.x 版本（7.x 未提供此原生 API）。
+本手札適用於 Elasticsearch 8.x 版本（8.x 未提供此原生 API）。
 
 # 核心原理與 Planned Shutdown 機制
 

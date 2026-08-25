@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於具有實體機房多機架、多機房、或公有雲多可用區（Multi-AZ）之 Elasticsearch 7.x 及 8.x 部署。
+本手札適用於具有實體機房多機架、多機房、或公有雲多可用區（Multi-AZ）之 Elasticsearch 8.x 及 9.x 部署。
 
 # 核心原理與機架感知機制
 

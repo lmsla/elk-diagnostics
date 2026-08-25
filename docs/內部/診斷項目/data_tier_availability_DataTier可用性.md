@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於採用 7.10+ / 8.x Data Tier 架構之 Elasticsearch 叢集。
+本手札適用於採用 Data Tier 架構之 Elasticsearch 8.x 及 9.x 叢集。
 
 # 核心概念與階層角色
 

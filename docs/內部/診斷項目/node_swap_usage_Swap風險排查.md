@@ -34,7 +34,7 @@ system: ELK 8.x / 9.x
 
 ## 適用範圍
 
-本手札適用於所有自建或虛擬化主機之 Elasticsearch 7.x 及 8.x 節點。
+本手札適用於所有自建或虛擬化主機之 Elasticsearch 8.x 及 9.x 節點。
 
 # 核心原理與 Swap 佔用根因
 
