@@ -1,13 +1,13 @@
 ---
-title: "ELK 診斷手札：Search Thread Pool 狀態 — 查詢 Worker 飽和、排隊佇列監控與資源隔離"
+title: "Search Thread Pool 狀態 — 查詢 Worker 飽和、排隊佇列監控與資源隔離"
 project: elk-diagnostics
 document_type: 診斷手札
 version: 1.0
 date: 2026-08-23
 owner: ELK 維運架構團隊
 audience: 內部維運工程師 / 交付顧問 / SRE
-status: approved
 numbering: engineering
+system: ELK 8.x / 9.x
 ---
 
 # 修訂記錄 <!-- no-number -->

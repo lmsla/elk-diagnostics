@@ -1,13 +1,13 @@
 ---
-title: "ELK 診斷手札：TLS 憑證過期時間 — 傳輸層/HTTP 憑證效期檢測與線上熱重載 SOP"
+title: "TLS 憑證過期時間 — 傳輸層/HTTP 憑證效期檢測與線上熱重載 SOP"
 project: elk-diagnostics
 document_type: 診斷手札
 version: 1.0
 date: 2026-08-23
 owner: ELK 維運架構團隊
 audience: 內部維運工程師 / 交付顧問 / SRE
-status: approved
 numbering: engineering
+system: ELK 8.x / 9.x
 ---
 
 # 修訂記錄 <!-- no-number -->

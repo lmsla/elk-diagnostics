@@ -1,13 +1,13 @@
 ---
-title: "ELK 診斷手札：Data corruption 資料毀損徵兆 — Checksum 異常、段損毀與安全救磚"
+title: "Data corruption 資料毀損徵兆 — Checksum 異常、段損毀與安全救磚"
 project: elk-diagnostics
 document_type: 診斷手札
 version: 1.0
 date: 2026-08-23
 owner: ELK 維運架構團隊
 audience: 內部維運工程師 / 交付顧問 / SRE
-status: approved
 numbering: engineering
+system: ELK 8.x / 9.x
 ---
 
 # 修訂記錄 <!-- no-number -->

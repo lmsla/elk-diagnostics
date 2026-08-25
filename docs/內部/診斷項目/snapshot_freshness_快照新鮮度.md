@@ -1,13 +1,13 @@
 ---
-title: "ELK 診斷手札：Snapshot 新鮮度 — 備份間隔檢測、RPO 達標評估與備份逾期排查"
+title: "Snapshot 新鮮度 — 備份間隔檢測、RPO 達標評估與備份逾期排查"
 project: elk-diagnostics
 document_type: 診斷手札
 version: 1.0
 date: 2026-08-23
 owner: ELK 維運架構團隊
 audience: 內部維運工程師 / 交付顧問 / SRE
-status: approved
 numbering: engineering
+system: ELK 8.x / 9.x
 ---
 
 # 修訂記錄 <!-- no-number -->

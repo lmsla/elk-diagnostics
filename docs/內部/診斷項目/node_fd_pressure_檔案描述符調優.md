@@ -1,13 +1,13 @@
 ---
-title: "ELK 診斷手札：File Descriptors 壓力 — Linux 檔案描述符限制、Lucene 段檔案與 ulimit 調優"
+title: "File Descriptors 壓力 — Linux 檔案描述符限制、Lucene 段檔案與 ulimit 調優"
 project: elk-diagnostics
 document_type: 診斷手札
 version: 1.0
 date: 2026-08-23
 owner: ELK 維運架構團隊
 audience: 內部維運工程師 / 交付顧問 / SRE
-status: approved
 numbering: engineering
+system: ELK 8.x / 9.x
 ---
 
 # 修訂記錄 <!-- no-number -->

@@ -1,13 +1,13 @@
 ---
-title: "ELK 診斷手札：Logstash 服務狀態 — 節點在線檢測、執行期版本與 JVM 資源"
+title: "Logstash 服務狀態 — 節點在線檢測、執行期版本與 JVM 資源"
 project: elk-diagnostics
 document_type: 診斷手札
 version: 1.0
 date: 2026-08-23
 owner: ELK 維運架構團隊
 audience: 內部維運工程師 / 交付顧問 / SRE
-status: approved
 numbering: engineering
+system: ELK 8.x / 9.x
 ---
 
 # 修訂記錄 <!-- no-number -->

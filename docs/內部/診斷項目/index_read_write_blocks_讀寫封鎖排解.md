@@ -1,13 +1,13 @@
 ---
-title: "ELK 診斷手札：Index read/write blocks — 磁碟 Flood-stage 鎖定與唯讀封鎖解鎖 SOP"
+title: "Index read/write blocks — 磁碟 Flood-stage 鎖定與唯讀封鎖解鎖 SOP"
 project: elk-diagnostics
 document_type: 診斷手札
 version: 1.0
 date: 2026-08-23
 owner: ELK 維運架構團隊
 audience: 內部維運工程師 / 交付顧問 / SRE
-status: approved
 numbering: engineering
+system: ELK 8.x / 9.x
 ---
 
 # 修訂記錄 <!-- no-number -->

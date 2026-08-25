@@ -1,13 +1,13 @@
 ---
-title: "ELK 診斷手札：節點版本 / JDK / Plugin 漂移 — 執行期環境一致性檢驗與非對稱風險"
+title: "節點版本 / JDK / Plugin 漂移 — 執行期環境一致性檢驗與非對稱風險"
 project: elk-diagnostics
 document_type: 診斷手札
 version: 1.0
 date: 2026-08-23
 owner: ELK 維運架構團隊
 audience: 內部維運工程師 / 交付顧問 / SRE
-status: approved
 numbering: engineering
+system: ELK 8.x / 9.x
 ---
 
 # 修訂記錄 <!-- no-number -->
