@@ -41,7 +41,7 @@ func KibanaStatus(evidence []collector.KibanaEvidence) diagnostic.Result {
 		ID: "kibana_status", Title: "Kibana 核心健康", Category: "service", Source: "raw_api", Docs: []string{docKibanaStatus},
 	}
 	if len(evidence) == 0 {
-		return kibanaUnknown(res, "bundle 未包含 Kibana 採集資料", "找不到 kibana/<instance-id>/status.json")
+		return kibanaUnknown(res, "bundle 未包含 Kibana 採集資料", "找不到 kibana/<instance-label>/status.json")
 	}
 
 	var passCount, degradedCount, unavailableCount, unknownCount int

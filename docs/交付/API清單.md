@@ -1,7 +1,12 @@
-# elk-diagnostics 0.0.4-mvp — Elasticsearch API 呼叫清單
+# elk-diagnostics 0.0.4-mvp — ELK API 呼叫清單
 
 本工具只送出 HTTP GET，不執行任何寫入操作。
 以下為 check 會呼叫的全部端點，皆為叢集／節點層級的中繼資料。
+
+操作路線：
+  - Route A（主要）：使用者端只執行 collect.sh，將採集包交由獲准的分析端處理。
+  - Route B：獲准的分析機執行 elk-diagnostics，直接連線 ES 產生報告。
+  兩條路線使用相同的 Elasticsearch 診斷端點；Kibana／Logstash 只有 collect.sh 指定對應服務時才呼叫。
 
 資料範圍：
   - 工具不讀取任何文件（document）內容

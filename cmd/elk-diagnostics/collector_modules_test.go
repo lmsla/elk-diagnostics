@@ -112,6 +112,73 @@ func TestCollectScriptRunsOptionalAPIModules(t *testing.T) {
 	}
 }
 
+func TestCollectScriptRunsMultipleServiceInstances(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("本機未安裝 sh")
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"cluster_name":"test","version":{"number":"8.14.3"},"status":{"overall":{"level":"available"}}}`))
+	}))
+	defer srv.Close()
+
+	tmp := t.TempDir()
+	script := filepath.Join(tmp, "collect.sh")
+	s, err := renderCollectScript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte(s), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	kibanaList := filepath.Join(tmp, "kibana-instances.conf")
+	logstashList := filepath.Join(tmp, "logstash-instances.conf")
+	for _, item := range []struct {
+		path string
+		body string
+	}{
+		{kibanaList, "kb-01|" + srv.URL + "\nkb-02|" + srv.URL + "\n"},
+		{logstashList, "ls-01|" + srv.URL + "\nls-02|" + srv.URL + "\n"},
+	} {
+		if err := os.WriteFile(item.path, []byte(item.body), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	out := filepath.Join(tmp, "bundle")
+	cmd := exec.Command(sh, script,
+		"--services", "es,kibana,logstash",
+		"-h", srv.URL,
+		"--kibana-list", kibanaList,
+		"--logstash-list", logstashList,
+		"--logstash-sample-interval", "0",
+		"-o", out,
+	)
+	cmd.Env = append(os.Environ(), "COLLECT_MODULE_DIR="+collectorModuleDir(t))
+	log, err := cmd.CombinedOutput()
+	t.Logf("multi-instance collect output:\n%s", log)
+	if err != nil {
+		t.Fatalf("多 instance 採集失敗: %v\n%s", err, log)
+	}
+	for _, dir := range []string{
+		"kibana/kb-01", "kibana/kb-02", "logstash/ls-01", "logstash/ls-02",
+	} {
+		if info, err := os.Stat(filepath.Join(out, dir)); err != nil || !info.IsDir() {
+			t.Errorf("缺少多 instance 目錄 %s: %v", dir, err)
+		}
+	}
+	output := string(log)
+	for _, want := range []string{
+		"[Kibana] kb-01", "[Kibana] kb-02",
+		"[Logstash] ls-01", "[Logstash] ls-02",
+		"Kibana 摘要：2 個目標", "Logstash 摘要：2 個目標",
+	} {
+		if !strings.Contains(output, want) {
+			t.Errorf("採集輸出缺少 %q", want)
+		}
+	}
+}
+
 func TestKibanaCollectorRejectsPasswordPromptWithoutTTY(t *testing.T) {
 	sh, err := exec.LookPath("sh")
 	if err != nil {

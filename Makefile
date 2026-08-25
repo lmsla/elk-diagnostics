@@ -44,7 +44,11 @@ dist:
 	cp -R collectors $(DIST_DIR)/collectors
 	cp docs/交付/API清單.md $(DIST_DIR)/API清單.md
 	cp docs/交付/使用手冊.md $(DIST_DIR)/使用手冊.md
+	cp docs/交付/路線A-採集操作手冊.md $(DIST_DIR)/路線A-採集操作手冊.md
+	cp docs/交付/路線B-直連操作手冊.md $(DIST_DIR)/路線B-直連操作手冊.md
 	cp expected-es-nodes.txt.example $(DIST_DIR)/expected-es-nodes.txt.example
+	cp kibana-instances.conf.example $(DIST_DIR)/kibana-instances.conf.example
+	cp logstash-instances.conf.example $(DIST_DIR)/logstash-instances.conf.example
 	(cd $(DIST_DIR) && shasum -a 256 collect.sh > collect.sh.sha256)
 	for f in $(DIST_DIR)/collectors/*; do \
 		name=$${f#$(DIST_DIR)/}; \
@@ -52,7 +56,11 @@ dist:
 	done
 	(cd $(DIST_DIR) && shasum -a 256 API清單.md > API清單.md.sha256)
 	(cd $(DIST_DIR) && shasum -a 256 使用手冊.md > 使用手冊.md.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 路線A-採集操作手冊.md > 路線A-採集操作手冊.md.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 路線B-直連操作手冊.md > 路線B-直連操作手冊.md.sha256)
 	(cd $(DIST_DIR) && shasum -a 256 expected-es-nodes.txt.example > expected-es-nodes.txt.example.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 kibana-instances.conf.example > kibana-instances.conf.example.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 logstash-instances.conf.example > logstash-instances.conf.example.sha256)
 	@# SBOM（CycloneDX）：導入審查清單最後一個缺口。module 層級即可，記錄本工具
 	@# 與全部相依套件的版本，供使用者端資安做已知漏洞（CVE）比對。
 	go run $(CYCLONEDX_GOMOD) mod -json -output $(DIST_DIR)/sbom.cdx.json .
@@ -61,8 +69,12 @@ dist:
 	@echo "產出（commit $(VERSION)）："
 	@for f in $(DIST_DIR)/*.sha256 $(DIST_DIR)/collectors/*.sha256; do cat $$f; done
 	@echo "  $(DIST_DIR)/API清單.md（供使用者端資安/導入審查）"
-	@echo "  $(DIST_DIR)/使用手冊.md（使用者操作手冊）"
+	@echo "  $(DIST_DIR)/使用手冊.md（路線選擇入口）"
+	@echo "  $(DIST_DIR)/路線A-採集操作手冊.md（使用者端 Shell 採集）"
+	@echo "  $(DIST_DIR)/路線B-直連操作手冊.md（分析機 Live 直連）"
 	@echo "  $(DIST_DIR)/expected-es-nodes.txt.example（預期節點清單範本）"
+	@echo "  $(DIST_DIR)/kibana-instances.conf.example（多 Kibana 目標清單範本）"
+	@echo "  $(DIST_DIR)/logstash-instances.conf.example（多 Logstash 目標清單範本）"
 	@echo "  $(DIST_DIR)/collectors/（選配 Host／Kibana／Logstash 子採集器）"
 	@echo "  $(DIST_DIR)/sbom.cdx.json（CycloneDX SBOM，供使用者端資安/導入審查）"
 

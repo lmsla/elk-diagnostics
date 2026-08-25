@@ -18,6 +18,11 @@ import (
 const apisPreamble = `本工具只送出 HTTP GET，不執行任何寫入操作。
 以下為 check 會呼叫的全部端點，皆為叢集／節點層級的中繼資料。
 
+操作路線：
+  - Route A（主要）：使用者端只執行 collect.sh，將採集包交由獲准的分析端處理。
+  - Route B：獲准的分析機執行 elk-diagnostics，直接連線 ES 產生報告。
+  兩條路線使用相同的 Elasticsearch 診斷端點；Kibana／Logstash 只有 collect.sh 指定對應服務時才呼叫。
+
 資料範圍：
   - 工具不讀取任何文件（document）內容
   - /_mapping 會回傳各 index 的「欄位名稱」（不含欄位值）
@@ -27,7 +32,7 @@ const apisPreamble = `本工具只送出 HTTP GET，不執行任何寫入操作�
 func newAPIsCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "apis",
-		Short: "印出本工具會呼叫的所有 Elasticsearch API（供使用者導入審查）",
+		Short: "印出本工具會呼叫的所有 ELK API（供使用者導入審查）",
 		Long:  "印出 check 會呼叫的全部唯讀端點與用途。內容由程式內的端點清單產生，與實際呼叫一致。",
 	}
 	format := cmd.Flags().String("output", "text", "輸出格式：text | markdown")
@@ -49,7 +54,7 @@ func newAPIsCmd() *cobra.Command {
 
 func apisText() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "elk-diagnostics %s — Elasticsearch API 呼叫清單\n\n", toolVersion)
+	fmt.Fprintf(&b, "elk-diagnostics %s — ELK API 呼叫清單\n\n", toolVersion)
 	b.WriteString(apisPreamble)
 	b.WriteString("\n\n")
 
@@ -69,7 +74,7 @@ func apisText() string {
 
 func apisMarkdown() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "# elk-diagnostics %s — Elasticsearch API 呼叫清單\n\n", toolVersion)
+	fmt.Fprintf(&b, "# elk-diagnostics %s — ELK API 呼叫清單\n\n", toolVersion)
 	for _, line := range strings.Split(apisPreamble, "\n") {
 		b.WriteString(line + "\n")
 	}

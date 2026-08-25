@@ -16,6 +16,8 @@
 #     ./collect.sh -h https://es.example.local:9200 [-o 輸出目錄]
 #     ./collect.sh --services es,kibana,logstash -h https://es:9200 \
 #       --kibana-url https://kibana:5601 --logstash-url http://logstash:9600
+#     ./collect.sh --services es,kibana,logstash -h https://es:9200 \
+#       --kibana-list kibana-instances.conf --logstash-list logstash-instances.conf
 #
 # 認證（擇一；互動式 Terminal 可安全輸入，非互動執行請用密碼檔或 API key，
 # 避免密碼出現在 ps 輸出、環境變數與 shell 歷史）：
@@ -46,6 +48,8 @@ KIBANA_URL_VALUE="${KIBANA_URL:-}"
 LOGSTASH_URL_VALUE="${LOGSTASH_URL:-}"
 KIBANA_ID="default"
 LOGSTASH_ID="default"
+KIBANA_LIST_FILE=""
+LOGSTASH_LIST_FILE=""
 HOST_ID=""
 SSH_HOSTS_FILE=""
 LOGSTASH_SAMPLE_INTERVAL_VALUE="${LOGSTASH_SAMPLE_INTERVAL:-5}"
@@ -62,8 +66,10 @@ usage() {
       --services  採集模組，逗號分隔；預設 es
       --kibana-url      Kibana base URL
       --logstash-url    Logstash Node API base URL
-      --kibana-id       Kibana 產出目錄名稱；預設 default
-      --logstash-id     Logstash 產出目錄名稱；預設 default
+      --kibana-id       單一 Kibana 自訂標籤（相容參數）；預設 default
+      --logstash-id     單一 Logstash 自訂標籤（相容參數）；預設 default
+      --kibana-list     多個 Kibana 清單；每行 label|URL
+      --logstash-list   多個 Logstash 清單；每行 label|URL
       --host-id         本機 Host OS 產出目錄名稱；預設 hostname
       --ssh-hosts-file  遠端 Host 清單，每行 host-id|ssh-user@hostname
       --logstash-sample-interval  pipeline 兩次取樣間隔；預設 5 秒，0 表示只取一次
@@ -93,6 +99,8 @@ while [ $# -gt 0 ]; do
         --logstash-url) LOGSTASH_URL_VALUE="${2:-}"; shift 2 ;;
         --kibana-id) KIBANA_ID="${2:-}"; shift 2 ;;
         --logstash-id) LOGSTASH_ID="${2:-}"; shift 2 ;;
+        --kibana-list) KIBANA_LIST_FILE="${2:-}"; shift 2 ;;
+        --logstash-list) LOGSTASH_LIST_FILE="${2:-}"; shift 2 ;;
         --host-id) HOST_ID="${2:-}"; shift 2 ;;
         --ssh-hosts-file) SSH_HOSTS_FILE="${2:-}"; shift 2 ;;
         --logstash-sample-interval) LOGSTASH_SAMPLE_INTERVAL_VALUE="${2:-}"; shift 2 ;;
@@ -126,12 +134,28 @@ if [ -n "$EXPECTED_ES_NODES_FILE" ] && [ ! -r "$EXPECTED_ES_NODES_FILE" ]; then
     echo "預期節點清單不可讀：$EXPECTED_ES_NODES_FILE" >&2
     exit 2
 fi
-if service_enabled kibana && [ -z "$KIBANA_URL_VALUE" ]; then
-    echo "services 包含 kibana 時需提供 --kibana-url 或 KIBANA_URL" >&2
+if service_enabled kibana && [ -z "$KIBANA_URL_VALUE" ] && [ -z "$KIBANA_LIST_FILE" ]; then
+    echo "services 包含 kibana 時需提供 --kibana-url 或 --kibana-list" >&2
     exit 2
 fi
-if service_enabled logstash && [ -z "$LOGSTASH_URL_VALUE" ]; then
-    echo "services 包含 logstash 時需提供 --logstash-url 或 LOGSTASH_URL" >&2
+if service_enabled logstash && [ -z "$LOGSTASH_URL_VALUE" ] && [ -z "$LOGSTASH_LIST_FILE" ]; then
+    echo "services 包含 logstash 時需提供 --logstash-url 或 --logstash-list" >&2
+    exit 2
+fi
+if [ -n "$KIBANA_URL_VALUE" ] && [ -n "$KIBANA_LIST_FILE" ]; then
+    echo "--kibana-url 與 --kibana-list 不可同時使用" >&2
+    exit 2
+fi
+if [ -n "$LOGSTASH_URL_VALUE" ] && [ -n "$LOGSTASH_LIST_FILE" ]; then
+    echo "--logstash-url 與 --logstash-list 不可同時使用" >&2
+    exit 2
+fi
+if [ -n "$KIBANA_LIST_FILE" ] && [ ! -r "$KIBANA_LIST_FILE" ]; then
+    echo "Kibana instance 清單不可讀：$KIBANA_LIST_FILE" >&2
+    exit 2
+fi
+if [ -n "$LOGSTASH_LIST_FILE" ] && [ ! -r "$LOGSTASH_LIST_FILE" ]; then
+    echo "Logstash instance 清單不可讀：$LOGSTASH_LIST_FILE" >&2
     exit 2
 fi
 if [ -n "$SSH_HOSTS_FILE" ] && { ! service_enabled host || [ ! -r "$SSH_HOSTS_FILE" ]; }; then
@@ -365,6 +389,102 @@ fetch '/_cluster/state/metadata?filter_path=metadata.cluster_coordination.voting
 fi
 
 module_failed=0
+KIBANA_TOTAL=0
+KIBANA_OK=0
+KIBANA_PARTIAL=0
+KIBANA_FAILED=0
+LOGSTASH_TOTAL=0
+LOGSTASH_OK=0
+LOGSTASH_PARTIAL=0
+LOGSTASH_FAILED=0
+
+summarize_instance() {
+    summary_service="$1"
+    summary_label="$2"
+    summary_url="$3"
+    summary_out="$4"
+    summary_core="$5"
+    summary_exit="$6"
+    summary_status="$summary_out/_status.txt"
+    summary_result="failed"
+    summary_reason="採集器未完成"
+
+    if [ -f "$summary_status" ]; then
+        summary_core_code="$(awk -v file="$summary_core" '$1 == file { print $2; exit }' "$summary_status")"
+        case "$summary_core_code" in
+            2*)
+                if awk -v service="$summary_service" '
+                    $2 == "000" || $2 ~ /^[45][0-9][0-9]$/ {
+                        # Logstash 8.14 does not expose /_health_report; its 404 is expected.
+                        if (service == "Logstash" && $1 == "health_report.json" && $2 == "404") next
+                        failed = 1
+                    }
+                    END { exit failed ? 0 : 1 }
+                ' "$summary_status"; then
+                    summary_result="partial"
+                    summary_reason="核心 API 成功，但部分端點非 2xx"
+                else
+                    summary_result="ok"
+                    summary_reason="核心 API 成功"
+                fi
+                ;;
+            000) summary_reason="核心 API 連線失敗（可能是 URL、網路、TLS 或服務未啟動）" ;;
+            '') summary_reason="沒有取得核心 API 狀態" ;;
+            *) summary_reason="核心 API HTTP $summary_core_code" ;;
+        esac
+    elif [ "$summary_exit" -eq 0 ]; then
+        summary_reason="找不到採集狀態檔"
+    fi
+
+    case "$summary_result" in
+        ok) printf '[%s] %s (%s)：可用，%s\n' "$summary_service" "$summary_label" "$summary_url" "$summary_reason" ;;
+        partial) printf '[%s] %s (%s)：部分端點失敗，%s\n' "$summary_service" "$summary_label" "$summary_url" "$summary_reason" ;;
+        *) printf '[%s] %s (%s)：採集失敗，%s\n' "$summary_service" "$summary_label" "$summary_url" "$summary_reason" >&2 ;;
+    esac
+    MODULE_RESULT="$summary_result"
+}
+
+collect_kibana_target() {
+    target_label="$1"
+    target_url="$2"
+    target_out="$OUT/kibana/$target_label"
+    KIBANA_TOTAL=$((KIBANA_TOTAL + 1))
+    echo "[Kibana $KIBANA_TOTAL] 採集 $target_label -> ${target_url%/}"
+    set -- --url "$target_url" --output "$target_out"
+    KIBANA_CA_CERT_VALUE="${KIBANA_CA_CERT:-$CA_CERT}"
+    [ -n "$KIBANA_CA_CERT_VALUE" ] && set -- "$@" --ca-cert "$KIBANA_CA_CERT_VALUE"
+    [ -n "$INSECURE" ] && set -- "$@" --insecure
+    target_exit=0
+    "$MODULE_DIR/kibana.sh" "$@" || target_exit=$?
+    summarize_instance "Kibana" "$target_label" "$target_url" "$target_out" "status.json" "$target_exit"
+    case "$MODULE_RESULT" in
+        ok) KIBANA_OK=$((KIBANA_OK + 1)) ;;
+        partial) KIBANA_PARTIAL=$((KIBANA_PARTIAL + 1)) ;;
+        *) KIBANA_FAILED=$((KIBANA_FAILED + 1)); module_failed=$((module_failed + 1)) ;;
+    esac
+}
+
+collect_logstash_target() {
+    target_label="$1"
+    target_url="$2"
+    target_out="$OUT/logstash/$target_label"
+    LOGSTASH_TOTAL=$((LOGSTASH_TOTAL + 1))
+    echo "[Logstash $LOGSTASH_TOTAL] 採集 $target_label -> ${target_url%/}"
+    set -- --url "$target_url" --output "$target_out" \
+        --sample-interval "$LOGSTASH_SAMPLE_INTERVAL_VALUE"
+    LOGSTASH_CA_CERT_VALUE="${LOGSTASH_CA_CERT:-$CA_CERT}"
+    [ -n "$LOGSTASH_CA_CERT_VALUE" ] && set -- "$@" --ca-cert "$LOGSTASH_CA_CERT_VALUE"
+    [ -n "$INSECURE" ] && set -- "$@" --insecure
+    target_exit=0
+    "$MODULE_DIR/logstash.sh" "$@" || target_exit=$?
+    summarize_instance "Logstash" "$target_label" "$target_url" "$target_out" "root.json" "$target_exit"
+    case "$MODULE_RESULT" in
+        ok) LOGSTASH_OK=$((LOGSTASH_OK + 1)) ;;
+        partial) LOGSTASH_PARTIAL=$((LOGSTASH_PARTIAL + 1)) ;;
+        *) LOGSTASH_FAILED=$((LOGSTASH_FAILED + 1)); module_failed=$((module_failed + 1)) ;;
+    esac
+}
+
 if service_enabled host; then
     if [ -n "$SSH_HOSTS_FILE" ]; then
         if ! "$MODULE_DIR/ssh.sh" --hosts-file "$SSH_HOSTS_FILE" \
@@ -386,31 +506,95 @@ if service_enabled host; then
 fi
 
 if service_enabled kibana; then
-    set -- --url "$KIBANA_URL_VALUE" --output "$OUT/kibana/$KIBANA_ID"
-    KIBANA_CA_CERT_VALUE="${KIBANA_CA_CERT:-$CA_CERT}"
-    [ -n "$KIBANA_CA_CERT_VALUE" ] && set -- "$@" --ca-cert "$KIBANA_CA_CERT_VALUE"
-    [ -n "$INSECURE" ] && set -- "$@" --insecure
-    if ! "$MODULE_DIR/kibana.sh" "$@"; then
-        echo "Kibana 採集失敗，詳見 kibana/$KIBANA_ID/_status.txt" >&2
-        module_failed=$((module_failed + 1))
+    KIBANA_LABELS=,
+    if [ -n "$KIBANA_LIST_FILE" ]; then
+        # Keep stdin attached to the caller's Terminal so a child collector can
+        # securely prompt for a password. Read the instance list on fd 3.
+        while IFS='|' read -r target_label target_url target_extra <&3 || [ -n "${target_label:-}${target_url:-}" ]; do
+            case "${target_label:-}" in ''|'#'*) continue ;; esac
+            if [ -n "${target_extra:-}" ] || [ -z "${target_url:-}" ]; then
+                echo "Kibana 清單格式錯誤（每行 label|URL）：$target_label" >&2
+                exit 2
+            fi
+            case "$target_label" in *[!A-Za-z0-9._-]*) echo "不合法的 Kibana label：$target_label" >&2; exit 2 ;; esac
+            case "$KIBANA_LABELS" in *",$target_label,"*) echo "Kibana label 重複：$target_label" >&2; exit 2 ;; esac
+            KIBANA_LABELS="$KIBANA_LABELS$target_label,"
+            collect_kibana_target "$target_label" "$target_url"
+        done 3< "$KIBANA_LIST_FILE"
+        if [ "$KIBANA_TOTAL" -eq 0 ]; then
+            echo "Kibana instance 清單沒有有效的 label|URL 項目：$KIBANA_LIST_FILE" >&2
+            exit 2
+        fi
+    else
+        collect_kibana_target "$KIBANA_ID" "$KIBANA_URL_VALUE"
     fi
 fi
 
 if service_enabled logstash; then
-    set -- --url "$LOGSTASH_URL_VALUE" --output "$OUT/logstash/$LOGSTASH_ID" \
-        --sample-interval "$LOGSTASH_SAMPLE_INTERVAL_VALUE"
-    LOGSTASH_CA_CERT_VALUE="${LOGSTASH_CA_CERT:-$CA_CERT}"
-    [ -n "$LOGSTASH_CA_CERT_VALUE" ] && set -- "$@" --ca-cert "$LOGSTASH_CA_CERT_VALUE"
-    [ -n "$INSECURE" ] && set -- "$@" --insecure
-    if ! "$MODULE_DIR/logstash.sh" "$@"; then
-        echo "Logstash 採集失敗，詳見 logstash/$LOGSTASH_ID/_status.txt" >&2
-        module_failed=$((module_failed + 1))
+    LOGSTASH_LABELS=,
+    if [ -n "$LOGSTASH_LIST_FILE" ]; then
+        # Keep stdin attached to the caller's Terminal for optional Basic Auth.
+        while IFS='|' read -r target_label target_url target_extra <&3 || [ -n "${target_label:-}${target_url:-}" ]; do
+            case "${target_label:-}" in ''|'#'*) continue ;; esac
+            if [ -n "${target_extra:-}" ] || [ -z "${target_url:-}" ]; then
+                echo "Logstash 清單格式錯誤（每行 label|URL）：$target_label" >&2
+                exit 2
+            fi
+            case "$target_label" in *[!A-Za-z0-9._-]*) echo "不合法的 Logstash label：$target_label" >&2; exit 2 ;; esac
+            case "$LOGSTASH_LABELS" in *",$target_label,"*) echo "Logstash label 重複：$target_label" >&2; exit 2 ;; esac
+            LOGSTASH_LABELS="$LOGSTASH_LABELS$target_label,"
+            collect_logstash_target "$target_label" "$target_url"
+        done 3< "$LOGSTASH_LIST_FILE"
+        if [ "$LOGSTASH_TOTAL" -eq 0 ]; then
+            echo "Logstash instance 清單沒有有效的 label|URL 項目：$LOGSTASH_LIST_FILE" >&2
+            exit 2
+        fi
+    else
+        collect_logstash_target "$LOGSTASH_ID" "$LOGSTASH_URL_VALUE"
     fi
 fi
 
 echo
 echo "完成：ES $n/$TOTAL 個端點，其中 $failed 個非 2xx；子採集器失敗 $module_failed 個。"
+if service_enabled es; then
+    if [ -n "$EXPECTED_ES_NODES_FILE" ]; then
+        ES_EXPECTED_COUNT="$(awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }' "$EXPECTED_ES_NODES_FILE")"
+        ES_RESPONDING_COUNT=""
+        if [ -s "$ES_OUT/cluster_health.json" ]; then
+            ES_RESPONDING_COUNT="$(sed -n 's/.*"number_of_nodes"[[:space:]]*:[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$ES_OUT/cluster_health.json" | sed -n '1p')"
+        fi
+        case "$ES_RESPONDING_COUNT" in
+            ''|*[!0-9]*)
+                echo "Elasticsearch 摘要：預期 $ES_EXPECTED_COUNT 個節點，但目前回應數無法判定。" ;;
+            *)
+                ES_MISSING_COUNT=$((ES_EXPECTED_COUNT - ES_RESPONDING_COUNT))
+                [ "$ES_MISSING_COUNT" -lt 0 ] && ES_MISSING_COUNT=0
+                echo "Elasticsearch 摘要：預期 $ES_EXPECTED_COUNT 個節點，$ES_RESPONDING_COUNT 個回應，缺失 $ES_MISSING_COUNT 個。"
+                ;;
+        esac
+    else
+        echo "Elasticsearch 摘要：未提供預期節點清單，只能確認目前叢集回應數。"
+    fi
+fi
+if service_enabled kibana; then
+    echo "Kibana 摘要：$KIBANA_TOTAL 個目標，$KIBANA_OK 可用，$KIBANA_PARTIAL 部分端點失敗，$KIBANA_FAILED 採集失敗。"
+fi
+if service_enabled logstash; then
+    echo "Logstash 摘要：$LOGSTASH_TOTAL 個目標，$LOGSTASH_OK 可用，$LOGSTASH_PARTIAL 部分端點失敗，$LOGSTASH_FAILED 採集失敗。"
+fi
 echo
+
+ARCHIVE="${OUT%/}.tar.gz"
+if command -v tar >/dev/null 2>&1; then
+    if tar -czf "$ARCHIVE" -C "$(dirname "$OUT")" "$(basename "$OUT")"; then
+        echo "已產生採集包壓縮檔：$ARCHIVE"
+    else
+        echo "採集包壓縮失敗：$ARCHIVE" >&2
+    fi
+else
+    echo "找不到 tar，未產生採集包壓縮檔" >&2
+fi
+
 if service_enabled es; then
     echo "下一步（在可執行 elk-diagnostics 的機器上）："
     echo "    elk-diagnostics check --from-bundle $OUT"

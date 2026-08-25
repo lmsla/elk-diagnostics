@@ -1,0 +1,5 @@
+# 每行格式：instance-label|Kibana base URL
+# label 是使用者自訂的唯一目錄／報告名稱，不是 Elastic API 的 UUID。
+# 採集成功後，報告仍會記錄 API 回傳的 name 與 uuid。
+kibana-01|https://kibana-01.example.local:5601
+# kibana-02|https://kibana-02.example.local:5601

@@ -22,7 +22,7 @@ type KibanaEvidence struct {
 	AlertingBody    []byte
 }
 
-// ReadKibanaBundle 讀取 schema v2 bundle 的 kibana/<instance-id>/ 目錄。
+// ReadKibanaBundle 讀取 schema v2 bundle 的 kibana/<instance-label>/ 目錄。
 // 沒有 kibana 目錄代表本次未要求 Kibana 採集，不是錯誤；目錄存在但資料缺失
 // 則保留 evidence，交由 analyzer 產生 unknown/skipped，而不靜默當成正常。
 func ReadKibanaBundle(dir string) ([]KibanaEvidence, error) {

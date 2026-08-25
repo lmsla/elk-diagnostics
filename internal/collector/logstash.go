@@ -31,7 +31,7 @@ type LogstashEvidence struct {
 	PipelineSample2Body []byte
 }
 
-// ReadLogstashBundle 讀取 schema v2 bundle 的 logstash/<instance-id>/ 目錄。
+// ReadLogstashBundle 讀取 schema v2 bundle 的 logstash/<instance-label>/ 目錄。
 // 沒有 logstash 目錄代表本次未要求 Logstash 採集，不是錯誤。
 func ReadLogstashBundle(dir string) ([]LogstashEvidence, error) {
 	root := filepath.Join(dir, "logstash")

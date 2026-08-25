@@ -1,0 +1,5 @@
+# 每行格式：instance-label|Logstash Node API base URL
+# label 是使用者自訂的唯一目錄／報告名稱，不是 Elastic API 的 UUID。
+# 採集成功後，原始 root.json 會保留 API 回傳的 name 與 id。
+logstash-01|https://logstash-01.example.local:9600
+# logstash-02|https://logstash-02.example.local:9600

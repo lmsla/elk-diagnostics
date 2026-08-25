@@ -1021,15 +1021,83 @@
       "category": "management",
       "status": "pass",
       "conclusion": "normal",
-      "summary": "Watcher 運作中",
-      "findings": null,
+      "summary": "Watcher 已啟動，目前未註冊 watch（不適用）",
+      "findings": [
+        "FeREZjB-R6iUq6viYWnLiQ：state=started watch_count=0 queue=0"
+      ],
       "root_causes": null,
       "recommendations": null,
       "docs": [
+        "https://www.elastic.co/docs/api/doc/elasticsearch/v8/operation/operation-watcher-stats",
         "https://www.elastic.co/docs/troubleshoot/elasticsearch/watcher-troubleshooting"
       ],
       "source": "raw_api",
-      "requires_extra": false
+      "requires_extra": false,
+      "measurements": [
+        {
+          "metric": "elasticsearch.watcher.node.count",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count",
+          "entity_type": "cluster",
+          "entity_name": "Watcher",
+          "component": "nodes"
+        },
+        {
+          "metric": "elasticsearch.watcher.failed_node.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "cluster",
+          "entity_name": "Watcher",
+          "component": "failed_nodes"
+        },
+        {
+          "metric": "elasticsearch.watcher.manually_stopped",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "boolean",
+          "entity_type": "cluster",
+          "entity_name": "Watcher",
+          "component": "manually_stopped"
+        },
+        {
+          "metric": "elasticsearch.watcher.nodes.total",
+          "kind": "gauge",
+          "value": 1,
+          "unit": "count",
+          "entity_type": "cluster",
+          "entity_name": "Watcher",
+          "component": "nodes_total"
+        },
+        {
+          "metric": "elasticsearch.watcher.watch.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "cluster",
+          "entity_name": "Watcher",
+          "component": "watch_count"
+        },
+        {
+          "metric": "elasticsearch.watcher.queue.size",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "cluster",
+          "entity_name": "Watcher",
+          "component": "queue_size"
+        },
+        {
+          "metric": "elasticsearch.watcher.queued_watch.count",
+          "kind": "gauge",
+          "value": 0,
+          "unit": "count",
+          "entity_type": "cluster",
+          "entity_name": "Watcher",
+          "component": "queued_watches"
+        }
+      ]
     },
     {
       "id": "transforms",

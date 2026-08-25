@@ -22,7 +22,7 @@ const (
 func LogstashStatus(evidence []collector.LogstashEvidence) diagnostic.Result {
 	res := diagnostic.Result{ID: "logstash_status", Title: "Logstash 核心健康", Category: "service", Source: "raw_api", Docs: []string{docLogstashRoot}}
 	if len(evidence) == 0 {
-		return logstashUnknown(res, "bundle 未包含 Logstash 採集資料", "找不到 logstash/<instance-id>/root.json")
+		return logstashUnknown(res, "bundle 未包含 Logstash 採集資料", "找不到 logstash/<instance-label>/root.json")
 	}
 
 	passCount, warningCount, criticalCount, unknownCount := 0, 0, 0, 0

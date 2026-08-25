@@ -346,6 +346,10 @@ func TestCollectScript_NormalizesCurlTransportFailureToHTTP000(t *testing.T) {
 	if err != nil {
 		t.Skip("本機未安裝 sh")
 	}
+	tar, err := exec.LookPath("tar")
+	if err != nil {
+		t.Skip("本機未安裝 tar")
+	}
 
 	tmp := t.TempDir()
 	script := filepath.Join(tmp, "collect.sh")
@@ -380,6 +384,14 @@ func TestCollectScript_NormalizesCurlTransportFailureToHTTP000(t *testing.T) {
 	}
 	if !strings.Contains(string(log), "連線失敗") {
 		t.Errorf("transport failure 應顯示連線失敗:\n%s", log)
+	}
+	archive := out + ".tar.gz"
+	if _, err := os.Stat(archive); err != nil {
+		t.Fatalf("採集完成後應產生壓縮檔 %s: %v", archive, err)
+	}
+	listing, err := exec.Command(tar, "-tzf", archive).CombinedOutput()
+	if err != nil || !strings.Contains(string(listing), filepath.Base(out)+"/_manifest.json") {
+		t.Fatalf("壓縮檔應包含 bundle manifest: err=%v output=%s", err, listing)
 	}
 
 	status, err := os.ReadFile(filepath.Join(out, collector.BundleStatusFile))
