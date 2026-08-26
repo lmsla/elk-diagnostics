@@ -127,6 +127,8 @@ func TestHTML_ReportHeaderSeparatesSummaryAndTechnicalMetadata(t *testing.T) {
 		`<span class="topbar-title">ELK 服務健康診斷報告</span>`,
 		`<section class="banner critical" data-status="critical">`,
 		`<h1 class="banner-title">整體狀態：嚴重</h1>`,
+		`data-status="critical"><svg class="ic ic-12"><use href="#i-x-circle"/></svg>嚴重 <b>1</b>`,
+		`data-status="critical"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-x-circle"/></svg></span>嚴重</span>`,
 		`<dt>叢集名稱</dt><dd>docker-cluster</dd>`,
 		`<dt>節點數</dt><dd>4 個節點</dd>`,
 		"Bundle 離線分析",

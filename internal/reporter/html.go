@@ -1327,7 +1327,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
           <span class="count" data-status="pass"><svg class="ic ic-12"><use href="#i-check-circle"/></svg>通過 <b>{{.R.Summary.Pass}}</b></span>
           <span class="count" data-status="info"><svg class="ic ic-12"><use href="#i-info"/></svg>資訊 <b>{{.R.Summary.Info}}</b></span>
           <span class="count" data-status="warning"><svg class="ic ic-12"><use href="#i-alert-triangle"/></svg>警告 <b>{{.R.Summary.Warning}}</b></span>
-          <span class="count" data-status="critical"><svg class="ic ic-12"><use href="#i-x-circle"/></svg>失敗 <b>{{.R.Summary.Critical}}</b></span>
+          <span class="count" data-status="critical"><svg class="ic ic-12"><use href="#i-x-circle"/></svg>嚴重 <b>{{.R.Summary.Critical}}</b></span>
           <span class="count" data-status="skipped"><svg class="ic ic-12"><use href="#i-skip-forward"/></svg>略過 <b>{{.R.Summary.Skipped}}</b></span>
           <span class="count" data-status="unknown"><svg class="ic ic-12"><use href="#i-help-circle"/></svg>未知 <b>{{.R.Summary.Unknown}}</b></span>
         </p>
@@ -1360,7 +1360,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   <div class="kpi kpi-rate"><span class="kpi-label">通過率</span><div class="kpi-rate-body"><span class="kpi-rate-value">{{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%</span><span class="kpi-rate-note">{{.R.Summary.Pass}} / {{addCounts .R.Summary}} 項</span></div></div>
   <div class="kpi kpi-stat" data-status="pass"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-check-circle"/></svg></span>通過</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Pass}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%"></div></div></div></div>
   <div class="kpi kpi-stat" data-status="warning"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-alert-triangle"/></svg></span>警告</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Warning}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Warning (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Warning (addCounts .R.Summary)}}%"></div></div></div></div>
-  <div class="kpi kpi-stat" data-status="critical"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-x-circle"/></svg></span>失敗</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Critical}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%"></div></div></div></div>
+  <div class="kpi kpi-stat" data-status="critical"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-x-circle"/></svg></span>嚴重</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Critical}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%"></div></div></div></div>
 </section>
 
 {{if .R.VersionNotice}}
