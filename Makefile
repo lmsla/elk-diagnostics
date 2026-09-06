@@ -1,5 +1,6 @@
 BINARY := elk-diagnostics
 DIST_DIR := dist
+CHECKSUM_DIR := $(DIST_DIR)/checksums
 VERSION := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 
 # 版本 pin 死，不用 @latest：SBOM 產出必須可重現，工具本身升版也不該在
@@ -26,16 +27,18 @@ generate:
 	@echo "已更新 collect.sh、docs/交付/API清單.md"
 
 # 交付用：靜態連結、無 libc 動態相依（適合使用者端 Linux VM，含未知 glibc 版本），
-# 逐 GOOS/GOARCH 產出二進位 + 各自的 SHA256 checksum。
+# 逐 GOOS/GOARCH 產出二進位；所有 SHA256 checksum 集中放在 dist/checksums/。
 # -trimpath 讓建置可重現、去除本機路徑差異；連 git commit 一併嵌入二進位（go version -m 可查）
 dist:
-	mkdir -p $(DIST_DIR)
+	rm -f $(DIST_DIR)/*.sha256
+	rm -rf $(CHECKSUM_DIR)
+	mkdir -p $(DIST_DIR) $(CHECKSUM_DIR)
 	for target in $(TARGETS); do \
 		os=$${target%/*}; arch=$${target#*/}; \
 		out=$(DIST_DIR)/$(BINARY)-$$os-$$arch; \
 		echo "建置 $$os/$$arch..."; \
 		CGO_ENABLED=0 GOOS=$$os GOARCH=$$arch go build -trimpath -o $$out ./cmd/elk-diagnostics; \
-		(cd $(DIST_DIR) && shasum -a 256 $(BINARY)-$$os-$$arch > $(BINARY)-$$os-$$arch.sha256); \
+		(cd $(DIST_DIR) && shasum -a 256 $(BINARY)-$$os-$$arch > checksums/$(BINARY)-$$os-$$arch.sha256); \
 	done
 	@# 交付物不只有二進位檔：使用者不允許執行未知執行檔時，走的是採集腳本這條路，
 	@# 而 API 清單是導入審查會要的文件（見 docs/內部/規格/採集包規格.md §2）。
@@ -49,25 +52,27 @@ dist:
 	cp expected-es-nodes.txt.example $(DIST_DIR)/expected-es-nodes.txt.example
 	cp kibana-instances.conf.example $(DIST_DIR)/kibana-instances.conf.example
 	cp logstash-instances.conf.example $(DIST_DIR)/logstash-instances.conf.example
-	(cd $(DIST_DIR) && shasum -a 256 collect.sh > collect.sh.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 collect.sh > checksums/collect.sh.sha256)
 	for f in $(DIST_DIR)/collectors/*; do \
+		[ -f "$$f" ] || continue; \
 		name=$${f#$(DIST_DIR)/}; \
-		(cd $(DIST_DIR) && shasum -a 256 $$name > $$name.sha256); \
+		checksum_name=$$(printf '%s' "$$name" | tr '/' '-'); \
+		(cd $(DIST_DIR) && shasum -a 256 "$$name" > "checksums/$$checksum_name.sha256"); \
 	done
-	(cd $(DIST_DIR) && shasum -a 256 API清單.md > API清單.md.sha256)
-	(cd $(DIST_DIR) && shasum -a 256 使用手冊.md > 使用手冊.md.sha256)
-	(cd $(DIST_DIR) && shasum -a 256 路線A-採集操作手冊.md > 路線A-採集操作手冊.md.sha256)
-	(cd $(DIST_DIR) && shasum -a 256 路線B-直連操作手冊.md > 路線B-直連操作手冊.md.sha256)
-	(cd $(DIST_DIR) && shasum -a 256 expected-es-nodes.txt.example > expected-es-nodes.txt.example.sha256)
-	(cd $(DIST_DIR) && shasum -a 256 kibana-instances.conf.example > kibana-instances.conf.example.sha256)
-	(cd $(DIST_DIR) && shasum -a 256 logstash-instances.conf.example > logstash-instances.conf.example.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 API清單.md > checksums/API清單.md.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 使用手冊.md > checksums/使用手冊.md.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 路線A-採集操作手冊.md > checksums/路線A-採集操作手冊.md.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 路線B-直連操作手冊.md > checksums/路線B-直連操作手冊.md.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 expected-es-nodes.txt.example > checksums/expected-es-nodes.txt.example.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 kibana-instances.conf.example > checksums/kibana-instances.conf.example.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 logstash-instances.conf.example > checksums/logstash-instances.conf.example.sha256)
 	@# SBOM（CycloneDX）：導入審查清單最後一個缺口。module 層級即可，記錄本工具
 	@# 與全部相依套件的版本，供使用者端資安做已知漏洞（CVE）比對。
 	go run $(CYCLONEDX_GOMOD) mod -json -output $(DIST_DIR)/sbom.cdx.json .
-	(cd $(DIST_DIR) && shasum -a 256 sbom.cdx.json > sbom.cdx.json.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 sbom.cdx.json > checksums/sbom.cdx.json.sha256)
 	@echo
 	@echo "產出（commit $(VERSION)）："
-	@for f in $(DIST_DIR)/*.sha256 $(DIST_DIR)/collectors/*.sha256; do cat $$f; done
+	@for f in $(CHECKSUM_DIR)/*.sha256; do cat $$f; done
 	@echo "  $(DIST_DIR)/API清單.md（供使用者端資安/導入審查）"
 	@echo "  $(DIST_DIR)/使用手冊.md（路線選擇入口）"
 	@echo "  $(DIST_DIR)/路線A-採集操作手冊.md（使用者端 Shell 採集）"
@@ -76,6 +81,7 @@ dist:
 	@echo "  $(DIST_DIR)/kibana-instances.conf.example（多 Kibana 目標清單範本）"
 	@echo "  $(DIST_DIR)/logstash-instances.conf.example（多 Logstash 目標清單範本）"
 	@echo "  $(DIST_DIR)/collectors/（選配 Host／Kibana／Logstash 子採集器）"
+	@echo "  $(CHECKSUM_DIR)/（所有 SHA256 校驗檔）"
 	@echo "  $(DIST_DIR)/sbom.cdx.json（CycloneDX SBOM，供使用者端資安/導入審查）"
 
 clean:

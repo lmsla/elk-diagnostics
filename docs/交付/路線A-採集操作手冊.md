@@ -26,7 +26,23 @@ kibana-instances.conf.example
 logstash-instances.conf.example
 API清單.md
 路線A-採集操作手冊.md
+checksums/
 ```
+
+解壓後、**尚未修改任何範本或設定檔前**，建議先驗證交付檔完整性：
+
+```bash
+if command -v sha256sum >/dev/null; then
+  sha256sum -c checksums/*.sha256
+elif command -v shasum >/dev/null; then
+  shasum -a 256 -c checksums/*.sha256
+else
+  echo '找不到 sha256sum 或 shasum，無法驗證交付檔完整性'
+  exit 2
+fi
+```
+
+每個檔案都顯示 `OK` 才可繼續。此驗證只涵蓋交付包原始檔；使用者自行建立的 `expected-es-nodes.txt`、instance 清單與採集結果不在其中。
 
 前置檢查：
 
@@ -44,14 +60,15 @@ echo '採集前置檢查：OK'
 |---|---|---|
 | `/交付包實際路徑` | 是 | 解壓後、直接包含 `collect.sh` 的目錄。 |
 | `ES_URL` | 是 | 實際 ES HTTPS URL，例如 `https://es.example.local:9200`。 |
-| `ES_USER` | 是 | 有必要唯讀權限的 ES 帳號。 |
+| `ES_USER` | Basic Auth 必填 | 有必要唯讀權限的 ES 帳號；API key 路徑不要設定。 |
 | `CA_CERT` | 自簽／私有 CA 必填 | CA 憑證檔實際路徑；公有 CA 環境依第 4.2 節操作。 |
+| `API_KEY_FILE` | API key 路徑必填其一 | 權限為 `600` 的 API key 檔案；也可改由核准的秘密管理系統注入 `ES_API_KEY`。Basic Auth 路徑不要設定。 |
 | `expected-es-nodes.txt` | 建議必做 | 每行一個正確的 ES `node.name`，不填 IP 或 role。 |
 | `kibana-instances.conf` | 多 Kibana 時使用 | 每行 `instance-label|Kibana URL`；label 是自訂且不可重複的目錄／報告名稱。 |
 | `logstash-instances.conf` | 多 Logstash 時使用 | 每行 `instance-label|Logstash Node API URL`；label 是自訂且不可重複的目錄／報告名稱。 |
 | `BUNDLE_ROOT` | 指令已自動產生 | 每次採集都會用時間建立新目錄，不要改成舊採集包。 |
 
-密碼不在表格或指令中設定；腳本會在執行時互動詢問，輸入不回顯。
+第 4 節會分別列出 Basic Auth 與 API key；兩者只能選一條。Basic Auth 密碼不在表格或指令中設定，腳本會在執行時互動詢問，輸入不回顯。
 
 ## 3. 建立預期 ES 節點清單
 
@@ -82,9 +99,9 @@ echo '預期 ES 節點清單：OK'
 
 ## 4. 執行採集
 
-### 4.1 自簽或私有 CA（標準做法）
+### 4.1 Basic Auth：自簽或私有 CA（標準做法）
 
-整段複製前，只修改 `cd` 路徑、`ES_URL`、`ES_USER` 與 `CA_CERT` 四行：
+本區塊只使用 Basic Auth。整段複製前，只修改 `cd` 路徑、`ES_URL`、`ES_USER` 與 `CA_CERT` 四行。括號中的 `unset` 是執行前隔離其他認證來源；區塊結束後子 Shell 自動清理，不會改動目前 Terminal 的變數：
 
 ```bash
 cd /交付包實際路徑
@@ -96,19 +113,21 @@ BUNDLE_ROOT="$PWD/bundle-$(date +%Y%m%d-%H%M%S)"
 test -r "$CA_CERT" && \
 test -s "$PWD/expected-es-nodes.txt" || exit 2
 
-unset ES_PASSWORD_FILE ES_PASSWORD ES_API_KEY
-./collect.sh \
-  --services es \
-  --host "$ES_URL" \
-  --username "$ES_USER" \
-  --ca-cert "$CA_CERT" \
-  --expected-es-nodes-file "$PWD/expected-es-nodes.txt" \
-  --output "$BUNDLE_ROOT"
+(
+  unset ES_PASSWORD_FILE ES_PASSWORD ES_API_KEY
+  ./collect.sh \
+    --services es \
+    --host "$ES_URL" \
+    --username "$ES_USER" \
+    --ca-cert "$CA_CERT" \
+    --expected-es-nodes-file "$PWD/expected-es-nodes.txt" \
+    --output "$BUNDLE_ROOT"
+)
 ```
 
-### 4.2 公有 CA
+### 4.2 Basic Auth：公有 CA
 
-只在憑證是作業系統已信任的公有 CA 時使用；複製前修改 `cd` 路徑、`ES_URL` 與 `ES_USER`：
+只在憑證是作業系統已信任的公有 CA 時使用。本區塊只使用 Basic Auth；複製前修改 `cd` 路徑、`ES_URL` 與 `ES_USER`：
 
 ```bash
 cd /交付包實際路徑
@@ -118,16 +137,52 @@ BUNDLE_ROOT="$PWD/bundle-$(date +%Y%m%d-%H%M%S)"
 
 test -s "$PWD/expected-es-nodes.txt" || exit 2
 
-unset ES_PASSWORD_FILE ES_PASSWORD ES_API_KEY
-./collect.sh \
-  --services es \
-  --host "$ES_URL" \
-  --username "$ES_USER" \
-  --expected-es-nodes-file "$PWD/expected-es-nodes.txt" \
-  --output "$BUNDLE_ROOT"
+(
+  unset ES_PASSWORD_FILE ES_PASSWORD ES_API_KEY
+  ./collect.sh \
+    --services es \
+    --host "$ES_URL" \
+    --username "$ES_USER" \
+    --expected-es-nodes-file "$PWD/expected-es-nodes.txt" \
+    --output "$BUNDLE_ROOT"
+)
 ```
 
 正式環境不得以 `--insecure` 取代憑證驗證。
+
+### 4.3 API key（與 4.1／4.2 擇一）
+
+本區塊不使用 `--username`，也不會互動詢問 Basic Auth 密碼。API key 請使用權限為 `600` 的檔案，或由核准的秘密管理系統注入 `ES_API_KEY`；不要把實際 key 寫在指令、環境檔或版控中。以下範例假設使用自簽／私有 CA；公有 CA 請省略 `CA_CERT` 檢查與 `--ca-cert` 那一行。
+
+```bash
+cd /交付包實際路徑
+ES_URL='https://es.example.local:9200'
+API_KEY_FILE='/安全目錄/elk-api-key'
+CA_CERT='/實際憑證路徑/ca.crt'
+BUNDLE_ROOT="$PWD/bundle-$(date +%Y%m%d-%H%M%S)"
+
+test -r "$CA_CERT" && \
+test -s "$PWD/expected-es-nodes.txt" || exit 2
+
+(
+  unset ES_PASSWORD_FILE ES_PASSWORD
+  if [ -n "${ES_API_KEY:-}" ]; then
+    export ES_API_KEY
+  else
+    test -r "$API_KEY_FILE" || exit 2
+    ES_API_KEY="$(cat "$API_KEY_FILE")"
+    export ES_API_KEY
+  fi
+  ./collect.sh \
+    --services es \
+    --host "$ES_URL" \
+    --ca-cert "$CA_CERT" \
+    --expected-es-nodes-file "$PWD/expected-es-nodes.txt" \
+    --output "$BUNDLE_ROOT"
+)
+```
+
+子 Shell 結束後 API key 變數自動消失；若由秘密管理系統直接注入 `ES_API_KEY`，可略過 `API_KEY_FILE`，但不得再設定 `--username`。
 
 ## 5. 選配採集 Kibana 與 Logstash
 
@@ -147,7 +202,7 @@ kibana-02|https://kibana-02.example.local:5601
 
 若某服務只有一個 instance，也可不建立清單，改用單一 `--kibana-url`／`--kibana-id` 或 `--logstash-url`／`--logstash-id`。多 instance 時使用清單；兩種方式不可同時指定同一服務。
 
-另開一次新採集，只修改 `cd` 路徑與下列現場值：
+另開一次新採集，只修改 `cd` 路徑與下列現場值。下列範例採 Basic Auth；若服務使用 API key，請由交付人員提供對應的秘密注入方式，且每個服務的 Basic Auth／API key 只能選一種：
 
 | 值 | 內容 |
 |---|---|
@@ -169,23 +224,23 @@ test -r "$CA_CERT" && \
 test -s "$PWD/expected-es-nodes.txt" && \
 test -d "$PWD/collectors" || exit 2
 
-export KIBANA_USERNAME="$KIBANA_USER"
-export LOGSTASH_USERNAME="$LOGSTASH_USER"
-unset ES_PASSWORD_FILE ES_PASSWORD ES_API_KEY
-unset KIBANA_PASSWORD_FILE KIBANA_API_KEY KIBANA_CA_CERT
-unset LOGSTASH_PASSWORD_FILE LOGSTASH_API_KEY LOGSTASH_CA_CERT
+(
+  export KIBANA_USERNAME="$KIBANA_USER"
+  export LOGSTASH_USERNAME="$LOGSTASH_USER"
+  unset ES_PASSWORD_FILE ES_PASSWORD ES_API_KEY
+  unset KIBANA_PASSWORD_FILE KIBANA_API_KEY KIBANA_CA_CERT
+  unset LOGSTASH_PASSWORD_FILE LOGSTASH_API_KEY LOGSTASH_CA_CERT
 
-./collect.sh \
-  --services es,kibana,logstash \
-  --host "$ES_URL" \
-  --username "$ES_USER" \
-  --kibana-list "$PWD/kibana-instances.conf" \
-  --logstash-list "$PWD/logstash-instances.conf" \
-  --ca-cert "$CA_CERT" \
-  --expected-es-nodes-file "$PWD/expected-es-nodes.txt" \
-  --output "$BUNDLE_ROOT"
-
-unset KIBANA_USERNAME LOGSTASH_USERNAME
+  ./collect.sh \
+    --services es,kibana,logstash \
+    --host "$ES_URL" \
+    --username "$ES_USER" \
+    --kibana-list "$PWD/kibana-instances.conf" \
+    --logstash-list "$PWD/logstash-instances.conf" \
+    --ca-cert "$CA_CERT" \
+    --expected-es-nodes-file "$PWD/expected-es-nodes.txt" \
+    --output "$BUNDLE_ROOT"
+)
 ```
 
 採集時終端機會逐一列出每個 label 與 URL 的結果，並在最後輸出 ES、Kibana、Logstash 摘要。`連線失敗` 只表示該 URL 當下無法取得核心 API，不能單憑此結果判定 instance 已離線；可能原因包括 URL、網路、TLS、帳號或權限設定錯誤。採集腳本會繼續處理其他目標，並將每個目標的 `_status.txt` 保留在對應目錄。
