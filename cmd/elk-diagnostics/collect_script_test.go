@@ -275,8 +275,9 @@ func TestCollectScript_WritesParsableManifest(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(out, collector.BundleElasticsearchDir, collector.FileOf(collector.EpRoot))); err != nil {
 		t.Errorf("v2 endpoint 應寫入 elasticsearch/ 目錄: %v", err)
 	}
-	if manifest.Host != srv.URL {
-		t.Errorf("host = %q, want %q", manifest.Host, srv.URL)
+	maskedHostPrefix := "http://xx.xx.0.1:"
+	if !strings.HasPrefix(manifest.Host, maskedHostPrefix) {
+		t.Errorf("host = %q, 應固定遮蔽 IPv4 前兩段（prefix %q）", manifest.Host, maskedHostPrefix)
 	}
 	if manifest.EndpointsTotal != len(collector.Endpoints) {
 		t.Errorf("endpoints_total = %d, want %d", manifest.EndpointsTotal, len(collector.Endpoints))
@@ -290,6 +291,118 @@ func TestCollectScript_WritesParsableManifest(t *testing.T) {
 	if !strings.HasSuffix(manifest.CollectedAt, "Z") {
 		t.Errorf("collected_at = %q, 應為 UTC（Z 結尾）", manifest.CollectedAt)
 	}
+}
+
+func TestCollectScript_RedactsIPv4AndOptionalBusinessNames(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("本機未安裝 sh")
+	}
+
+	script := filepath.Join(t.TempDir(), "collect.sh")
+	s, err := renderCollectScript()
+	if err != nil {
+		t.Fatalf("renderCollectScript() 失敗: %v", err)
+	}
+	if err := os.WriteFile(script, []byte(s), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// 不依賴 loopback／防火牆；用 deterministic fake curl 回傳含敏感識別資訊的 JSON。
+	bin := filepath.Join(t.TempDir(), "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeCurl := filepath.Join(bin, "curl")
+	fake := `#!/bin/sh
+out=""
+url=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w|-K|--max-time) shift 2 ;;
+    -q|-sS) shift ;;
+    *) url="$1"; shift ;;
+  esac
+done
+case "$url" in
+  */_mapping) body='{"customer_orders-prod":{"mappings":{"properties":{"customer_id":{"type":"keyword"}}}},"logs":{"mappings":{"properties":{"message":{"type":"keyword"}}}}}' ;;
+  */_data_stream*) body='{"data_streams":[{"name":"customer-orders","indices":[{"index_name":".ds-customer-orders-2026.000001"}]}]}' ;;
+  */_all/_ilm/explain*) body='{"indices":{"customer_orders-prod":{"index":"customer_orders-prod","managed":true}}}' ;;
+  */_cluster/health*) body='{"number_of_nodes":3,"indices":["customer_orders-prod"]}' ;;
+  *) body='{"cluster_name":"test","version":{"number":"8.14.3"},"ip":"10.99.1.123","index":"customer_orders-prod","indices":["customer-orders"]}' ;;
+esac
+printf '%s' "$body" > "$out"
+printf '200'
+`
+	if err := os.WriteFile(fakeCurl, []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("name masking enabled", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "redacted")
+		cmd := exec.Command(sh, script, "-h", "https://10.99.1.123:9200", "-o", out, "--redact-index-names")
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		if b, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("遮蔽採集失敗: %v\n%s", err, b)
+		}
+
+		mapping, err := os.ReadFile(filepath.Join(out, collector.BundleElasticsearchDir, "mapping.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(mapping), "customer_orders-prod") || !strings.Contains(string(mapping), "cust***prod~") || !strings.Contains(string(mapping), "\"***-") {
+			t.Fatalf("mapping 的 index 名稱未按預期部分遮蔽:\n%s", mapping)
+		}
+
+		streams, err := os.ReadFile(filepath.Join(out, collector.BundleElasticsearchDir, "data_streams.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(streams), "customer-orders") || !strings.Contains(string(streams), "cust***ders~") || strings.Contains(string(streams), ".ds-customer-orders-2026.000001") {
+			t.Fatalf("data stream/backing index 未按預期部分遮蔽:\n%s", streams)
+		}
+		ilm, err := os.ReadFile(filepath.Join(out, collector.BundleElasticsearchDir, "ilm_explain_errors.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(ilm), `"indices"`) || strings.Contains(string(ilm), "customer_orders-prod") || !strings.Contains(string(ilm), "cust***prod~") {
+			t.Fatalf("ILM response 的 indices 容器或 index 名稱未按預期處理:\n%s", ilm)
+		}
+
+		version, err := os.ReadFile(filepath.Join(out, collector.BundleElasticsearchDir, "version.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(version), "10.99.1.123") || !strings.Contains(string(version), "xx.xx.1.123") {
+			t.Fatalf("IPv4 未固定遮蔽:\n%s", version)
+		}
+		manifest, err := os.ReadFile(filepath.Join(out, collector.BundleManifestFile))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(manifest), "10.99.1.123") || !strings.Contains(string(manifest), "xx.xx.1.123") || !strings.Contains(string(manifest), `"index_names": true`) {
+			t.Fatalf("manifest 未記錄／套用遮蔽:\n%s", manifest)
+		}
+	})
+
+	t.Run("name masking remains opt in", func(t *testing.T) {
+		out := filepath.Join(t.TempDir(), "unmasked-names")
+		cmd := exec.Command(sh, script, "-h", "https://10.99.1.123:9200", "-o", out)
+		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		if b, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("未啟用名稱遮蔽的採集失敗: %v\n%s", err, b)
+		}
+		mapping, err := os.ReadFile(filepath.Join(out, collector.BundleElasticsearchDir, "mapping.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(mapping), "customer_orders-prod") || strings.Contains(string(mapping), "cust***prod~") {
+			t.Fatalf("未指定 --redact-index-names 時不應遮蔽 index 名稱:\n%s", mapping)
+		}
+		if strings.Contains(string(mapping), "10.99.1.123") {
+			t.Fatal("未指定名稱遮蔽時，IPv4 仍應固定遮蔽")
+		}
+	})
 }
 
 func TestCollectScriptEmbedsExpectedESNodesFile(t *testing.T) {

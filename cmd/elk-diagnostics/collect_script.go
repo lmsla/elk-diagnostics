@@ -28,10 +28,11 @@ type collectScriptEndpoint struct {
 func newCollectScriptCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "collect-script",
-		Short: "產生使用者環境用的採集腳本（純 curl，不需安裝本工具）",
+		Short: "產生使用者環境用的 POSIX shell 採集腳本（HTTP 只用 curl）",
 		Long: `印出一份 POSIX sh 採集腳本到 stdout。
 
-腳本在使用者環境執行，只用 curl 送出唯讀 GET 並把原始回應存成 bundle 目錄；
+腳本在使用者環境執行，只用 curl 送出唯讀 GET 並把回應存成 bundle 目錄；
+IP 前兩段會固定遮蔽，另可用 --redact-index-names 選擇遮蔽 index／data stream 名稱。
 之後在自己的機器上以 check --from-bundle 分析。使用者不需要執行本二進位檔。
 
   elk-diagnostics collect-script > collect.sh

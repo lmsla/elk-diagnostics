@@ -29,7 +29,7 @@ docs/交付/            # 使用者操作手冊與 API 清單
 - 現行診斷分析 Elasticsearch API；Kibana bundle 可分析 `/api/status`、Task Manager 與 Alerting 健康並保存 `/api/stats` runtime measurements；Logstash bundle 可分析 root 可用性、版本支援時的 `/_health_report` 與 pipeline stats 觀測值。Host 與 Logstash 的 plugins／pipeline 設定及 hot threads 仍只保存原始證據。
 - ES 8.4+ 可使用完整 `_health_report`；部分單次快照指標仍需 Monitoring／時間序列佐證。
 - `implemented` 不等於 `verified`；異常分支的真機狀態以內部驗證狀態為準。
-- 採集包中可能包含 index、node、host 與 mapping 欄位名稱，外傳前需審閱；`--redact` 尚未完成。
+- 採集包的 IPv4 前兩段會固定遮蔽；需要時可在 `collect.sh` 加上 `--redact-index-names`，對 index、data stream 與 backing index 做一致的部分遮蔽。node name、hostname、mapping 欄位與 pipeline／policy 名稱不在此選項範圍，仍須依資料政策審閱。
 
 ## 開發驗證
 

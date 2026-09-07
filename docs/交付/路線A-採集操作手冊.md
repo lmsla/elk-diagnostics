@@ -67,6 +67,7 @@ echo '採集前置檢查：OK'
 | `kibana-instances.conf` | 多 Kibana 時使用 | 每行 `instance-label|Kibana URL`；label 是自訂且不可重複的目錄／報告名稱。 |
 | `logstash-instances.conf` | 多 Logstash 時使用 | 每行 `instance-label|Logstash Node API URL`；label 是自訂且不可重複的目錄／報告名稱。 |
 | `BUNDLE_ROOT` | 指令已自動產生 | 每次採集都會用時間建立新目錄，不要改成舊採集包。 |
+| `--redact-index-names` | 選配 | 在採集端遮蔽 index、data stream、backing index；IPv4 前兩段不論是否指定都會遮蔽。 |
 
 第 4 節會分別列出 Basic Auth 與 API key；兩者只能選一條。Basic Auth 密碼不在表格或指令中設定，腳本會在執行時互動詢問，輸入不回顯。
 
@@ -184,6 +185,16 @@ test -s "$PWD/expected-es-nodes.txt" || exit 2
 
 子 Shell 結束後 API key 變數自動消失；若由秘密管理系統直接注入 `ES_API_KEY`，可略過 `API_KEY_FILE`，但不得再設定 `--username`。
 
+### 4.4 選配遮蔽
+
+`collect.sh` 每次都會在產生壓縮檔前遮蔽 IPv4 的前兩段，例如 `10.99.1.123` 會變成 `xx.xx.1.123`。若客戶政策也要求降低業務名稱可識別性，請在 4.1、4.2、4.3 或第 5 節的採集指令中，加上這一行：
+
+```bash
+    --redact-index-names \
+```
+
+此選項會對 index、data stream 與 data stream backing index 做固定、可重現的部分遮蔽，讓同一名稱在同一份 bundle 內仍可互相比對；不遮蔽 node name、hostname、mapping 欄位名稱或 pipeline／policy／snapshot 名稱。遮蔽會同時套用到保留的 bundle 目錄與同層 `.tar.gz`，並在 `_manifest.json` 記錄是否啟用名稱遮蔽。遮蔽失敗時流程會中止，不產生壓縮檔。
+
 ## 5. 選配採集 Kibana 與 Logstash
 
 只採集 ES 時略過本節。若需在同一採集包內加入 Kibana 與 Logstash，先複製清單範本：
@@ -275,7 +286,7 @@ sed -n '1,200p' "$BUNDLE_ROOT/_status.txt"
 $BUNDLE_ROOT.tar.gz
 ```
 
-採集包可能包含 index、node、IP、hostname 與 mapping 欄位名稱。傳輸前必須依現場資料治理流程審閱與核准。
+即使啟用名稱遮蔽，採集包仍會保留 node name、hostname、mapping 欄位名稱與其他服務識別資訊；傳輸前仍必須依現場資料治理流程審閱與核准。
 
 使用者端的 Route A 操作到此結束。後續報告產生由獲准的分析端流程處理。
 
