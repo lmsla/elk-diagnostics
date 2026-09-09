@@ -324,6 +324,8 @@ while [ "$#" -gt 0 ]; do
     *) url="$1"; shift ;;
   esac
 done
+bundle_dir=$(dirname "$out")
+printf '\377\000\376\001' > "$bundle_dir/.DS_Store"
 case "$url" in
   */_mapping) body='{"customer_orders-prod":{"mappings":{"properties":{"customer_id":{"type":"keyword"}}}},"logs":{"mappings":{"properties":{"message":{"type":"keyword"}}}}}' ;;
   */_data_stream*) body='{"data_streams":[{"name":"customer-orders","indices":[{"index_name":".ds-customer-orders-2026.000001"}]}]}' ;;
@@ -344,6 +346,12 @@ printf '200'
 		cmd.Env = append(os.Environ(), "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 		if b, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("遮蔽採集失敗: %v\n%s", err, b)
+		}
+		if _, err := os.Stat(filepath.Join(out, collector.BundleElasticsearchDir, ".DS_Store")); !os.IsNotExist(err) {
+			t.Fatalf("macOS metadata 不應留在 bundle，err=%v", err)
+		}
+		if _, err := os.Stat(out + ".tar.gz"); err != nil {
+			t.Fatalf("含二進位 macOS metadata 時仍應產出壓縮檔: %v", err)
 		}
 
 		mapping, err := os.ReadFile(filepath.Join(out, collector.BundleElasticsearchDir, "mapping.json"))

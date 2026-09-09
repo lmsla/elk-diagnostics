@@ -575,7 +575,16 @@ fi
 # 不遮蔽 node name、mapping 欄位名稱、pipeline／policy／snapshot 名稱。
 redact_bundle() {
     redact_list="$OUT/.redact-files.$$"
-    if ! find "$OUT" -type f ! -name '*.tar.gz' > "$redact_list"; then
+    # macOS Finder metadata is binary and is not part of the diagnostic evidence.
+    # Remove it before the archive is made; Finder may create it when browsing OUT.
+    if ! find "$OUT" -type f \( -name '.DS_Store' -o -name '._*' \) -exec rm -f {} \;; then
+        echo "清理 macOS metadata 失敗" >&2
+        rm -f "$redact_list"
+        return 1
+    fi
+    # Only collector text artifacts go through awk; unknown/binary files must not
+    # make the redaction step fail because of locale decoding.
+    if ! find "$OUT" -type f \( -name '*.json' -o -name '*.txt' -o -name '*.log' -o -name '*.ndjson' \) > "$redact_list"; then
         echo "建立遮蔽檔案清單失敗" >&2
         rm -f "$redact_list"
         return 1
