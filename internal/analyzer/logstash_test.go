@@ -27,6 +27,20 @@ func TestLogstashStatusUsesReachabilityWhenRootHasNoStatus(t *testing.T) {
 	}
 }
 
+func TestLogstashStatusPreservesMeasurementsForPartialUnknown(t *testing.T) {
+	evidence := []collector.LogstashEvidence{
+		logstashEvidence(`{"name":"ls","version":{"number":"8.14.3"}}`, ``, 200, 404),
+		{ID: "ls-2", RootCode: 0},
+	}
+	got := LogstashStatus(evidence)
+	if got.Status != diagnostic.StatusUnknown {
+		t.Fatalf("status=%s, want unknown", got.Status)
+	}
+	if len(got.Measurements) == 0 {
+		t.Fatal("expected known instance measurements to remain available")
+	}
+}
+
 func TestLogstashStatusSupportsOfficialStringVersion(t *testing.T) {
 	got := LogstashStatus([]collector.LogstashEvidence{logstashEvidence(`{"name":"ls","version":"8.14.3","status":"green"}`, ``, 200, 404)})
 	if got.Status != diagnostic.StatusPass {

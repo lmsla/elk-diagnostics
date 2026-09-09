@@ -57,16 +57,18 @@ func MissingExpectedNames(expected []string, snapshot *Snapshot) []string {
 }
 
 type Node struct {
-	ID             string     `json:"id"`
-	Name           string     `json:"name"`
-	IP             string     `json:"ip,omitempty"`
-	Roles          []string   `json:"roles,omitempty"`
-	StatsAvailable bool       `json:"stats_available"`
-	InfoAvailable  bool       `json:"info_available"`
-	OS             OS         `json:"os"`
-	Process        Process    `json:"process"`
-	Filesystem     Filesystem `json:"filesystem"`
-	JVM            JVM        `json:"jvm"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	IP             string   `json:"ip,omitempty"`
+	Roles          []string `json:"roles,omitempty"`
+	StatsAvailable bool     `json:"stats_available"`
+	InfoAvailable  bool     `json:"info_available"`
+	// DiskUsedPercent 來自同次 _cat/nodes 快照；缺少時保留 nil，不把 0 當成已驗證。
+	DiskUsedPercent *int       `json:"disk_used_percent,omitempty"`
+	OS              OS         `json:"os"`
+	Process         Process    `json:"process"`
+	Filesystem      Filesystem `json:"filesystem"`
+	JVM             JVM        `json:"jvm"`
 }
 
 type OS struct {

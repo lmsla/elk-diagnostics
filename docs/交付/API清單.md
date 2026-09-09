@@ -1,4 +1,4 @@
-# elk-diagnostics 0.0.4-mvp — ELK API 呼叫清單
+# elk-diagnostics 1.0.1 — ELK API 呼叫清單
 
 本工具只送出 HTTP GET，不執行任何寫入操作。
 以下為 check 會呼叫的全部端點，皆為叢集／節點層級的中繼資料。
@@ -38,7 +38,7 @@
 | GET | `/_settings?flat_settings=true` | 各 index 設定（search slow log 門檻） |
 | GET | `/_cluster/allocation/explain` | 未分配 shard 的 decider 級根因 |
 | GET | `/_all/_ilm/explain?only_managed=true` | 受管理 index 的 ILM 階段（tier 遷移候選） |
-| GET | `/_cluster/health` | 叢集節點數（master 穩定性佐證） |
+| GET | `/_cluster/health` | 叢集健康、節點數與 shard 可用性摘要 |
 | GET | `/_nodes?timeout=5s&filter_path=nodes.*.roles` | 各節點角色（master-eligible 數、data tier 分布） |
 | GET | `/_recovery?active_only=true` | 進行中的 snapshot 還原進度 |
 | GET | `/_cat/thread_pool/write?format=json&h=node_name,name,size,active,queue,rejected` | write thread pool 大小與積壓（寫入瓶頸因果鏈） |

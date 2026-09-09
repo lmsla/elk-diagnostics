@@ -97,6 +97,7 @@ type NodeCPU struct {
 	CPU                 int
 	HeapPercent         int
 	DiskPercent         int
+	DiskKnown           bool
 	Load1m              string
 	AllocatedProcessors int
 }
@@ -113,12 +114,14 @@ func (c *Client) CatNodesCPU() ([]NodeCPU, error) {
 	}
 	out := make([]NodeCPU, 0, len(raw))
 	for _, m := range raw {
+		disk, diskKnown := percentIntKnown(m["disk.used_percent"])
 		out = append(out, NodeCPU{
 			Name:                m["name"],
 			Role:                m["node.role"],
 			CPU:                 atoi(m["cpu"]),
 			HeapPercent:         atoi(m["heap.percent"]),
-			DiskPercent:         percentInt(m["disk.used_percent"]),
+			DiskPercent:         disk,
+			DiskKnown:           diskKnown,
 			Load1m:              m["load_1m"],
 			AllocatedProcessors: atoi(m["allocated_processors"]),
 		})
@@ -165,9 +168,14 @@ func (c *Client) CatAllocation() ([]AllocationRow, error) {
 // CAT APIs 的 disk percent 在不同版本／檔案系統可能回傳 "89" 或 "89.90"。
 // 直接 strconv.Atoi 會把小數格式靜默吃成 0，導致 hot spotting 假綠燈。
 func percentInt(s string) int {
+	v, _ := percentIntKnown(s)
+	return v
+}
+
+func percentIntKnown(s string) (int, bool) {
 	v, err := strconv.ParseFloat(s, 64)
 	if err != nil || v < 0 {
-		return 0
+		return 0, false
 	}
-	return int(v)
+	return int(v), true
 }

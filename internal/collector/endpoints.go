@@ -92,7 +92,7 @@ var Endpoints = []Endpoint{
 	{EpAllSettings, "all_settings.json", "各 index 設定（search slow log 門檻）"},
 	{EpAllocationExplain, "allocation_explain.json", "未分配 shard 的 decider 級根因"},
 	{EpIlmExplainManaged, "ilm_explain_managed.json", "受管理 index 的 ILM 階段（tier 遷移候選）"},
-	{EpClusterHealth, "cluster_health.json", "叢集節點數（master 穩定性佐證）"},
+	{EpClusterHealth, "cluster_health.json", "叢集健康、節點數與 shard 可用性摘要"},
 	{EpNodesRoles, "nodes_roles.json", "各節點角色（master-eligible 數、data tier 分布）"},
 	{EpRecovery, "recovery.json", "進行中的 snapshot 還原進度"},
 	{EpCatThreadPoolWrite, "cat_thread_pool_write.json", "write thread pool 大小與積壓（寫入瓶頸因果鏈）"},

@@ -362,7 +362,36 @@ var htmlFuncs = template.FuncMap{
 		}
 		return int(math.Round(float64(value) * 100 / float64(total)))
 	},
-	"addCounts":      totalSummary,
+	"addCounts": totalSummary,
+	"passRateCount": func(summary diagnostic.Summary) int {
+		return summary.Pass + summary.Info + summary.Skipped
+	},
+	"ratioPct": func(used, capacity *int) int {
+		if used == nil || capacity == nil || *used < 0 || *capacity <= 0 {
+			return 0
+		}
+		value := int(math.Round(float64(*used) * 100 / float64(*capacity)))
+		if value < 0 {
+			return 0
+		}
+		if value > 100 {
+			return 100
+		}
+		return value
+	},
+	"ratioPct64": func(used, capacity *int64) int {
+		if used == nil || capacity == nil || *used < 0 || *capacity <= 0 || *used > *capacity {
+			return 0
+		}
+		value := int(math.Round(float64(*used) * 100 / float64(*capacity)))
+		if value < 0 {
+			return 0
+		}
+		if value > 100 {
+			return 100
+		}
+		return value
+	},
 	"serviceStatus":  serviceStatus,
 	"serviceVisible": serviceNavigable,
 	"serviceSummary": serviceSummary,
@@ -524,6 +553,13 @@ var htmlFuncs = template.FuncMap{
 		}
 		return fmt.Sprintf("%d%%", *v)
 	},
+	"floatPct": func(v *float64) string {
+		if v == nil {
+			return "—"
+		}
+		return fmt.Sprintf("%.1f%%", *v)
+	},
+	"upper": strings.ToUpper,
 	"load": func(v *float64) string {
 		if v == nil {
 			return "—"
@@ -562,7 +598,7 @@ var htmlFuncs = template.FuncMap{
 			return "metric-unknown"
 		}
 		switch kind {
-		case "cpu", "heap":
+		case "cpu", "heap", "disk":
 			switch {
 			case *value >= 95:
 				return "metric-critical"
@@ -1269,7 +1305,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   .banner-icon{background:var(--s-bg);color:var(--s-fg)}.banner-title{color:var(--s-deep)}
   .banner-counts .count{color:var(--s-deep)}
   .tech>summary{display:flex;align-items:center;gap:6px;color:var(--s-deep);list-style:none;cursor:pointer}.tech>summary::-webkit-details-marker{display:none}
-  .kpi{min-height:142px}.kpi-rate-body{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;padding-top:8px}.kpi-rate-value{font-size:40px;font-weight:700;line-height:.9;color:var(--brand)}.kpi-rate-note{font-size:12px;color:var(--ink-2)}
+  .kpi{min-height:142px}.kpi-rate-body{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;padding-top:8px}.kpi-rate-value{font-size:40px;font-weight:700;line-height:.9;color:var(--brand)}.kpi-rate-note{font-size:12px;color:var(--ink-2)}.kpi-rate-method{display:block;margin-top:7px;color:var(--ink-3);font-size:11px;line-height:1.45}
   .kpi-icon{background:var(--s-bg);color:var(--s-fg)}.kpi-value{color:var(--s-fg)}.kpi-fill{background:var(--s-bar)}
   .section,.service-section,.diagnostic-section{margin:16px 0 0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;scroll-margin-top:calc(var(--topbar-h) + var(--nav-h) + 8px)}
   .section-head,.diagnostic-section .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:var(--brand);color:#fff;border:0}
@@ -1279,6 +1315,27 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   .check{padding:16px 0}.check>summary{gap:8px}.check>summary .chev{font-size:inherit}.check-head{gap:10px}.body.check-body{padding:12px 0 0 24px;max-width:1024px}
   .doclist{display:flex;flex-direction:column;gap:4px;list-style:none;margin:0;padding:0}.doclink{display:inline-flex;align-items:center;gap:6px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;overflow-wrap:anywhere}.doclink .ic{color:var(--link)}
   .node-overview{border-collapse:collapse}.node-overview thead th{background:var(--brand);color:#fff}.node-missing-row{background:#fff2f6;color:#db2c5b}
+  .current-state-section{margin-top:16px;scroll-margin-top:calc(var(--topbar-h) + var(--nav-h) + 8px)}
+  .current-state-note{margin:0;padding:14px 0 2px;color:var(--ink-2);font-size:12px}
+  .current-state-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:12px 0 20px}
+  .current-state-card{min-width:0;padding:14px;background:var(--canvas);border:1px solid var(--line);border-radius:6px}
+  .current-state-card h3{margin:0 0 10px;color:var(--ink);font-size:13px;font-weight:700}
+  .state-primary{margin-bottom:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:24px;font-weight:700;line-height:1.2}
+  .state-subline{margin:-4px 0 10px;color:var(--ink-2);font-size:11px}
+  .state-progress{height:7px;margin:7px 0 12px;border-radius:999px;background:var(--line);overflow:hidden}
+  .state-progress-fill{height:100%;border-radius:inherit;background:var(--brand)}
+  .state-node-bars{display:grid;gap:10px;margin-top:12px}
+  .state-node-bar-row{min-width:0}.state-node-bar-head{display:flex;justify-content:space-between;gap:8px;color:var(--ink);font-size:12px;font-weight:600}.state-node-bar-meta{margin-top:3px;color:var(--ink-2);font-size:11px;line-height:1.45}.state-node-missing{color:#db2c5b}.state-node-missing .state-node-bar-head{color:#db2c5b}.state-node-missing .state-progress-fill{background:#db2c5b}
+  .current-state-placeholder{visibility:hidden;pointer-events:none}
+  .shard-card,.disk-card{grid-column:span 2}
+  .state-technical{margin-top:12px;padding-top:9px;border-top:1px solid var(--line)}.state-technical>summary{color:var(--ink-2);font-size:11px;cursor:pointer;list-style:none}.state-technical>summary::-webkit-details-marker{display:none}.state-technical>summary::before{content:'▸';display:inline-block;margin-right:5px}.state-technical[open]>summary::before{content:'▾'}.state-technical .state-list{margin-top:8px}.state-technical-note{margin:8px 0 0;color:var(--ink-2);font-size:11px;line-height:1.5}
+  .health-green{color:#00875a}.health-yellow{color:#b5730a}.health-red{color:#db2c5b}.health-unknown{color:var(--ink-3)}
+  .state-list{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 10px;margin:0;font-size:12px}
+  .state-list dt{color:var(--ink-2);min-width:0}.state-list dd{margin:0;color:var(--ink);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;text-align:right;overflow-wrap:anywhere}
+  .state-list dd.state-wide{grid-column:1 / -1;text-align:left;font-family:inherit;color:var(--ink-2)}
+  .state-alert{color:#db2c5b!important;font-weight:700}
+  @media(max-width:980px){.current-state-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.shard-card,.disk-card{grid-column:auto}}
+  @media(max-width:600px){.current-state-grid{grid-template-columns:1fr}}
   @media(max-width:980px){.shell{padding:0 16px}.topbar,.section-nav{margin:0}.section-nav-inner{justify-content:flex-start}.diagnostic-section{margin-left:0;margin-right:0}}
   @media print{.shell{max-width:none;padding:0}.topbar{position:static}.section,.check{break-inside:avoid;page-break-inside:avoid}}
 </style>
@@ -1357,7 +1414,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
 </section>
 
 <section class="kpi-row" aria-label="檢查結果統計">
-  <div class="kpi kpi-rate"><span class="kpi-label">通過率</span><div class="kpi-rate-body"><span class="kpi-rate-value">{{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%</span><span class="kpi-rate-note">{{.R.Summary.Pass}} / {{addCounts .R.Summary}} 項</span></div></div>
+  <div class="kpi kpi-rate"><span class="kpi-label">通過率</span><div class="kpi-rate-body"><span class="kpi-rate-value">{{pctOf (passRateCount .R.Summary) (addCounts .R.Summary)}}%</span><span class="kpi-rate-note">{{passRateCount .R.Summary}} / {{addCounts .R.Summary}} 項</span></div><small class="kpi-rate-method">計算：（通過＋資訊＋略過）÷ 全部項目</small></div>
   <div class="kpi kpi-stat" data-status="pass"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-check-circle"/></svg></span>通過</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Pass}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%"></div></div></div></div>
   <div class="kpi kpi-stat" data-status="warning"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-alert-triangle"/></svg></span>警告</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Warning}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Warning (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Warning (addCounts .R.Summary)}}%"></div></div></div></div>
   <div class="kpi kpi-stat" data-status="critical"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-x-circle"/></svg></span>嚴重</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Critical}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%"></div></div></div></div>
@@ -1374,6 +1431,95 @@ const htmlTmpl = `{{define "diagnostic-results"}}
     {{range .R.SuggestedSymptoms}}<li>{{.Reason}} → <code>diagnose --symptom {{.Symptom}}</code></li>{{end}}
   </ul>
 </div>
+{{end}}
+
+{{with .R.CurrentState}}
+<section id="current-state" class="section current-state-section">
+  <header class="section-head">
+    <div class="section-heading"><span class="section-id">快照</span><h2 class="section-title">目前叢集狀態摘要</h2><span class="section-en">Cluster Snapshot</span></div>
+    <div class="section-counts"><span class="count-chip" data-status="info"><svg class="ic ic-12"><use href="#i-info"/></svg>單次採集</span></div>
+  </header>
+  <div class="section-body">
+    <p class="current-state-note">{{.SnapshotNote}}</p>
+    <div class="current-state-grid">
+      <article class="current-state-card">
+        <h3>Elasticsearch 節點</h3>
+        <dl class="state-list">
+          <dt>預期節點</dt><dd>{{intp .Nodes.Expected}}</dd>
+          <dt>目前回應</dt><dd>{{intp .Nodes.Responding}}</dd>
+          <dt>缺失節點</dt><dd>{{intp .Nodes.Missing}}</dd>
+          {{if .Nodes.MissingKnown}}{{if .Nodes.MissingNames}}<dd class="state-wide state-alert">缺失：{{joinNodes .Nodes.MissingNames}}</dd>{{end}}{{end}}
+        </dl>
+      </article>
+      {{if .Kibana}}<article class="current-state-card">
+        <h3>Kibana</h3>
+        <dl class="state-list">
+          <dt>總數</dt><dd>{{intp .Kibana.Total}}</dd>
+          {{if .Kibana.Versions}}<dt>版本</dt><dd>{{joinNodes .Kibana.Versions}}</dd>{{end}}
+          <dt>可用</dt><dd>{{intp .Kibana.Available}}</dd>
+          <dt>降級／不可用</dt><dd>{{intp .Kibana.Degraded}} / {{intp .Kibana.Unavailable}}</dd>
+          <dt>未知</dt><dd>{{intp .Kibana.Unknown}}</dd>
+        </dl>
+      </article>{{else}}<article class="current-state-card current-state-placeholder" aria-hidden="true"></article>{{end}}
+      {{if .Logstash}}<article class="current-state-card">
+        <h3>Logstash</h3>
+        <dl class="state-list">
+          <dt>總數</dt><dd>{{intp .Logstash.Total}}</dd>
+          {{if .Logstash.Versions}}<dt>版本</dt><dd>{{joinNodes .Logstash.Versions}}</dd>{{end}}
+          <dt>可用</dt><dd>{{intp .Logstash.Available}}</dd>
+          <dt>降級／不可用</dt><dd>{{intp .Logstash.Degraded}} / {{intp .Logstash.Unavailable}}</dd>
+          <dt>未知</dt><dd>{{intp .Logstash.Unknown}}</dd>
+        </dl>
+      </article>{{else}}<article class="current-state-card current-state-placeholder" aria-hidden="true"></article>{{end}}
+      <article class="current-state-card">
+        <h3>核心服務</h3>
+        <dl class="state-list">
+          <dt>ILM</dt><dd>{{if .ILM.Known}}{{upper .ILM.Status}}{{else}}UNKNOWN{{end}}</dd>
+          <dt>License</dt><dd>{{if .License.Known}}{{upper .License.Status}}{{else}}UNKNOWN{{end}}</dd>
+          {{if .License.Type}}<dt>License 類型</dt><dd>{{.License.Type}}</dd>{{end}}
+        </dl>
+      </article>
+      <article class="current-state-card disk-card">
+        <h3>磁碟容量</h3>
+        <div class="state-primary">{{bytesI .Disk.UsedBytes}} / {{bytesI .Disk.TotalBytes}}</div>
+        <div class="state-subline">已用／總容量（使用率 {{pct .Disk.UsedPercent}}；可用 {{bytesI .Disk.AvailableBytes}}）</div>
+        <div class="state-progress" aria-label="磁碟容量使用率"><div class="state-progress-fill" style="width:{{ratioPct64 .Disk.UsedBytes .Disk.TotalBytes}}%"></div></div>
+        <div class="state-node-bars">
+          {{range .Disk.Nodes}}
+          <div class="state-node-bar-row{{if .Missing}} state-node-missing{{end}}">
+            <div class="state-node-bar-head"><span>{{.Name}}</span><span>{{if .Missing}}未回應{{else}}{{pct .UsedPercent}}{{end}}</span></div>
+            <div class="state-progress"><div class="state-progress-fill" style="width:{{ratioPct64 .UsedBytes .TotalBytes}}%"></div></div>
+            <div class="state-node-bar-meta">已用 {{bytesI .UsedBytes}} · 可用 {{bytesI .AvailableBytes}} · 總容量 {{bytesI .TotalBytes}}</div>
+          </div>
+          {{else}}<div class="state-subline">本次沒有足夠的節點檔案系統資料。</div>{{end}}
+        </div>
+      </article>
+      <article class="current-state-card shard-card">
+        <h3>Shard 容量</h3>
+        <div class="state-primary">{{intp .Shards.Total}} / {{intp .Shards.Capacity}}</div>
+        <div class="state-subline">目前使用／叢集可用上限（{{floatPct .Shards.CapacityUsedPercent}}）</div>
+        <div class="state-progress" aria-label="Shard 容量使用率"><div class="state-progress-fill" style="width:{{ratioPct .Shards.Total .Shards.Capacity}}%"></div></div>
+        <dl class="state-list">
+          <dt>尚可新增</dt><dd>{{intp .Shards.Remaining}}</dd>
+          <dt>活動／未分配</dt><dd>{{intp .Shards.Active}} / {{intp .Shards.Unassigned}}</dd>
+          <dt>未分配 primary</dt><dd>{{intp .Shards.UnassignedPrimary}}</dd>
+        </dl>
+        <details class="state-technical">
+          <summary>技術明細</summary>
+          <dl class="state-list">
+            <dt>設定鍵</dt><dd>cluster.max_shards_per_node</dd>
+            <dt>每個非 frozen data node</dt><dd>{{intp .Shards.MaxPerNode}}</dd>
+            <dt>納入計算節點</dt><dd>{{intp .Shards.CapacityNodeCount}}</dd>
+            {{if .Shards.MaxPerFrozenNode}}<dt>frozen 設定上限</dt><dd>{{intp .Shards.MaxPerFrozenNode}}</dd>{{end}}
+            <dt>活動比例</dt><dd>{{floatPct .Shards.ActivePercent}}</dd>
+            <dt>搬移／初始化</dt><dd>{{intp .Shards.Relocating}} / {{intp .Shards.Initializing}}</dd>
+          </dl>
+          <p class="state-technical-note">容量以 cluster.max_shards_per_node × 本次回應的非 frozen data node 數量計算；若節點角色或設定不足，顯示「—」。</p>
+        </details>
+      </article>
+    </div>
+  </div>
+</section>
 {{end}}
 
 {{with .R.NodeContext}}
@@ -1398,12 +1544,12 @@ const htmlTmpl = `{{define "diagnostic-results"}}
 </div>
 <div class="node-overview-wrap">
   <table class="node-overview">
-    <thead><tr><th>節點</th><th>IP</th><th>角色</th><th>CPU</th><th>OS RAM*</th><th>JVM Heap</th><th>Swap</th><th>FD</th></tr></thead>
+    <thead><tr><th>節點</th><th>IP</th><th>角色</th><th>CPU</th><th>OS RAM*</th><th>JVM Heap</th><th>磁碟</th><th>Swap</th><th>FD</th></tr></thead>
     <tbody>
     {{range .MissingNodes}}
       <tr class="node-missing-row">
         <td class="node-name-cell">{{.}}</td>
-        <td colspan="7">❌ 缺失（Nodes API 未回應）</td>
+        <td colspan="8">❌ 缺失（Nodes API 未回應）</td>
       </tr>
     {{end}}
     {{range .Nodes}}
@@ -1414,6 +1560,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
         <td><span class="metric-value {{metricClass "cpu" .OS.CPUPercent}}">{{pct .OS.CPUPercent}}</span></td>
         <td><span class="metric-value">{{pct .OS.Memory.UsedPct}}</span></td>
         <td><span class="metric-value {{metricClass "heap" .JVM.HeapUsedPct}}">{{pct .JVM.HeapUsedPct}}</span></td>
+        <td><span class="metric-value {{metricClass "disk" .DiskUsedPercent}}">{{pct .DiskUsedPercent}}</span></td>
         <td><span class="metric-value {{swapClass .OS.Swap.UsedBytes}}">{{bytesI .OS.Swap.UsedBytes}}</span></td>
         <td><span class="metric-value {{fdClass .Process.OpenFileDescriptors .Process.MaxFileDescriptors}}">{{fdRatio .Process.OpenFileDescriptors .Process.MaxFileDescriptors}}</span></td>
       </tr>
@@ -1437,6 +1584,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
       <div class="node-metric"><span class="node-metric-label">CPU</span><span class="node-metric-value {{metricClass "cpu" .OS.CPUPercent}}">{{pct .OS.CPUPercent}}</span></div>
       <div class="node-metric"><span class="node-metric-label">OS RAM*</span><span class="node-metric-value">{{pct .OS.Memory.UsedPct}}</span></div>
       <div class="node-metric"><span class="node-metric-label">JVM Heap</span><span class="node-metric-value {{metricClass "heap" .JVM.HeapUsedPct}}">{{pct .JVM.HeapUsedPct}}</span></div>
+      <div class="node-metric"><span class="node-metric-label">磁碟</span><span class="node-metric-value {{metricClass "disk" .DiskUsedPercent}}">{{pct .DiskUsedPercent}}</span></div>
       <div class="node-metric"><span class="node-metric-label">Swap</span><span class="node-metric-value {{swapClass .OS.Swap.UsedBytes}}">{{bytesI .OS.Swap.UsedBytes}}</span></div>
       <div class="node-metric"><span class="node-metric-label">FD</span><span class="node-metric-value {{fdClass .Process.OpenFileDescriptors .Process.MaxFileDescriptors}}">{{fdRatio .Process.OpenFileDescriptors .Process.MaxFileDescriptors}}</span></div>
     </div>

@@ -1,6 +1,6 @@
 {
   "meta": {
-    "tool_version": "0.0.4-mvp",
+    "tool_version": "1.0.1",
     "generated_at": "",
     "cluster": {
       "name": "docker-cluster",
@@ -1965,6 +1965,52 @@
       "requires_extra": false
     }
   ],
+  "current_state": {
+    "snapshot_note": "本區塊為單次採集快照，不代表長期監控結論",
+    "health": {
+      "known": true,
+      "status": "green",
+      "source": "_cluster/health"
+    },
+    "nodes": {
+      "responding": 1,
+      "missing_known": false
+    },
+    "shards": {
+      "total": 0,
+      "active": 0,
+      "active_primary": 0,
+      "unassigned": 0,
+      "unassigned_primary": 0,
+      "relocating": 0,
+      "initializing": 0
+    },
+    "disk": {
+      "known": true,
+      "node_count": 1,
+      "nodes": [
+        {
+          "name": "587513524e34",
+          "used_percent": 22
+        }
+      ],
+      "max_used_percent": 22,
+      "max_node": "587513524e34"
+    },
+    "master": {
+      "eligible_count": 1,
+      "eligible_names": [
+        "587513524e34"
+      ]
+    },
+    "ilm": {
+      "known": true,
+      "status": "running"
+    },
+    "license": {
+      "known": false
+    }
+  },
   "node_context": {
     "stats_coverage": {
       "available": true,
@@ -2000,6 +2046,7 @@
         ],
         "stats_available": true,
         "info_available": false,
+        "disk_used_percent": 22,
         "os": {
           "memory": {},
           "swap": {},

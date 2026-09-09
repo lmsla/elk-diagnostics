@@ -1,0 +1,933 @@
+{
+  "version": 1,
+  "language": "zh-TW",
+  "renderProfile": "guide",
+  "mode": "module",
+  "modeData": {
+    "entryNodeId": "user-start",
+    "outputNodeIds": [
+      "bundle-handoff",
+      "report-artifacts",
+      "exit-codes"
+    ],
+    "sourceEvidenceIds": [
+      "repo-scope",
+      "route-choice",
+      "route-a-manual",
+      "route-b-manual",
+      "readonly-api",
+      "collect-sh",
+      "collect-script-cli",
+      "bundle-spec",
+      "cli-check",
+      "cli-diagnose",
+      "cli-flags",
+      "report-spec"
+    ]
+  },
+  "title": "拿到 ELK 工具後，照情境選指令與交付資料",
+  "summary": "先選 Route A 或 Route B，再依 ES、Kibana、Logstash、Host 與症狀決定採集方式；最後檢查 Bundle、報告、結束碼與可見限制。",
+  "truthLadder": {
+    "analogy": "把一次健檢想成兩種交件方式：Route A 是現場只把觀測資料裝箱，分析端再開箱；Route B 是獲准的分析機直接讀取現場。這是操作比喻，不是系統內部的傳輸模型。",
+    "technical": "elk-diagnostics 是唯讀 CLI。collect.sh 保存指定服務的原始 API 回應與狀態，check 可直接連線或從 Bundle 離線分析；diagnose --symptom 目前以 Live 直連為入口，輸出 JSON、HTML 或 text。",
+    "caveat": "本指南是操作路徑，不是權限或網路配置指南。工具不修復；403、timeout、缺檔與版本差異會造成 UNKNOWN／SKIPPED。Bundle 可能含 index、node、IP、hostname 與 mapping 欄位名稱，外傳前必須人工審閱；單次快照也不能取代時間序列。"
+  },
+  "scenes": [
+    {
+      "id": "choose-route",
+      "title": "先選一條路線，不要混用",
+      "summary": "先判斷現場能否執行交付 binary 並直連 ES；不確定時，優先採集後交付分析。",
+      "evidence": [
+        "repo-scope",
+        "route-choice",
+        "readonly-api",
+        "analogy-routes"
+      ],
+      "nodes": [
+        {
+          "id": "user-start",
+          "kind": "actor",
+          "label": "收到工具包",
+          "detail": "先確認兩件事：這是唯讀工具，且操作分成 Route A（現場採集、分析端處理）與 Route B（分析機直連）。每次只選一條路線。",
+          "evidence": [
+            "repo-scope",
+            "route-choice"
+          ]
+        },
+        {
+          "id": "route-question",
+          "kind": "decision",
+          "label": "現場能否直連？",
+          "detail": "問：這台機器能執行交付 binary，且能直連 Elasticsearch 嗎？兩者有一項不確定，就選 Route A。",
+          "evidence": [
+            "route-choice",
+            "analogy-routes"
+          ],
+          "failure": {
+            "impact": "選錯路線會讓現場執行不被允許的檔案，或讓分析端缺少可用輸入。",
+            "symptom": "現場不允許未知執行檔、分析機連不到 ES，或交付包與指令被混用。",
+            "fallback": "改走 Route A：現場只執行 collect.sh，將採集包交給獲准的分析端。"
+          }
+        },
+        {
+          "id": "route-a",
+          "kind": "process",
+          "label": "Route A：採集後交付",
+          "detail": "主要路線：現場只執行 collect.sh，產生採集包；分析端解壓後用 check --from-bundle 產生報告。",
+          "evidence": [
+            "route-choice",
+            "route-a-manual",
+            "collect-script-cli"
+          ]
+        },
+        {
+          "id": "route-b",
+          "kind": "process",
+          "label": "Route B：Live 直連",
+          "detail": "直連路線：獲准的分析機執行 elk-diagnostics check，直接連線 ES 產生報告；不使用 collect.sh。",
+          "evidence": [
+            "route-choice",
+            "route-b-manual"
+          ]
+        },
+        {
+          "id": "safety-boundary",
+          "kind": "process",
+          "label": "唯讀邊界",
+          "detail": "兩條路線都只讀取指定 API，不執行修復。報告是診斷引導，不是根因保證。",
+          "evidence": [
+            "repo-scope",
+            "readonly-api",
+            "report-spec"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "start-route",
+          "from": "user-start",
+          "to": "route-question",
+          "label": "先判斷"
+        },
+        {
+          "id": "choose-a",
+          "from": "route-question",
+          "to": "route-a",
+          "label": "不確定／受限制"
+        },
+        {
+          "id": "choose-b",
+          "from": "route-question",
+          "to": "route-b",
+          "label": "獲准且可直連"
+        },
+        {
+          "id": "a-boundary",
+          "from": "route-a",
+          "to": "safety-boundary",
+          "label": "仍是唯讀"
+        },
+        {
+          "id": "b-boundary",
+          "from": "route-b",
+          "to": "safety-boundary",
+          "label": "仍是唯讀"
+        }
+      ]
+    },
+    {
+      "id": "prepare-safe",
+      "title": "採集前先把交付與認證準備好",
+      "summary": "先驗證檔案與工具，再建立節點基準；Basic Auth 和 API key 只選一條。",
+      "evidence": [
+        "route-a-manual",
+        "route-b-manual",
+        "collect-script-cli",
+        "cli-flags"
+      ],
+      "nodes": [
+        {
+          "id": "package-check",
+          "kind": "process",
+          "label": "解壓與檢查交付包",
+          "detail": "解壓到可寫目錄；交付包已有 collect.sh。若只有 binary，可執行 elk-diagnostics collect-script > collect.sh，先審閱再交付。",
+          "evidence": [
+            "route-a-manual",
+            "route-b-manual",
+            "collect-script-cli"
+          ]
+        },
+        {
+          "id": "preflight",
+          "kind": "process",
+          "label": "確認前置條件",
+          "detail": "Route A：command -v curl && test -x ./collect.sh；未顯示前置檢查 OK 就停止。Route B 另確認 binary 可執行。",
+          "evidence": [
+            "route-a-manual",
+            "route-b-manual"
+          ]
+        },
+        {
+          "id": "node-baseline",
+          "kind": "store",
+          "label": "建立預期節點清單",
+          "detail": "建議建立 expected-es-nodes.txt，每行一個正確的 ES node.name；同一份清單只用於一個叢集。",
+          "evidence": [
+            "route-a-manual",
+            "route-b-manual",
+            "cli-flags"
+          ]
+        },
+        {
+          "id": "auth-choice",
+          "kind": "decision",
+          "label": "選一種認證",
+          "detail": "Basic Auth 與 API key 擇一，不要同時設定。密碼不放指令或設定檔；正式非互動執行使用受控秘密來源。",
+          "evidence": [
+            "route-a-manual",
+            "route-b-manual",
+            "collect-sh"
+          ],
+          "failure": {
+            "impact": "無法取得 API 回應，Bundle 或報告會缺少證據。",
+            "symptom": "401／403、密碼 prompt 無法使用，或 Basic Auth 與 API key 同時被設定。",
+            "fallback": "確認唯讀權限，清除另一條認證來源，再依互動或非互動方式重新執行。"
+          }
+        },
+        {
+          "id": "tls-choice",
+          "kind": "decision",
+          "label": "確認 TLS 憑證",
+          "detail": "HTTPS 正式環境驗證 CA；只有測試環境才考慮 --insecure。自簽／私有 CA 要提供 --ca-cert。",
+          "evidence": [
+            "route-a-manual",
+            "route-b-manual",
+            "collect-sh"
+          ],
+          "failure": {
+            "impact": "TLS 握手中止，採集或 Live 健檢無法開始。",
+            "symptom": "憑證不受信任、CA 路徑不可讀，或只能靠略過驗證才能連線。",
+            "fallback": "取得正確 CA 憑證並使用 --ca-cert；不要把 --insecure 當成正式修復。"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "package-preflight",
+          "from": "package-check",
+          "to": "preflight",
+          "label": "先驗證"
+        },
+        {
+          "id": "preflight-baseline",
+          "from": "preflight",
+          "to": "node-baseline",
+          "label": "建立基準"
+        },
+        {
+          "id": "baseline-auth",
+          "from": "node-baseline",
+          "to": "auth-choice",
+          "label": "準備連線"
+        },
+        {
+          "id": "auth-tls",
+          "from": "auth-choice",
+          "to": "tls-choice",
+          "label": "再確認 TLS"
+        }
+      ]
+    },
+    {
+      "id": "collect-scope",
+      "title": "依問題範圍決定採哪些服務",
+      "summary": "先採 ES 核心證據；只有問題涉及其他服務時，才加入 Kibana、Logstash 或 Host 模組。",
+      "evidence": [
+        "collect-sh",
+        "readonly-api",
+        "bundle-spec",
+        "scope-inference"
+      ],
+      "nodes": [
+        {
+          "id": "es-collect",
+          "kind": "process",
+          "label": "ES-only：預設主線",
+          "detail": "ES-only 主線（--services 預設為 es）：./collect.sh --services es --host \"$ES_URL\" --username \"$ES_USER\" --ca-cert \"$CA_CERT\" -o \"$BUNDLE_ROOT\"",
+          "evidence": [
+            "collect-sh",
+            "route-a-manual",
+            "readonly-api"
+          ],
+          "failure": {
+            "impact": "拿不到 ES 核心證據，後續診斷只能部分判定。",
+            "symptom": "URL、認證、TLS 或網路錯誤造成端點無法回應。",
+            "fallback": "保留失敗狀態，先修正連線條件再重採；不要把空目錄當成健康結果。"
+          }
+        },
+        {
+          "id": "service-scope",
+          "kind": "decision",
+          "label": "要不要加入選配服務？",
+          "detail": "只有問題涉及 Kibana、Logstash 或 Host 才加模組；選配模組只在 --services 指定時採集。這是範圍選擇，不是準確度保證。",
+          "evidence": [
+            "collect-sh",
+            "readonly-api",
+            "scope-inference"
+          ]
+        },
+        {
+          "id": "elk-collect",
+          "kind": "process",
+          "label": "Kibana／Logstash",
+          "detail": "同包採集 ELK：./collect.sh --services es,kibana,logstash --host \"$ES_URL\" --kibana-list ./kibana-instances.conf --logstash-list ./logstash-instances.conf",
+          "evidence": [
+            "collect-sh",
+            "readonly-api",
+            "route-a-manual"
+          ]
+        },
+        {
+          "id": "host-collect",
+          "kind": "process",
+          "label": "Host OS",
+          "detail": "需要 Host OS：./collect.sh --services es,host --host \"$ES_URL\" --host-id \"$HOST_ID\"；遠端 Host 改用 --ssh-hosts-file，需既有 SSH key／agent。",
+          "evidence": [
+            "collect-sh",
+            "readonly-api"
+          ]
+        },
+        {
+          "id": "logstash-sampling",
+          "kind": "process",
+          "label": "Logstash 取樣間隔",
+          "detail": "要看 Logstash pipeline counters 的增量，保留 --logstash-sample-interval 5；設 0 只取一次，無法比較兩次觀測。",
+          "evidence": [
+            "collect-sh",
+            "readonly-api"
+          ]
+        },
+        {
+          "id": "bundle-created",
+          "kind": "store",
+          "label": "產生 Bundle",
+          "detail": "採集後會留下 Bundle 目錄與 .tar.gz；必要項目是 _manifest.json、_status.txt、elasticsearch/version.json。",
+          "evidence": [
+            "collect-sh",
+            "bundle-spec",
+            "route-a-manual"
+          ],
+          "failure": {
+            "impact": "分析端沒有可追溯的採集時間、端點狀態或版本證據。",
+            "symptom": "必要檔案缺少、採集只產生空目錄，或壓縮檔未完成。",
+            "fallback": "回到採集前置檢查，重新指定新的輸出目錄並保留舊失敗包供追查。"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "es-scope",
+          "from": "es-collect",
+          "to": "service-scope",
+          "label": "確認範圍"
+        },
+        {
+          "id": "add-elk",
+          "from": "service-scope",
+          "to": "elk-collect",
+          "label": "涉及 ELK"
+        },
+        {
+          "id": "add-host",
+          "from": "service-scope",
+          "to": "host-collect",
+          "label": "涉及 Host"
+        },
+        {
+          "id": "elk-sample",
+          "from": "elk-collect",
+          "to": "logstash-sampling",
+          "label": "需要 pipeline 觀測"
+        },
+        {
+          "id": "es-bundle",
+          "from": "es-collect",
+          "to": "bundle-created",
+          "label": "保存證據"
+        },
+        {
+          "id": "elk-bundle",
+          "from": "elk-collect",
+          "to": "bundle-created",
+          "label": "保存證據"
+        },
+        {
+          "id": "host-bundle",
+          "from": "host-collect",
+          "to": "bundle-created",
+          "label": "保存證據"
+        },
+        {
+          "id": "sample-bundle",
+          "from": "logstash-sampling",
+          "to": "bundle-created",
+          "label": "保存證據"
+        }
+      ]
+    },
+    {
+      "id": "verify-handoff",
+      "title": "先驗證 Bundle，再交出去",
+      "summary": "壓縮檔存在不代表採集完整；必須看必要檔案與每個端點的實際狀態。",
+      "evidence": [
+        "route-a-manual",
+        "bundle-spec",
+        "readonly-api",
+        "verification-boundary"
+      ],
+      "nodes": [
+        {
+          "id": "bundle-minimum",
+          "kind": "decision",
+          "label": "必要檔案是否齊全？",
+          "detail": "檢查：test -s \"$BUNDLE_ROOT/_manifest.json\" && test -s \"$BUNDLE_ROOT/_status.txt\" && test -s \"$BUNDLE_ROOT/elasticsearch/version.json\" && test -s \"$BUNDLE_ROOT.tar.gz\"",
+          "evidence": [
+            "route-a-manual",
+            "bundle-spec"
+          ],
+          "failure": {
+            "impact": "分析端無法可靠重建採集當下的資料範圍。",
+            "symptom": "manifest、status、version 或壓縮檔任一缺少。",
+            "fallback": "不要交付；以新的時間目錄重新採集並再次檢查。"
+          }
+        },
+        {
+          "id": "endpoint-status",
+          "kind": "event",
+          "label": "查看端點狀態",
+          "detail": "查看：sed -n '1,200p' \"$BUNDLE_ROOT/_status.txt\"。400、403、timeout 代表當下證據有缺口，不能因壓縮檔存在就忽略。",
+          "evidence": [
+            "route-a-manual",
+            "bundle-spec",
+            "verification-boundary"
+          ],
+          "failure": {
+            "impact": "對應診斷可能只能回傳 UNKNOWN，不能被解讀成 PASS。",
+            "symptom": "_status.txt 出現 4xx、5xx、timeout 或端點缺檔。",
+            "fallback": "把狀態檔一併交付；必要時補採缺少的服務或端點。"
+          }
+        },
+        {
+          "id": "privacy-review",
+          "kind": "process",
+          "label": "外傳前審閱內容",
+          "detail": "外傳前人工審閱 index、node、IP、hostname 與 mapping 欄位名稱；目前沒有 --redact。Bundle 不含 document 內容。",
+          "evidence": [
+            "readonly-api",
+            "route-a-manual",
+            "repo-scope"
+          ]
+        },
+        {
+          "id": "bundle-handoff",
+          "kind": "actor",
+          "label": "交付 .tar.gz",
+          "detail": "只交付 \"$BUNDLE_ROOT.tar.gz\"。分析端先解壓；--from-bundle 要指向含 _manifest.json 的目錄，不是 tar.gz 檔案。",
+          "evidence": [
+            "route-a-manual",
+            "bundle-spec"
+          ],
+          "failure": {
+            "impact": "分析端無法載入 Bundle，會把正確的採集包誤判成輸入錯誤。",
+            "symptom": "直接把 .tar.gz 傳給 --from-bundle，或指定的目錄沒有 _manifest.json。",
+            "fallback": "先解壓到新的目錄，再把該目錄的絕對路徑交給分析端。"
+          }
+        }
+      ],
+      "edges": [
+        {
+          "id": "bundle-minimum-status",
+          "from": "bundle-minimum",
+          "to": "endpoint-status",
+          "label": "檔案齊全"
+        },
+        {
+          "id": "status-review",
+          "from": "endpoint-status",
+          "to": "privacy-review",
+          "label": "逐端點審閱"
+        },
+        {
+          "id": "review-handoff",
+          "from": "privacy-review",
+          "to": "bundle-handoff",
+          "label": "核准後交付"
+        }
+      ]
+    },
+    {
+      "id": "analyze-output",
+      "title": "分析端選對入口與輸出格式",
+      "summary": "Bundle 用 check --from-bundle；Live 用 check 直連；再依閱讀或串接需求選 HTML、JSON 或 text。",
+      "evidence": [
+        "route-a-manual",
+        "route-b-manual",
+        "cli-check",
+        "cli-flags",
+        "report-spec",
+        "verification-boundary"
+      ],
+      "nodes": [
+        {
+          "id": "bundle-analysis",
+          "kind": "process",
+          "label": "離線分析 Bundle",
+          "detail": "Bundle 分析：TOOL_BIN check --from-bundle \"$BUNDLE_ROOT\" --output html -o \"$REPORT_ROOT/check.html\" --metrics-output \"$REPORT_ROOT/metrics.ndjson\"；全程不連線。",
+          "evidence": [
+            "route-a-manual",
+            "cli-check",
+            "cli-flags"
+          ],
+          "failure": {
+            "impact": "無法產生離線報告，或報告缺少 Bundle 的狀態與服務資訊。",
+            "symptom": "指定 tar.gz 而非解壓目錄、缺少 manifest，或 binary 與架構不符。",
+            "fallback": "改指定包含 _manifest.json 的目錄，確認 binary 架構與輸出目錄可寫。"
+          }
+        },
+        {
+          "id": "live-analysis",
+          "kind": "process",
+          "label": "Live 直連分析",
+          "detail": "Live 分析：TOOL_BIN check --host \"$ES_URL\" --output html -o \"$REPORT_ROOT/check.html\" --metrics-output \"$REPORT_ROOT/metrics.ndjson\"；認證／CA 依 Route B 參數提供。",
+          "evidence": [
+            "route-b-manual",
+            "cli-check",
+            "cli-flags"
+          ],
+          "failure": {
+            "impact": "沒有初始叢集握手就不能產出可信的 Live 報告。",
+            "symptom": "所有 host 不可達，或初始認證／TLS 握手失敗；通常回傳 exit 11。",
+            "fallback": "檢查 URL、認證與 CA；若現場不便直連，改走 Route A。"
+          }
+        },
+        {
+          "id": "output-choice",
+          "kind": "decision",
+          "label": "選輸出格式",
+          "detail": "給人閱讀選 html；給系統串接選 json；只想看終端摘要選 text。-o 省略時輸出到 stdout。",
+          "evidence": [
+            "cli-flags",
+            "report-spec"
+          ]
+        },
+        {
+          "id": "report-artifacts",
+          "kind": "store",
+          "label": "確認報告產物",
+          "detail": "完成後確認 check.html 與 metrics.ndjson 存在。metrics 是可累積的 NDJSON 觀測資料，不代表單次快照已形成趨勢。",
+          "evidence": [
+            "route-a-manual",
+            "route-b-manual",
+            "cli-flags",
+            "verification-boundary"
+          ],
+          "failure": {
+            "impact": "沒有可閱讀或可交接的結果檔，排程也無法可靠取得狀態。",
+            "symptom": "輸出目錄不可寫、格式不支援，或只看到終端錯誤。",
+            "fallback": "先用 --output text 或 stdout 確認輸入，再修正輸出路徑與格式。"
+          }
+        },
+        {
+          "id": "exit-codes",
+          "kind": "event",
+          "label": "用結束碼分流",
+          "detail": "0 正常／只有 skipped；1 warning；2 critical；3 unknown；10 設定錯；11 連線／認證錯；20 工具或輸出錯。",
+          "evidence": [
+            "route-b-manual",
+            "cli-flags",
+            "report-spec"
+          ]
+        },
+        {
+          "id": "report-limit",
+          "kind": "process",
+          "label": "保留 UNKNOWN 與限制",
+          "detail": "看到 UNKNOWN 或 SKIPPED 要保留原因；單次快照不能代替 Monitoring／時間序列，也不等於自動修復。",
+          "evidence": [
+            "report-spec",
+            "verification-boundary",
+            "repo-scope"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "bundle-output",
+          "from": "bundle-analysis",
+          "to": "output-choice",
+          "label": "離線輸入"
+        },
+        {
+          "id": "live-output",
+          "from": "live-analysis",
+          "to": "output-choice",
+          "label": "即時輸入"
+        },
+        {
+          "id": "output-files",
+          "from": "output-choice",
+          "to": "report-artifacts",
+          "label": "寫出結果"
+        },
+        {
+          "id": "files-exit",
+          "from": "report-artifacts",
+          "to": "exit-codes",
+          "label": "判讀狀態"
+        },
+        {
+          "id": "files-limit",
+          "from": "report-artifacts",
+          "to": "report-limit",
+          "label": "保留邊界"
+        }
+      ]
+    },
+    {
+      "id": "symptom-map",
+      "title": "要追單一症狀時，用對 diagnose",
+      "summary": "目前 diagnose --symptom 是 Live 直連入口；只有 Bundle 時，先用 check --from-bundle 做完整離線分析。",
+      "evidence": [
+        "cli-diagnose",
+        "cli-check",
+        "cli-flags",
+        "verification-boundary"
+      ],
+      "nodes": [
+        {
+          "id": "symptom-gate",
+          "kind": "decision",
+          "label": "先確認資料來源",
+          "detail": "目前 diagnose --symptom 以 Live 直連為入口；手上只有 Bundle 時，先用 check --from-bundle，不要假設 diagnose 可離線讀 Bundle。",
+          "evidence": [
+            "cli-diagnose",
+            "cli-check"
+          ],
+          "failure": {
+            "impact": "把不支援的輸入模式交給 diagnose，會得到參數錯誤或無法執行的流程。",
+            "symptom": "只有 Bundle 卻嘗試對 diagnose 加入 --from-bundle，或沒有提供 --symptom。",
+            "fallback": "Bundle 先跑 check --from-bundle；Live 才使用下列 --symptom 值。"
+          }
+        },
+        {
+          "id": "symptom-red",
+          "kind": "process",
+          "label": "紅叢集／分片不可用",
+          "detail": "叢集變紅、分片不可用、磁碟水位：diagnose --symptom red-cluster",
+          "evidence": [
+            "cli-diagnose"
+          ]
+        },
+        {
+          "id": "symptom-write",
+          "kind": "process",
+          "label": "寫入變慢／被拒絕",
+          "detail": "寫入變慢、write queue 或 rejected：diagnose --symptom write-bottleneck",
+          "evidence": [
+            "cli-diagnose",
+            "readonly-api"
+          ]
+        },
+        {
+          "id": "symptom-heap",
+          "kind": "process",
+          "label": "Heap 高／熔斷器",
+          "detail": "Heap 偏高、熔斷器或節點拒絕：diagnose --symptom high-heap",
+          "evidence": [
+            "cli-diagnose",
+            "readonly-api"
+          ]
+        },
+        {
+          "id": "symptom-ingest",
+          "kind": "process",
+          "label": "Ingest 延遲／Task backlog",
+          "detail": "Ingest pipeline 延遲、task backlog：diagnose --symptom ingest-lag",
+          "evidence": [
+            "cli-diagnose",
+            "readonly-api"
+          ]
+        },
+        {
+          "id": "symptom-ilm",
+          "kind": "process",
+          "label": "ILM 卡住／ERROR",
+          "detail": "ILM 卡在 ERROR 或遷移異常：diagnose --symptom ilm-stuck",
+          "evidence": [
+            "cli-diagnose",
+            "readonly-api"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "symptom-red-edge",
+          "from": "symptom-gate",
+          "to": "symptom-red",
+          "label": "紅叢集"
+        },
+        {
+          "id": "symptom-write-edge",
+          "from": "symptom-gate",
+          "to": "symptom-write",
+          "label": "寫入"
+        },
+        {
+          "id": "symptom-heap-edge",
+          "from": "symptom-gate",
+          "to": "symptom-heap",
+          "label": "Heap"
+        },
+        {
+          "id": "symptom-ingest-edge",
+          "from": "symptom-gate",
+          "to": "symptom-ingest",
+          "label": "Ingest"
+        },
+        {
+          "id": "symptom-ilm-edge",
+          "from": "symptom-gate",
+          "to": "symptom-ilm",
+          "label": "ILM"
+        }
+      ]
+    }
+  ],
+  "trace": [
+    {
+      "nodeId": "user-start",
+      "label": "收到工具，先看操作限制"
+    },
+    {
+      "nodeId": "route-question",
+      "label": "判斷是否能直連並執行 binary"
+    },
+    {
+      "nodeId": "route-a",
+      "label": "選 Route A"
+    },
+    {
+      "nodeId": "package-check",
+      "label": "解壓並檢查交付包"
+    },
+    {
+      "nodeId": "preflight",
+      "label": "確認 curl 與腳本"
+    },
+    {
+      "nodeId": "node-baseline",
+      "label": "建立節點基準"
+    },
+    {
+      "nodeId": "auth-choice",
+      "label": "選一種認證"
+    },
+    {
+      "nodeId": "tls-choice",
+      "label": "確認 TLS"
+    },
+    {
+      "nodeId": "es-collect",
+      "label": "先採 ES 核心證據"
+    },
+    {
+      "nodeId": "bundle-created",
+      "label": "產生 Bundle"
+    },
+    {
+      "nodeId": "bundle-minimum",
+      "label": "驗證必要檔案"
+    },
+    {
+      "nodeId": "endpoint-status",
+      "label": "閱讀端點狀態"
+    },
+    {
+      "nodeId": "privacy-review",
+      "label": "審閱外傳內容"
+    },
+    {
+      "nodeId": "bundle-handoff",
+      "label": "交付壓縮檔"
+    },
+    {
+      "nodeId": "bundle-analysis",
+      "label": "分析端離線讀 Bundle"
+    },
+    {
+      "nodeId": "output-choice",
+      "label": "選 HTML／JSON／text"
+    },
+    {
+      "nodeId": "report-artifacts",
+      "label": "確認報告與 metrics"
+    },
+    {
+      "nodeId": "exit-codes",
+      "label": "依 exit code 分流"
+    }
+  ],
+  "glossary": [
+    {
+      "term": "Route A",
+      "definition": "使用者環境只執行 collect.sh，產生 Bundle 後交給獲准的分析端。"
+    },
+    {
+      "term": "Route B",
+      "definition": "獲准分析機執行 elk-diagnostics，直接連線 Elasticsearch 產出報告。"
+    },
+    {
+      "term": "Bundle",
+      "definition": "採集腳本保存的原始 API 回應、manifest 與端點狀態，可帶到另一台機器離線分析。"
+    },
+    {
+      "term": "check",
+      "definition": "全面巡檢指令；可走 Live 直連，也可用 --from-bundle 讀採集包。"
+    },
+    {
+      "term": "diagnose",
+      "definition": "針對單一症狀跑診斷樹；目前以 Live 直連為入口。"
+    },
+    {
+      "term": "--services",
+      "definition": "collect.sh 的採集模組選擇，可含 es、host、kibana、logstash。預設為 es。"
+    },
+    {
+      "term": "UNKNOWN",
+      "definition": "證據不足以判定，不是健康，也不能當成 PASS。"
+    },
+    {
+      "term": "metrics.ndjson",
+      "definition": "check 可另存的版本化觀測資料，適合累積比較；單次檔案本身不是完整時間序列。"
+    }
+  ],
+  "teachBack": [
+    {
+      "question": "現場不允許執行未知 binary，第一步用什麼？",
+      "answer": "選 Route A，在現場執行 collect.sh；分析端解壓 Bundle 後使用 check --from-bundle。"
+    },
+    {
+      "question": "為什麼 .tar.gz 存在，還不能直接交付？",
+      "answer": "還要確認 _manifest.json、_status.txt、version.json，並閱讀端點 HTTP 狀態；403、timeout 或缺檔都必須保留。"
+    },
+    {
+      "question": "什麼時候用 diagnose --symptom？",
+      "answer": "有 Live 直連且要追單一症狀時使用；只有 Bundle 時，先用 check --from-bundle，不要假設 diagnose 支援離線 Bundle。"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "repo-scope",
+      "status": "verified",
+      "label": "README 的工具與資料邊界",
+      "note": "README 說明工具可直接連線或先產生 Bundle，且現行範圍是 Elasticsearch 唯讀健康檢查；同時提醒 Bundle 可能包含 index、node、host 與 mapping 欄位名稱。",
+      "path": "README.md"
+    },
+    {
+      "id": "route-choice",
+      "status": "verified",
+      "label": "使用手冊的 Route A／B 分流",
+      "note": "交付使用手冊把 Route A 定為主要路線：使用者只執行 collect.sh；Route B 則由獲准分析機直連 ES。手冊要求每次只選一條路線。",
+      "path": "docs/交付/使用手冊.md"
+    },
+    {
+      "id": "route-a-manual",
+      "status": "verified",
+      "label": "Route A 採集與交付手冊",
+      "note": "Route A 手冊定義前置檢查、認證／TLS、expected-es-nodes、collect.sh、_status.txt、Bundle 審閱、tar.gz 交付與分析端 check --from-bundle。",
+      "path": "docs/交付/路線A-採集操作手冊.md"
+    },
+    {
+      "id": "route-b-manual",
+      "status": "verified",
+      "label": "Route B 直連與報告手冊",
+      "note": "Route B 手冊定義 binary、Live check、HTML 與 metrics 輸出、結束碼，以及連線、認證、TLS 與單次快照限制。",
+      "path": "docs/交付/路線B-直連操作手冊.md"
+    },
+    {
+      "id": "readonly-api",
+      "status": "verified",
+      "label": "API 呼叫清單",
+      "note": "API 清單記錄本工具只送出 HTTP GET、不讀取 document 內容；mapping、node 與服務 API 仍可能帶回名稱、角色、IP 或 runtime metadata。",
+      "path": "docs/交付/API清單.md"
+    },
+    {
+      "id": "collect-sh",
+      "status": "verified",
+      "label": "collect.sh 的實際入口",
+      "note": "腳本的 help 與實作定義 --services、URL、CA、認證、Host／Kibana／Logstash 清單、Logstash 取樣間隔、輸出目錄，以及 _manifest.json／_status.txt。",
+      "path": "collect.sh"
+    },
+    {
+      "id": "collect-script-cli",
+      "status": "verified",
+      "label": "collect-script 產生器",
+      "note": "CLI 具有 collect-script 子指令，可輸出不需安裝本工具的 POSIX/curl 採集腳本；腳本在使用者環境執行，之後由分析端以 check --from-bundle 讀取。",
+      "path": "cmd/elk-diagnostics/collect_script.go"
+    },
+    {
+      "id": "bundle-spec",
+      "status": "verified",
+      "label": "採集包格式規格",
+      "note": "採集包規格把採集與判斷分離，schema v2 以 _manifest.json、_status.txt 與服務目錄保存可追溯輸入，分析端使用共用診斷邏輯。",
+      "path": "docs/內部/規格/採集包規格.md"
+    },
+    {
+      "id": "cli-check",
+      "status": "verified",
+      "label": "check 的輸入分支",
+      "note": "check 程式碼明確區分 Live、--from-file 與 --from-bundle；Bundle 分支是完整離線分析入口，並可另存 metrics。",
+      "path": "cmd/elk-diagnostics/check.go"
+    },
+    {
+      "id": "cli-diagnose",
+      "status": "verified",
+      "label": "diagnose 的症狀入口",
+      "note": "diagnose 程式碼目前支援 red-cluster、write-bottleneck、high-heap、ingest-lag、ilm-stuck，並在執行時建立 Live client；沒有 Bundle 輸入旗標。",
+      "path": "cmd/elk-diagnostics/diagnose.go"
+    },
+    {
+      "id": "cli-flags",
+      "status": "verified",
+      "label": "命令列旗標與結束碼",
+      "note": "命令列規格定義 output、output-file、metrics-output、expected nodes、services 與 exit code 對映。",
+      "path": "docs/內部/規格/命令列規格.md"
+    },
+    {
+      "id": "report-spec",
+      "status": "verified",
+      "label": "報告狀態與限制",
+      "note": "報告規格定義 DiagnosticResult、critical／warning／unknown／pass 優先序，以及 JSON、離線 HTML、text 與單次快照限制。",
+      "path": "docs/內部/規格/診斷報告規格.md"
+    },
+    {
+      "id": "verification-boundary",
+      "status": "verified",
+      "label": "目前驗證狀態",
+      "note": "驗證狀態文件區分已實作、已自動化驗證與仍需真機確認的範圍，並提醒單次快照不能取代時間序列。",
+      "path": "docs/內部/驗證狀態.md"
+    },
+    {
+      "id": "analogy-routes",
+      "status": "analogy",
+      "label": "裝箱與開箱比喻",
+      "note": "用裝箱／開箱幫助第一次使用者理解 Route A 與 Route B 的責任分界；這個比喻不支持任何實作、效能或安全結論。"
+    },
+    {
+      "id": "scope-inference",
+      "status": "inferred",
+      "label": "採集模組的操作判斷",
+      "note": "因選配服務只有在 --services 指定時才採集，因此本指南建議依本次問題涉及的服務決定是否加入模組；這是範圍建議，不是診斷準確度保證。"
+    }
+  ]
+}

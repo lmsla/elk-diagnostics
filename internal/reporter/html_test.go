@@ -108,6 +108,90 @@ func TestHTML_NodeContext(t *testing.T) {
 	}
 }
 
+func TestHTML_CurrentStateSection(t *testing.T) {
+	expected, responding, missing := 3, 2, 1
+	active, total, unassigned, maxPerNode, capacity, capacityNodes, remaining, disk := 20, 22, 2, 1000, 2000, 2, 1978, 81
+	capacityUsedPercent := 1.1
+	esBTotal, esBUsed, esBAvailable := int64(1000), int64(810), int64(190)
+	r := sampleReport()
+	r.NodeContext = &nodecontext.Snapshot{}
+	r.CurrentState = &diagnostic.CurrentState{
+		SnapshotNote: "本區塊為單次採集快照，不代表長期監控結論",
+		Health:       diagnostic.CurrentHealth{Known: true, Status: "yellow", Source: "_cluster/health"},
+		Nodes:        diagnostic.CurrentNodes{Expected: &expected, Responding: &responding, Missing: &missing, MissingKnown: true, MissingNames: []string{"es-c"}},
+		Shards:       diagnostic.CurrentShards{Total: &total, Active: &active, Unassigned: &unassigned, MaxPerNode: &maxPerNode, Capacity: &capacity, CapacityNodeCount: &capacityNodes, Remaining: &remaining, CapacityUsedPercent: &capacityUsedPercent, MaxTotal: &capacity},
+		Disk:         diagnostic.CurrentDisk{Known: true, NodeCount: 1, UsedBytes: &esBUsed, AvailableBytes: &esBAvailable, TotalBytes: &esBTotal, UsedPercent: &disk, Nodes: []diagnostic.CurrentDiskNode{{Name: "es-b", UsedPercent: &disk, UsedBytes: &esBUsed, AvailableBytes: &esBAvailable, TotalBytes: &esBTotal}}},
+		Master:       diagnostic.CurrentMaster{EligibleCount: &responding, EligibleNames: []string{"es-a"}},
+		ILM:          diagnostic.CurrentService{Known: true, Status: "running"},
+		License:      diagnostic.CurrentLicense{Known: true, Status: "active", Type: "trial"},
+		Kibana:       &diagnostic.CurrentServiceInstances{Known: true, Total: &responding, Available: &responding, Versions: []string{"9.3.0"}},
+		Logstash:     &diagnostic.CurrentServiceInstances{Known: true, Total: &responding, NotApplicable: &missing},
+	}
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		`id="current-state"`, "目前叢集狀態摘要", "Cluster Snapshot", "單次採集快照",
+		"預期節點", "缺失：es-c", "Shard 容量",
+		"目前使用／叢集可用上限", "尚可新增", "cluster.max_shards_per_node", "81%", "磁碟容量", "使用率", "es-b", "已用", "可用", "技術明細", "Kibana", "Logstash", "版本", "9.3.0", "降級／不可用", "Elasticsearch 節點",
+		"計算：（通過＋資訊＋略過）÷ 全部項目", "50%", "3 / 6 項",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("HTML 摘要區塊缺少 %q", want)
+		}
+	}
+	currentStateStart := strings.Index(s, `id="current-state"`)
+	currentStateEnd := strings.Index(s[currentStateStart:], `id="section-node-context"`)
+	if currentStateStart < 0 || currentStateEnd < 0 || strings.Contains(s[currentStateStart:currentStateStart+currentStateEnd], "ES health") {
+		t.Error("目前叢集狀態摘要不應包含 ES health 卡")
+	}
+	if strings.Contains(s, "Master 節點") {
+		t.Error("目前叢集狀態摘要不應重複呈現 Master 節點卡")
+	}
+	if strings.Index(s, `id="current-state"`) > strings.Index(s, `id="section-node-context"`) {
+		t.Error("目前叢集狀態摘要應排在節點概況之前")
+	}
+}
+
+func TestHTML_CurrentStateKeepsServiceSlotsWhenNotCollected(t *testing.T) {
+	expected, responding := 3, 3
+	r := sampleReport()
+	r.NodeContext = &nodecontext.Snapshot{}
+	r.CurrentState = &diagnostic.CurrentState{
+		SnapshotNote: "本區塊為單次採集快照，不代表長期監控結論",
+		Nodes:        diagnostic.CurrentNodes{Expected: &expected, Responding: &responding},
+		ILM:          diagnostic.CurrentService{Known: true, Status: "running"},
+		License:      diagnostic.CurrentLicense{Known: true, Status: "active"},
+	}
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	start := strings.Index(s, `id="current-state"`)
+	end := strings.Index(s[start:], `id="section-node-context"`)
+	if start < 0 || end < 0 {
+		t.Fatal("找不到目前叢集狀態摘要")
+	}
+	section := s[start : start+end]
+	if got := strings.Count(section, "current-state-placeholder"); got != 2 {
+		t.Fatalf("未採集 Kibana／Logstash 時應保留兩個空白欄位，got %d", got)
+	}
+	for _, want := range []string{">Elasticsearch 節點</h3>", ">核心服務</h3>", ">磁碟容量</h3>", ">Shard 容量</h3>"} {
+		if !strings.Contains(section, want) {
+			t.Errorf("固定摘要版面缺少 %q", want)
+		}
+	}
+	if strings.Contains(section, "不適用") {
+		t.Error("摘要區塊不應顯示不適用")
+	}
+	if strings.Contains(section, ">Kibana</h3>") || strings.Contains(section, ">Logstash</h3>") {
+		t.Error("未採集的服務不應顯示服務卡內容")
+	}
+}
+
 func TestHTML_ReportHeaderSeparatesSummaryAndTechnicalMetadata(t *testing.T) {
 	r := sampleReport()
 	r.Meta.GeneratedAt = "2026-07-30T17:24:32Z"

@@ -77,6 +77,12 @@ type Client struct {
 	nodeResourceStatsBody []byte
 	nodeResourceStatsErr  error
 
+	// clusterSettings 同一輪 check 會同時讀 allocation.enable 與 shard limit；共用一次
+	// _cluster/settings 回應，避免重複傳輸同一份大型 defaults 設定。
+	clusterSettingsOnce sync.Once
+	clusterSettingsBody []byte
+	clusterSettingsErr  error
+
 	// fetch 是取得單一端點原始 bytes 的傳輸層：連線模式為 HTTP，bundle 模式為讀檔。
 	// 抽成欄位是為了讓兩種模式共用 get() 的重試與錯誤語意——所有固定端點、
 	// 所有 analyzer 的行為都完全一致，差別只在 bytes 從哪來。
@@ -88,6 +94,13 @@ func (c *Client) nodeResourceStats() ([]byte, error) {
 		c.nodeResourceStatsBody, c.nodeResourceStatsErr = c.get(EpNodesResourceStats)
 	})
 	return c.nodeResourceStatsBody, c.nodeResourceStatsErr
+}
+
+func (c *Client) clusterSettings() ([]byte, error) {
+	c.clusterSettingsOnce.Do(func() {
+		c.clusterSettingsBody, c.clusterSettingsErr = c.get(EpClusterSettings)
+	})
+	return c.clusterSettingsBody, c.clusterSettingsErr
 }
 
 // retryDelay 是重試間的固定延遲（測試可覆寫以避免實際等待）。

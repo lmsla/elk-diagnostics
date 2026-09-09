@@ -1,20 +1,71 @@
 package collector
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strings"
+)
+
+// ClusterHealth 是 GET /_cluster/health 的結構化快照。
+// pointer 欄位保留「回應缺少欄位」與「實際值為 0」的差異。
+type ClusterHealth struct {
+	Status                  string
+	NumberOfNodes           *int
+	NumberOfDataNodes       *int
+	ActivePrimaryShards     *int
+	ActiveShards            *int
+	RelocatingShards        *int
+	InitializingShards      *int
+	UnassignedShards        *int
+	UnassignedPrimaryShards *int
+	ActiveShardsPercent     *float64
+}
+
+// ParseClusterHealth 解析 GET /_cluster/health 回應，供連線與 bundle 模式共用。
+func ParseClusterHealth(b []byte) (ClusterHealth, error) {
+	var raw struct {
+		Status                  string   `json:"status"`
+		NumberOfNodes           *int     `json:"number_of_nodes"`
+		NumberOfDataNodes       *int     `json:"number_of_data_nodes"`
+		ActivePrimaryShards     *int     `json:"active_primary_shards"`
+		ActiveShards            *int     `json:"active_shards"`
+		RelocatingShards        *int     `json:"relocating_shards"`
+		InitializingShards      *int     `json:"initializing_shards"`
+		UnassignedShards        *int     `json:"unassigned_shards"`
+		UnassignedPrimaryShards *int     `json:"unassigned_primary_shards"`
+		ActiveShardsPercent     *float64 `json:"active_shards_percent_as_number"`
+	}
+	if err := json.Unmarshal(b, &raw); err != nil {
+		return ClusterHealth{}, err
+	}
+	return ClusterHealth{
+		Status:        strings.ToLower(strings.TrimSpace(raw.Status)),
+		NumberOfNodes: nonNegativeInt(raw.NumberOfNodes), NumberOfDataNodes: nonNegativeInt(raw.NumberOfDataNodes),
+		ActivePrimaryShards: nonNegativeInt(raw.ActivePrimaryShards), ActiveShards: nonNegativeInt(raw.ActiveShards),
+		RelocatingShards: nonNegativeInt(raw.RelocatingShards), InitializingShards: nonNegativeInt(raw.InitializingShards),
+		UnassignedShards: nonNegativeInt(raw.UnassignedShards), UnassignedPrimaryShards: nonNegativeInt(raw.UnassignedPrimaryShards),
+		ActiveShardsPercent: nonNegativeFloat(raw.ActiveShardsPercent),
+	}, nil
+}
+
+// ClusterHealth 取並解析 GET /_cluster/health。
+func (c *Client) ClusterHealth() (ClusterHealth, error) {
+	b, err := c.get(EpClusterHealth)
+	if err != nil {
+		return ClusterHealth{}, err
+	}
+	return ParseClusterHealth(b)
+}
 
 // ClusterNodeCounts 取 GET _cluster/health 的節點數（#30 用，佐證叢集規模）。
 func (c *Client) ClusterNodeCounts() (numberOfNodes int, err error) {
-	b, err := c.get(EpClusterHealth)
+	health, err := c.ClusterHealth()
 	if err != nil {
 		return 0, err
 	}
-	var r struct {
-		NumberOfNodes int `json:"number_of_nodes"`
+	if health.NumberOfNodes == nil {
+		return 0, nil
 	}
-	if err := json.Unmarshal(b, &r); err != nil {
-		return 0, err
-	}
-	return r.NumberOfNodes, nil
+	return *health.NumberOfNodes, nil
 }
 
 // dataTiers 是 data_stream_lifecycle / ILM 常用的標準 tier role 名稱。

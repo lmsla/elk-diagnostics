@@ -106,6 +106,104 @@ type Summary struct {
 	Unknown  int `json:"unknown"`
 }
 
+// CurrentState 是報告產生當下的叢集摘要，不是診斷卡。
+// 指標使用 pointer／Known 區分「確實是 0」與「本次沒有足夠資料」，避免摘要製造假綠燈。
+type CurrentState struct {
+	SnapshotNote string                   `json:"snapshot_note"`
+	Health       CurrentHealth            `json:"health"`
+	Nodes        CurrentNodes             `json:"nodes"`
+	Shards       CurrentShards            `json:"shards"`
+	Disk         CurrentDisk              `json:"disk"`
+	Master       CurrentMaster            `json:"master"`
+	ILM          CurrentService           `json:"ilm"`
+	License      CurrentLicense           `json:"license"`
+	Kibana       *CurrentServiceInstances `json:"kibana,omitempty"`
+	Logstash     *CurrentServiceInstances `json:"logstash,omitempty"`
+}
+
+type CurrentHealth struct {
+	Known  bool   `json:"known"`
+	Status string `json:"status"`
+	Source string `json:"source,omitempty"`
+}
+
+type CurrentNodes struct {
+	Expected     *int     `json:"expected,omitempty"`
+	Responding   *int     `json:"responding,omitempty"`
+	Missing      *int     `json:"missing,omitempty"`
+	MissingKnown bool     `json:"missing_known"`
+	MissingNames []string `json:"missing_names,omitempty"`
+}
+
+type CurrentShards struct {
+	Total             *int     `json:"total,omitempty"`
+	Active            *int     `json:"active,omitempty"`
+	ActivePrimary     *int     `json:"active_primary,omitempty"`
+	Unassigned        *int     `json:"unassigned,omitempty"`
+	UnassignedPrimary *int     `json:"unassigned_primary,omitempty"`
+	Relocating        *int     `json:"relocating,omitempty"`
+	Initializing      *int     `json:"initializing,omitempty"`
+	ActivePercent     *float64 `json:"active_percent,omitempty"`
+	MaxPerNode        *int     `json:"max_per_node,omitempty"`
+	MaxPerFrozenNode  *int     `json:"max_per_frozen_node,omitempty"`
+	MaxTotal          *int     `json:"max_total,omitempty"`
+	// Capacity 是依本次回應的非 frozen data node 數量計算出的叢集容量。
+	// MaxTotal 保留作為舊版欄位相容別名；新呈現應使用 Capacity。
+	Capacity            *int     `json:"capacity,omitempty"`
+	CapacityNodeCount   *int     `json:"capacity_node_count,omitempty"`
+	Remaining           *int     `json:"remaining,omitempty"`
+	CapacityUsedPercent *float64 `json:"capacity_used_percent,omitempty"`
+}
+
+type CurrentDiskNode struct {
+	Name           string `json:"name"`
+	Missing        bool   `json:"missing,omitempty"`
+	UsedPercent    *int   `json:"used_percent,omitempty"`
+	UsedBytes      *int64 `json:"used_bytes,omitempty"`
+	AvailableBytes *int64 `json:"available_bytes,omitempty"`
+	TotalBytes     *int64 `json:"total_bytes,omitempty"`
+}
+
+type CurrentDisk struct {
+	Known          bool              `json:"known"`
+	NodeCount      int               `json:"node_count,omitempty"`
+	Nodes          []CurrentDiskNode `json:"nodes,omitempty"`
+	UsedBytes      *int64            `json:"used_bytes,omitempty"`
+	AvailableBytes *int64            `json:"available_bytes,omitempty"`
+	TotalBytes     *int64            `json:"total_bytes,omitempty"`
+	UsedPercent    *int              `json:"used_percent,omitempty"`
+	// MaxUsedPercent / MaxNode 保留作為舊版欄位相容別名；新呈現列出每個節點。
+	MaxUsedPercent *int   `json:"max_used_percent,omitempty"`
+	MaxNode        string `json:"max_node,omitempty"`
+}
+
+type CurrentMaster struct {
+	EligibleCount *int     `json:"eligible_count,omitempty"`
+	EligibleNames []string `json:"eligible_names,omitempty"`
+}
+
+type CurrentService struct {
+	Known  bool   `json:"known"`
+	Status string `json:"status,omitempty"`
+}
+
+type CurrentLicense struct {
+	Known  bool   `json:"known"`
+	Status string `json:"status,omitempty"`
+	Type   string `json:"type,omitempty"`
+}
+
+type CurrentServiceInstances struct {
+	Known         bool     `json:"known"`
+	Total         *int     `json:"total,omitempty"`
+	Available     *int     `json:"available,omitempty"`
+	Degraded      *int     `json:"degraded,omitempty"`
+	Unavailable   *int     `json:"unavailable,omitempty"`
+	Unknown       *int     `json:"unknown,omitempty"`
+	NotApplicable *int     `json:"not_applicable,omitempty"`
+	Versions      []string `json:"versions,omitempty"`
+}
+
 // SymptomHint 是 check 巡檢時偵測到特定症狀特徵組合後的反向觸發提示
 // （見 症狀診斷規格 §3），非診斷結論，僅建議下一步指令。
 type SymptomHint struct {
@@ -119,6 +217,7 @@ type Report struct {
 	Summary           Summary               `json:"summary"`
 	VersionNotice     string                `json:"version_notice,omitempty"` // 見 診斷報告規格 §3；目標版本不受支援時的全域提示（見 buildReport 呼叫端設值）
 	Results           []Result              `json:"results"`
+	CurrentState      *CurrentState         `json:"current_state,omitempty"`
 	NodeContext       *nodecontext.Snapshot `json:"node_context,omitempty"`
 	SuggestedSymptoms []SymptomHint         `json:"suggested_symptoms,omitempty"`
 	Disclaimer        string                `json:"disclaimer"`

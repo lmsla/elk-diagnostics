@@ -57,6 +57,33 @@ func TestClusterAllocationEnable(t *testing.T) {
 	})
 }
 
+func TestClusterShardLimitsAndSettingsAreReadOnce(t *testing.T) {
+	body := `{"persistent":{"cluster.max_shards_per_node":"1200"},"transient":{},"defaults":{"cluster.max_shards_per_node":1000,"cluster.max_shards_per_node.frozen":"3000"}}`
+	settingsRequests := 0
+	c := newTestClient(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/" {
+			w.Write([]byte(versionBody))
+			return
+		}
+		settingsRequests++
+		w.Write([]byte(body))
+	})
+	allocation, err := c.ClusterAllocationEnable()
+	if err != nil || allocation != "all" {
+		t.Fatalf("ClusterAllocationEnable() = %q, %v", allocation, err)
+	}
+	limits, err := c.ClusterShardLimits()
+	if err != nil {
+		t.Fatalf("ClusterShardLimits() 失敗: %v", err)
+	}
+	if limits.MaxShardsPerNode == nil || *limits.MaxShardsPerNode != 1200 || limits.MaxShardsPerNodeFrozen == nil || *limits.MaxShardsPerNodeFrozen != 3000 {
+		t.Fatalf("limits = %+v", limits)
+	}
+	if settingsRequests != 1 {
+		t.Fatalf("_cluster/settings requests = %d, want 1", settingsRequests)
+	}
+}
+
 const indexSettingsBlockedBody = `{
   "blocked-test": {
     "settings": {"index.routing.allocation.enable": "none"},

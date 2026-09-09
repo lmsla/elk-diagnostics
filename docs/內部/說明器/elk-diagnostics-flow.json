@@ -1,0 +1,666 @@
+{
+  "version": 1,
+  "language": "zh-TW",
+  "renderProfile": "guide",
+  "mode": "module",
+  "modeData": {
+    "entryNodeId": "cli-check",
+    "outputNodeIds": [
+      "report-json",
+      "report-html",
+      "exit-code"
+    ],
+    "sourceEvidenceIds": [
+      "repo-readme",
+      "spec-overview",
+      "cli-entry",
+      "cli-spec",
+      "check-flow",
+      "diagnose-flow",
+      "bundle-contract",
+      "client-transport",
+      "resilience-contract",
+      "report-contract",
+      "symptom-contract",
+      "verification-state"
+    ]
+  },
+  "title": "跟著一份 ELK 證據包走完診斷流程",
+  "summary": "跟著一次 check 輸入，看資料如何走 Live 或 Bundle 路徑，經過 health_report 與補充 API 分析，最後成為 JSON、離線 HTML 與 exit code。",
+  "truthLadder": {
+    "analogy": "把流程想成分流檢驗站：先把一箱觀測資料送進來，再按固定檢查表分流，最後貼上 PASS、WARNING 或 UNKNOWN 標籤。這只是說明採集、判斷、報告的順序，不是系統真的有輸送帶。",
+    "technical": "elk-diagnostics 是一次性唯讀 CLI：從 Live HTTP 或 Bundle 檔案取得 Elasticsearch 與選配服務證據，優先解析 ES 8.4+ 的 _health_report，再執行 raw API 補洞與 analyzer，彙整為 DiagnosticResult，輸出 JSON、離線 HTML 或 text 並回傳 exit code。",
+    "caveat": "流程圖描述目前程式與規格的實作邊界，不是根因保證。ES <8.4 的 A 類會 skipped；缺檔、403、逾時或 partial coverage 會是 unknown；單次快照無法取代時間序列。真機狀態以 docs/內部/驗證狀態.md 為準，採集包外傳前也要人工審閱可能暴露的 index、node、host、mapping 欄位名稱。"
+  },
+  "scenes": [
+    {
+      "id": "entry-route",
+      "title": "先決定要全面巡檢，還是追一個症狀",
+      "summary": "CLI 先分流診斷範圍，再決定這次資料來自即時叢集或既有採集包。",
+      "evidence": [
+        "cli-entry",
+        "cli-spec",
+        "check-flow",
+        "diagnose-flow",
+        "symptom-contract",
+        "analogy-station"
+      ],
+      "nodes": [
+        {
+          "id": "cli-check",
+          "kind": "actor",
+          "label": "CLI 入口",
+          "detail": "操作人執行 elk-diagnostics check 做全面巡檢；也可改用 diagnose --symptom 進入單一症狀樹。",
+          "evidence": [
+            "cli-entry",
+            "check-flow",
+            "diagnose-flow"
+          ]
+        },
+        {
+          "id": "scope-decision",
+          "kind": "decision",
+          "label": "選擇診斷範圍",
+          "detail": "check 收斂所有適用項目；diagnose 只跑 red-cluster、write-bottleneck、high-heap、ingest-lag 或 ilm-stuck。",
+          "evidence": [
+            "cli-spec",
+            "diagnose-flow",
+            "symptom-contract"
+          ]
+        },
+        {
+          "id": "symptom-tree",
+          "kind": "process",
+          "label": "症狀診斷樹",
+          "detail": "依因果順序重組既有 analyzer，最後用 overall_status 表示症狀成立、疑似或未由此樹解釋。",
+          "evidence": [
+            "symptom-contract",
+            "report-contract"
+          ]
+        },
+        {
+          "id": "route-decision",
+          "kind": "decision",
+          "label": "資料從哪裡來？",
+          "detail": "Live 直接連 ES；--from-bundle 在分析端讀既有採集包；後續判斷邏輯保持共用。",
+          "evidence": [
+            "bundle-contract",
+            "check-flow"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "start-scope",
+          "from": "cli-check",
+          "to": "scope-decision",
+          "label": "執行"
+        },
+        {
+          "id": "focus-symptom",
+          "from": "scope-decision",
+          "to": "symptom-tree",
+          "label": "指定 --symptom"
+        },
+        {
+          "id": "select-input",
+          "from": "scope-decision",
+          "to": "route-decision",
+          "label": "執行 check"
+        }
+      ]
+    },
+    {
+      "id": "collect-evidence",
+      "title": "只把必要的唯讀證據帶進來",
+      "summary": "同一套分析可以接收 Live HTTP 回應，也可以接收使用者先審閱後產生的 Bundle。",
+      "evidence": [
+        "bundle-contract",
+        "client-transport",
+        "resilience-contract",
+        "collect-script"
+      ],
+      "nodes": [
+        {
+          "id": "live-client",
+          "kind": "actor",
+          "label": "Live collector",
+          "detail": "以設定、flag 或環境變數建立 HTTP client；初始 GET / 取得 cluster name、UUID 與版本。",
+          "evidence": [
+            "cli-entry",
+            "client-transport"
+          ],
+          "failure": {
+            "impact": "無法辨識目標叢集，不能產出有意義的報告。",
+            "symptom": "所有 host 不可達，或初始認證／TLS 握手失敗。",
+            "fallback": "檢查 host、認證與 CA；也可先建立 Bundle，再在分析端離線執行。"
+          }
+        },
+        {
+          "id": "bundle-script",
+          "kind": "actor",
+          "label": "collect.sh",
+          "detail": "使用者端只執行可審閱的 POSIX/curl 採集腳本，保存原始回應與狀態碼。",
+          "evidence": [
+            "bundle-contract",
+            "collect-script"
+          ]
+        },
+        {
+          "id": "bundle-files",
+          "kind": "store",
+          "label": "Bundle 證據包",
+          "detail": "schema v2 使用 _manifest.json、_status.txt 與 elasticsearch/ 原始回應；選配服務目錄按要求才建立。",
+          "evidence": [
+            "bundle-contract"
+          ],
+          "failure": {
+            "impact": "對應診斷失去資料，無法判定。",
+            "symptom": "端點缺檔、回應是 403 或錯誤 body，或狀態清單遺失。",
+            "fallback": "補採缺少的端點並保留狀態碼；未補齊時維持 unknown，不得當成 pass。"
+          }
+        },
+        {
+          "id": "client-abstraction",
+          "kind": "process",
+          "label": "共同 Client",
+          "detail": "Live 從 HTTP 取 bytes，Bundle 從檔案取 bytes；上層重試、4xx 語意與 analyzer 不分叉。",
+          "evidence": [
+            "bundle-contract",
+            "client-transport"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "collect-live",
+          "from": "live-client",
+          "to": "client-abstraction",
+          "label": "HTTP"
+        },
+        {
+          "id": "collect-script",
+          "from": "bundle-script",
+          "to": "bundle-files",
+          "label": "保存"
+        },
+        {
+          "id": "load-bundle",
+          "from": "bundle-files",
+          "to": "client-abstraction",
+          "label": "讀檔"
+        }
+      ]
+    },
+    {
+      "id": "prioritize-health",
+      "title": "先用 health_report 打底，再補它沒有的洞",
+      "summary": "版本與資料可得性決定哪些 indicator 能用；失敗的診斷仍要留下 unknown，而不是消失。",
+      "evidence": [
+        "spec-overview",
+        "cli-spec",
+        "check-flow",
+        "client-transport",
+        "resilience-contract",
+        "report-contract"
+      ],
+      "nodes": [
+        {
+          "id": "version-gate",
+          "kind": "decision",
+          "label": "檢查 ES 版本",
+          "detail": "ES 8.4+ 可用 _health_report；低於 8.4 的 A 類標 skipped，B/C 仍跑並加 version warning。",
+          "evidence": [
+            "spec-overview",
+            "cli-spec",
+            "check-flow"
+          ]
+        },
+        {
+          "id": "health-report",
+          "kind": "store",
+          "label": "_health_report",
+          "detail": "作為 A 類主來源，解析 cluster health、disk、ILM、shards capacity 等 indicator。",
+          "evidence": [
+            "spec-overview",
+            "check-flow"
+          ],
+          "failure": {
+            "impact": "A 類診斷失去共同基座，部分健康結論不能判定。",
+            "symptom": "端點逾時、回 4xx/5xx，或 Bundle 缺少 health_report.json。",
+            "fallback": "A 類浮出 unknown；B/C 類照常執行，不讓一個缺檔拖垮整份報告。"
+          }
+        },
+        {
+          "id": "raw-api",
+          "kind": "process",
+          "label": "Raw API 補洞",
+          "detail": "對 thread pool、JVM、breaker、CPU、mapping、ingest 等面向取對應唯讀 API；B 類再做細化。",
+          "evidence": [
+            "spec-overview",
+            "check-flow"
+          ],
+          "failure": {
+            "impact": "該加深診斷無法判定，但其他診斷仍可繼續。",
+            "symptom": "個別端點 timeout、403 或 404。",
+            "fallback": "把該項保留為 unknown，記下錯誤原因，交由人工補查。"
+          }
+        },
+        {
+          "id": "missing-evidence",
+          "kind": "event",
+          "label": "缺證據也要留下記號",
+          "detail": "缺檔、權限、逾時或 partial coverage 不被當 pass；報告明示 unknown 或 skipped。",
+          "evidence": [
+            "resilience-contract",
+            "report-contract",
+            "verification-state"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "version-health",
+          "from": "version-gate",
+          "to": "health-report",
+          "label": "ES >= 8.4"
+        },
+        {
+          "id": "version-raw",
+          "from": "version-gate",
+          "to": "raw-api",
+          "label": "低版本／補洞"
+        },
+        {
+          "id": "health-raw",
+          "from": "health-report",
+          "to": "raw-api",
+          "label": "補充"
+        },
+        {
+          "id": "raw-failure",
+          "from": "raw-api",
+          "to": "missing-evidence",
+          "label": "失敗仍記錄"
+        }
+      ]
+    },
+    {
+      "id": "normalize-services",
+      "title": "把不同端點收斂成同一種診斷語言",
+      "summary": "analyzer 不直接印文字，而是把健康、節點與選配服務證據轉成統一結果，再依嚴重度收斂。",
+      "evidence": [
+        "check-flow",
+        "spec-overview",
+        "report-contract",
+        "bundle-contract",
+        "verification-state"
+      ],
+      "nodes": [
+        {
+          "id": "analyzer-rules",
+          "kind": "process",
+          "label": "Analyzer + rules",
+          "detail": "各 analyzer 只回傳統一 DiagnosticResult；規則與資料來源解耦。",
+          "evidence": [
+            "report-contract",
+            "spec-overview"
+          ]
+        },
+        {
+          "id": "node-context",
+          "kind": "store",
+          "label": "Node Context",
+          "detail": "把 Nodes Stats/Info 的 OS、process、filesystem、JVM 與 coverage 放入報告；預期節點清單可揭露採集前已離線節點。",
+          "evidence": [
+            "check-flow",
+            "bundle-contract"
+          ],
+          "failure": {
+            "impact": "節點環境與完整性判讀降低可信度。",
+            "symptom": "Nodes API partial 或不可用，部分節點沒有回應。",
+            "fallback": "只呈現已回應資料，相關結果標 unknown；不得用在線節點推論全叢集正常。"
+          }
+        },
+        {
+          "id": "optional-services",
+          "kind": "process",
+          "label": "Kibana／Logstash（選配）",
+          "detail": "Bundle 要求或確實存在服務資料時才加入各自診斷；Host 與設定類資料仍保留為原始證據。",
+          "evidence": [
+            "check-flow",
+            "bundle-contract",
+            "repo-readme"
+          ]
+        },
+        {
+          "id": "status-coalesce",
+          "kind": "decision",
+          "label": "收斂整體狀態",
+          "detail": "critical > warning > unknown > pass；info／skipped 獨立呈現，unknown 絕不默認成 pass。",
+          "evidence": [
+            "report-contract"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "analyze-nodes",
+          "from": "analyzer-rules",
+          "to": "node-context",
+          "label": "補入節點"
+        },
+        {
+          "id": "analyze-services",
+          "from": "analyzer-rules",
+          "to": "optional-services",
+          "label": "分析選配"
+        },
+        {
+          "id": "nodes-status",
+          "from": "node-context",
+          "to": "status-coalesce",
+          "label": "納入判定"
+        },
+        {
+          "id": "services-status",
+          "from": "optional-services",
+          "to": "status-coalesce",
+          "label": "納入判定"
+        }
+      ]
+    },
+    {
+      "id": "report-boundary",
+      "title": "輸出可讀報告，也留下不能假裝的界線",
+      "summary": "同一組 DiagnosticResult 同時服務人與機器；exit code 讓排程判斷，限制則留給人工佐證。",
+      "evidence": [
+        "report-contract",
+        "cli-spec",
+        "verification-state",
+        "repo-readme"
+      ],
+      "nodes": [
+        {
+          "id": "diagnostic-result",
+          "kind": "event",
+          "label": "DiagnosticResult 集合",
+          "detail": "每項帶 status、conclusion、findings、根因假設、唯讀建議、source 與額外條件。",
+          "evidence": [
+            "report-contract"
+          ]
+        },
+        {
+          "id": "report-json",
+          "kind": "store",
+          "label": "JSON 報告",
+          "detail": "機器可再處理的穩定契約，保留診斷結果、來源、狀態與 metadata。",
+          "evidence": [
+            "report-contract"
+          ]
+        },
+        {
+          "id": "report-html",
+          "kind": "store",
+          "label": "離線 HTML 報告",
+          "detail": "單檔、CSS/JS 內嵌，供人閱讀；可離線開啟，但仍只是本機產生的 artifact。",
+          "evidence": [
+            "report-contract",
+            "repo-readme"
+          ]
+        },
+        {
+          "id": "exit-code",
+          "kind": "event",
+          "label": "結束碼",
+          "detail": "0 pass/info/skipped、1 warning、2 critical、3 unknown；設定／連線／內部錯誤為 10/11/20。",
+          "evidence": [
+            "cli-spec",
+            "report-contract"
+          ]
+        },
+        {
+          "id": "human-followup",
+          "kind": "actor",
+          "label": "人工佐證與決策",
+          "detail": "把單次快照與日誌、時間序列及業務脈絡合看；修復建議只供人工確認後執行。",
+          "evidence": [
+            "report-contract",
+            "verification-state"
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "id": "result-json",
+          "from": "diagnostic-result",
+          "to": "report-json",
+          "label": "機器讀"
+        },
+        {
+          "id": "result-html",
+          "from": "diagnostic-result",
+          "to": "report-html",
+          "label": "人類讀"
+        },
+        {
+          "id": "result-exit",
+          "from": "diagnostic-result",
+          "to": "exit-code",
+          "label": "回傳"
+        },
+        {
+          "id": "html-followup",
+          "from": "report-html",
+          "to": "human-followup",
+          "label": "補佐證"
+        }
+      ]
+    }
+  ],
+  "trace": [
+    {
+      "nodeId": "cli-check",
+      "label": "操作人啟動 check；以下以 Route B Bundle 為例"
+    },
+    {
+      "nodeId": "scope-decision",
+      "label": "選擇全面巡檢，而不是只追一個症狀"
+    },
+    {
+      "nodeId": "route-decision",
+      "label": "選擇在分析端讀 Bundle，避免分析二進位檔進入使用者環境"
+    },
+    {
+      "nodeId": "bundle-script",
+      "label": "使用者先審閱並執行 collect.sh"
+    },
+    {
+      "nodeId": "bundle-files",
+      "label": "原始回應、狀態碼與採集 metadata 被保存成 Bundle"
+    },
+    {
+      "nodeId": "client-abstraction",
+      "label": "check --from-bundle 以本地檔案建立共同 Client"
+    },
+    {
+      "nodeId": "version-gate",
+      "label": "讀版本，決定 health_report 是否適用"
+    },
+    {
+      "nodeId": "health-report",
+      "label": "先解析 _health_report 的主指標"
+    },
+    {
+      "nodeId": "raw-api",
+      "label": "再用 raw API 補足 thread pool、JVM、CPU 等缺口"
+    },
+    {
+      "nodeId": "missing-evidence",
+      "label": "任何缺檔或端點失敗都留下 unknown／skipped 記號"
+    },
+    {
+      "nodeId": "analyzer-rules",
+      "label": "analyzer 用同一套規則產生 DiagnosticResult"
+    },
+    {
+      "nodeId": "node-context",
+      "label": "把節點環境與 coverage 納入整體脈絡"
+    },
+    {
+      "nodeId": "status-coalesce",
+      "label": "依 critical、warning、unknown、pass 收斂整體狀態"
+    },
+    {
+      "nodeId": "diagnostic-result",
+      "label": "結果集合成為同時服務人與機器的共同契約"
+    },
+    {
+      "nodeId": "report-html",
+      "label": "產出可離線開啟的單檔 HTML"
+    },
+    {
+      "nodeId": "human-followup",
+      "label": "人工再用日誌、時間序列與現場脈絡確認根因"
+    }
+  ],
+  "glossary": [
+    {
+      "term": "Live",
+      "definition": "分析端直接透過 HTTP 從 Elasticsearch 取得唯讀回應的路徑。"
+    },
+    {
+      "term": "Bundle",
+      "definition": "由 collect.sh 保存的原始 API 回應、狀態碼與採集 metadata，可帶回分析端離線判斷。"
+    },
+    {
+      "term": "_health_report",
+      "definition": "ES 8.4+ 的健康報告端點；在本工具中是 A 類診斷的主要資料基座。"
+    },
+    {
+      "term": "DiagnosticResult",
+      "definition": "所有 analyzer 共用的診斷結果結構，包含狀態、結論、findings、來源與建議。"
+    },
+    {
+      "term": "unknown",
+      "definition": "資料抓不到或 coverage 不完整，不能解讀成正常，也不應被靜默省略。"
+    },
+    {
+      "term": "exit code",
+      "definition": "程序結束時回傳給 shell、排程或 CI 的整體結果代碼。"
+    }
+  ],
+  "teachBack": [
+    {
+      "question": "為什麼 Bundle 模式不在 shell 裡重寫診斷邏輯？",
+      "answer": "因為 Bundle 只替換資料傳輸層：Live 從 HTTP 取 bytes，Bundle 從檔案取 bytes；同一套 get、analyzer 與規則才能避免兩條判斷邏輯漂移。"
+    },
+    {
+      "question": "某個端點缺檔或回 403 時，為什麼不能直接算正常？",
+      "answer": "缺證據只代表無法判定。工具會讓該項浮出 unknown，並保留錯誤原因；只有 ES <8.4 這種明確不適用的 A 類才標 skipped。"
+    },
+    {
+      "question": "HTML 報告完成後，是否代表根因已確認或報告已發布？",
+      "answer": "都不是。HTML 只是本機產生的離線 artifact；診斷仍是單次快照的引導，根因要結合日誌、時間序列與業務脈絡人工確認。"
+    }
+  ],
+  "evidence": [
+    {
+      "id": "repo-readme",
+      "status": "verified",
+      "label": "Repository overview",
+      "note": "README 直接說明這是 Elasticsearch 唯讀健康檢查工具，支援直接連線分析與 Bundle 離線分析，也明列 implemented 與 verified 的差異及採集包敏感欄位限制。",
+      "path": "README.md"
+    },
+    {
+      "id": "spec-overview",
+      "status": "verified",
+      "label": "診斷規格總覽",
+      "note": "規格以三步驟定義流程：先取 health_report 與 raw API、再套用同一套規則、最後輸出 JSON／離線 HTML；同時規定 GET/HEAD 唯讀邊界。",
+      "path": "docs/內部/規格/規格總覽.md"
+    },
+    {
+      "id": "cli-entry",
+      "status": "verified",
+      "label": "Cobra CLI 與共用連線設定",
+      "note": "root.go 註冊 check 與 diagnose，並由共用 buildClient 合併 config、環境變數與 flags，最後建立 collector client。",
+      "path": "cmd/elk-diagnostics/root.go"
+    },
+    {
+      "id": "cli-spec",
+      "status": "verified",
+      "label": "命令列契約",
+      "note": "命令列規格定義 check、diagnose、--from-bundle、版本門檻與 0/1/2/3/10/11/20 結束碼。",
+      "path": "docs/內部/規格/命令列規格.md"
+    },
+    {
+      "id": "check-flow",
+      "status": "verified",
+      "label": "check 執行流程",
+      "note": "check.go 直接展示 from-file／from-bundle 互斥、Live／Bundle client 選擇、health_report、raw API、Node Context、選配服務、metadata 與報告輸出的順序。",
+      "path": "cmd/elk-diagnostics/check.go"
+    },
+    {
+      "id": "diagnose-flow",
+      "status": "verified",
+      "label": "症狀排查調度",
+      "note": "diagnose.go 列出五種支援症狀，依症狀選擇診斷項目，仍透過共同報告輸出。",
+      "path": "cmd/elk-diagnostics/diagnose.go"
+    },
+    {
+      "id": "bundle-contract",
+      "status": "verified",
+      "label": "採集包交付契約",
+      "note": "採集包規格定義 collect.sh → Bundle → check --from-bundle；Live 與 Bundle 只替換傳輸層，共用 get、錯誤語意與 analyzer，並保存 _status.txt／_manifest.json。",
+      "path": "docs/內部/規格/採集包規格.md"
+    },
+    {
+      "id": "collect-script",
+      "status": "verified",
+      "label": "checked-in 採集腳本",
+      "note": "repo 根目錄的 collect.sh 是交付給使用者審閱與執行的採集入口；它不是診斷判斷器。",
+      "path": "collect.sh"
+    },
+    {
+      "id": "client-transport",
+      "status": "verified",
+      "label": "Client 傳輸與錯誤語意",
+      "note": "client.go 的 NewFromBundle 以本地檔案建立 client 且不連線叢集；get 對網路／5xx 重試，對 4xx 保留 body 並直接回報。",
+      "path": "internal/collector/client.go"
+    },
+    {
+      "id": "resilience-contract",
+      "status": "verified",
+      "label": "錯誤與韌性規格",
+      "note": "韌性規格區分初始握手失敗、health_report 失敗與個別 API 失敗：前者中止，後兩者保留 unknown 並盡量交出部分報告；partial coverage 不得當 pass。",
+      "path": "docs/內部/規格/韌性規格.md"
+    },
+    {
+      "id": "report-contract",
+      "status": "verified",
+      "label": "診斷報告契約",
+      "note": "報告規格定義 DiagnosticResult、overall_status 收斂、JSON／HTML 結構與固定免責聲明，並明確規定 skipped、unknown 與單次快照限制。",
+      "path": "docs/內部/規格/診斷報告規格.md"
+    },
+    {
+      "id": "symptom-contract",
+      "status": "verified",
+      "label": "症狀診斷樹規格",
+      "note": "症狀規格列出五條診斷樹、因果排序、聚焦結論與 check 反向建議 diagnose 的規則。",
+      "path": "docs/內部/規格/症狀診斷規格.md"
+    },
+    {
+      "id": "verification-state",
+      "status": "verified",
+      "label": "目前真機驗證狀態",
+      "note": "驗證狀態截至 2026-08-25；Live／Bundle／HTML 基準線已有部分真機證據，但多個異常分支仍只有 implemented 或自動化驗證；單次快照不能取代時間序列。",
+      "path": "docs/內部/驗證狀態.md"
+    },
+    {
+      "id": "analogy-station",
+      "status": "analogy",
+      "label": "分流檢驗站類比",
+      "note": "只用來建立「資料先進站、按規則檢查、最後貼狀態」的直覺，不代表 repository 真的有輸送帶或分流設備。"
+    }
+  ]
+}

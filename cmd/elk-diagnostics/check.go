@@ -109,9 +109,25 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 
 	esVersion := client.Version()
 	var (
-		hr            *collector.HealthReport
-		results       []diagnostic.Result
-		versionNotice string
+		hr                *collector.HealthReport
+		results           []diagnostic.Result
+		versionNotice     string
+		clusterHealth     collector.ClusterHealth
+		clusterHealthErr  error
+		ilmStatus         string
+		ilmKnown          bool
+		licenseInfo       collector.LicenseInfo
+		licenseKnown      bool
+		shardLimits       collector.ClusterShardLimits
+		shardLimitsKnown  bool
+		masterEligible    int
+		masterKnown       bool
+		kibanaEvidence    []collector.KibanaEvidence
+		kibanaReadErr     error
+		kibanaRequested   bool
+		logstashEvidence  []collector.LogstashEvidence
+		logstashReadErr   error
+		logstashRequested bool
 	)
 	switch {
 	case !supportsHealthReport(esVersion):
@@ -130,7 +146,9 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 			results = analyzer.FromHealthReport(hr)
 		}
 	}
+	clusterHealth, clusterHealthErr = client.ClusterHealth()
 	if mode, e := client.IlmStatus(); e == nil {
+		ilmStatus, ilmKnown = mode, strings.TrimSpace(mode) != ""
 		errs, _ := client.IlmExplain()
 		results = append(results, analyzer.ILM(mode, errs))
 	} else {
@@ -187,6 +205,7 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 	var cpus []collector.NodeCPU
 	if c, e := client.CatNodesCPU(); e == nil {
 		cpus = c
+		attachNodeDiskUsage(nodeSnapshot, cpus)
 		results = append(results, analyzer.HighCPU(cpus, t), analyzer.HotSpotting(cpus, t))
 	} else {
 		results = append(results, unknownf(analyzer.HighCPU(nil, t), e), unknownf(analyzer.HotSpotting(nil, t), e))
@@ -253,6 +272,9 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 	} else {
 		results = append(results, unknownf(analyzer.DataAllocationBlocked(""), e))
 	}
+	if limits, e := client.ClusterShardLimits(); e == nil {
+		shardLimits, shardLimitsKnown = limits, true
+	}
 	results = append(results, indexAllocationBlockedResult(client, hr, isBundle)) // #20
 	if exp, found, e := client.AllocationExplain(); e == nil {
 		results = append(results, analyzer.AllocationGuidance(exp, found)) // #37
@@ -264,14 +286,14 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 	} else {
 		results = append(results, unknownf(analyzer.IlmTierMigration(nil), e))
 	}
-	totalNodes, e1 := client.ClusterNodeCounts()
-	masterEligible, e2 := client.MasterEligibleCount()
-	if e1 == nil && e2 == nil {
-		results = append(results, analyzer.MasterStabilityContext(totalNodes, masterEligible)) // #30
+	masterEligible, masterErr := client.MasterEligibleCount()
+	masterKnown = masterErr == nil
+	if clusterHealthErr == nil && clusterHealth.NumberOfNodes != nil && masterErr == nil {
+		results = append(results, analyzer.MasterStabilityContext(*clusterHealth.NumberOfNodes, masterEligible)) // #30
 	} else {
-		err := e1
+		err := clusterHealthErr
 		if err == nil {
-			err = e2
+			err = masterErr
 		}
 		results = append(results, unknownf(analyzer.MasterStabilityContext(0, 0), err))
 	}
@@ -329,6 +351,7 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 		results = append(results, unknownf(analyzer.TLSCertificateExpiry(nil, t, analysisNow), e))
 	}
 	if license, e := client.LicenseInfo(); e == nil {
+		licenseInfo, licenseKnown = license, strings.TrimSpace(license.Status) != ""
 		results = append(results, analyzer.LicenseHealth(license, t, analysisNow))
 	} else {
 		results = append(results, unknownf(analyzer.LicenseHealth(collector.LicenseInfo{}, t, analysisNow), e))
@@ -398,20 +421,21 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 	// Kibana 是選配服務：只有採集包明確要求 kibana，或確實存在 kibana/目錄時，
 	// 才加入服務診斷；ES-only bundle 的既有報告不增加空白卡片。
 	if isBundle {
-		kibana, e := collector.ReadKibanaBundle(fromBundle)
-		if e != nil {
+		kibanaEvidence, kibanaReadErr = collector.ReadKibanaBundle(fromBundle)
+		kibanaRequested = kibanaReadErr != nil || len(kibanaEvidence) > 0 || hasService(client.CollectedServices(), "kibana")
+		if kibanaReadErr != nil {
 			results = append(results,
-				kibanaReadFailure(analyzer.KibanaStatus(nil), e),
+				kibanaReadFailure(analyzer.KibanaStatus(nil), kibanaReadErr),
 				analyzer.KibanaStats(nil),
-				kibanaReadFailure(analyzer.KibanaTaskManagerHealth(nil), e),
-				kibanaReadFailure(analyzer.KibanaAlertingHealth(nil), e),
+				kibanaReadFailure(analyzer.KibanaTaskManagerHealth(nil), kibanaReadErr),
+				kibanaReadFailure(analyzer.KibanaAlertingHealth(nil), kibanaReadErr),
 			)
-		} else if len(kibana) > 0 || hasService(client.CollectedServices(), "kibana") {
+		} else if kibanaRequested {
 			results = append(results,
-				analyzer.KibanaStatus(kibana),
-				analyzer.KibanaStats(kibana),
-				analyzer.KibanaTaskManagerHealth(kibana),
-				analyzer.KibanaAlertingHealth(kibana),
+				analyzer.KibanaStatus(kibanaEvidence),
+				analyzer.KibanaStats(kibanaEvidence),
+				analyzer.KibanaTaskManagerHealth(kibanaEvidence),
+				analyzer.KibanaAlertingHealth(kibanaEvidence),
 			)
 		}
 	}
@@ -419,18 +443,19 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 	// Logstash 是選配服務：只有採集包明確要求 logstash，或確實存在
 	// logstash/目錄時才加入服務診斷；ES-only／ES+Kibana 報告不增加空白卡片。
 	if isBundle {
-		logstash, e := collector.ReadLogstashBundle(fromBundle)
-		if e != nil {
+		logstashEvidence, logstashReadErr = collector.ReadLogstashBundle(fromBundle)
+		logstashRequested = logstashReadErr != nil || len(logstashEvidence) > 0 || hasService(client.CollectedServices(), "logstash")
+		if logstashReadErr != nil {
 			results = append(results,
-				logstashReadFailure(analyzer.LogstashStatus(nil), e),
-				logstashReadFailure(analyzer.LogstashHealthReport(nil), e),
-				logstashReadFailure(analyzer.LogstashPipelineStats(nil), e),
+				logstashReadFailure(analyzer.LogstashStatus(nil), logstashReadErr),
+				logstashReadFailure(analyzer.LogstashHealthReport(nil), logstashReadErr),
+				logstashReadFailure(analyzer.LogstashPipelineStats(nil), logstashReadErr),
 			)
-		} else if len(logstash) > 0 || hasService(client.CollectedServices(), "logstash") {
+		} else if logstashRequested {
 			results = append(results,
-				analyzer.LogstashStatus(logstash),
-				analyzer.LogstashHealthReport(logstash),
-				analyzer.LogstashPipelineStats(logstash),
+				analyzer.LogstashStatus(logstashEvidence),
+				analyzer.LogstashHealthReport(logstashEvidence),
+				analyzer.LogstashPipelineStats(logstashEvidence),
 			)
 		}
 	}
@@ -453,6 +478,15 @@ func runCheckWithMetrics(cf *connFlags, fromFile, fromBundle, output, outFile st
 	report.NodeContext = nodeSnapshot
 	report.VersionNotice = versionNotice
 	report.SuggestedSymptoms = suggestSymptoms(results, cpus, pools, t)
+	report.CurrentState = buildCurrentState(currentStateInput{
+		HealthReport: hr, ClusterHealth: clusterHealth,
+		ExpectedNodes: expectedESNodes, NodeSnapshot: nodeSnapshot,
+		MasterEligible: masterEligible, MasterEligibleKnown: masterKnown,
+		ILMStatus: ilmStatus, ILMKnown: ilmKnown, License: licenseInfo, LicenseKnown: licenseKnown,
+		ShardLimits: shardLimits, ShardLimitsKnown: shardLimitsKnown, CPUs: cpus, Results: results,
+		KibanaRequested: kibanaRequested, LogstashRequested: logstashRequested,
+		KibanaEvidence: kibanaEvidence, LogstashEvidence: logstashEvidence,
+	})
 	return emitCheck(report, output, outFile, noColor, metricsOut, clientLogoPath(cf))
 }
 

@@ -1,10 +1,10 @@
-// elk-diagnostics MVP：check（全面巡檢）與 diagnose（症狀排查）。
+// elk-diagnostics：check（全面巡檢）與 diagnose（症狀排查）。
 // connect（設定檔/TLS/認證/故障轉移）→ 採集 → 判定 → JSON / 離線 HTML → 結束碼。
 package main
 
 import "os"
 
-const toolVersion = "0.0.4-mvp"
+const toolVersion = "1.0.1"
 
 func main() {
 	// 結束碼契約見 命令列規格 §3，由各子指令的 RunE 自行 os.Exit；

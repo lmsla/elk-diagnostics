@@ -354,6 +354,8 @@ func logstashUnknown(res diagnostic.Result, summary, finding string) diagnostic.
 
 func logstashUnknownWith(res diagnostic.Result, summary string, findings []string) diagnostic.Result {
 	res.Status, res.Conclusion, res.Summary = diagnostic.StatusUnknown, diagnostic.ConclusionNormal, summary
-	res.Findings, res.Recommendations, res.Measurements = findings, nil, nil
+	// Keep measurements collected before the unknown result.  A partial
+	// response still contains useful instance counts for the report summary.
+	res.Findings, res.Recommendations = findings, nil
 	return res
 }

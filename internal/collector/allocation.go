@@ -1,6 +1,9 @@
 package collector
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strconv"
+)
 
 // flatSettingString 從 flat_settings=true 的 _cluster/settings 回應中，依
 // persistent > transient > defaults 優先序取出單一設定鍵的字串值；找不到回 defaultVal。
@@ -38,14 +41,62 @@ func flatSettingString(b []byte, key, defaultVal string) string {
 	return defaultVal
 }
 
+func flatSettingInt(b []byte, key string) (*int, bool) {
+	var generic map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(b, &generic); err != nil {
+		return nil, false
+	}
+	for _, layer := range []string{"persistent", "transient", "defaults"} {
+		m, ok := generic[layer]
+		if !ok {
+			continue
+		}
+		raw, ok := m[key]
+		if !ok {
+			continue
+		}
+		var text string
+		if err := json.Unmarshal(raw, &text); err == nil {
+			value, err := strconv.Atoi(text)
+			if err == nil && value >= 0 {
+				return &value, true
+			}
+		}
+		var value int
+		if err := json.Unmarshal(raw, &value); err == nil && value >= 0 {
+			return &value, true
+		}
+	}
+	return nil, false
+}
+
 // ClusterAllocationEnable 取 cluster.routing.allocation.enable 的生效值
 // （persistent > transient > defaults 優先序；預設 "all"）。#19 用。
 func (c *Client) ClusterAllocationEnable() (string, error) {
-	b, err := c.get(EpClusterSettings)
+	b, err := c.clusterSettings()
 	if err != nil {
 		return "", err
 	}
 	return flatSettingString(b, "cluster.routing.allocation.enable", "all"), nil
+}
+
+// ClusterShardLimits 取叢集層級 max_shards_per_node 限制。這是容量上限參數，
+// 不等同於 index.routing.allocation.total_shards_per_node（單一 index 的配置限制）。
+type ClusterShardLimits struct {
+	MaxShardsPerNode       *int
+	MaxShardsPerNodeFrozen *int
+}
+
+// ClusterShardLimits 取 GET _cluster/settings 的生效值。
+func (c *Client) ClusterShardLimits() (ClusterShardLimits, error) {
+	b, err := c.clusterSettings()
+	if err != nil {
+		return ClusterShardLimits{}, err
+	}
+	limits := ClusterShardLimits{}
+	limits.MaxShardsPerNode, _ = flatSettingInt(b, "cluster.max_shards_per_node")
+	limits.MaxShardsPerNodeFrozen, _ = flatSettingInt(b, "cluster.max_shards_per_node.frozen")
+	return limits, nil
 }
 
 // IndexAllocationEnable 取單一 index 的 index.routing.allocation.enable 生效值

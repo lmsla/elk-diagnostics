@@ -314,6 +314,13 @@ func nonNegativeInt64(v *int64) *int64 {
 	return v
 }
 
+func nonNegativeFloat(v *float64) *float64 {
+	if v == nil || *v < 0 {
+		return nil
+	}
+	return v
+}
+
 func parseRawUint64(raw json.RawMessage) *uint64 {
 	b := bytes.TrimSpace(raw)
 	if len(b) == 0 || bytes.Equal(b, []byte("null")) {

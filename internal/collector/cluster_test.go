@@ -23,6 +23,24 @@ func TestClusterNodeCounts(t *testing.T) {
 	}
 }
 
+func TestParseClusterHealth(t *testing.T) {
+	health, err := ParseClusterHealth([]byte(`{
+		"status":"YELLOW","number_of_nodes":3,"number_of_data_nodes":3,
+		"active_primary_shards":12,"active_shards":24,"relocating_shards":0,
+		"initializing_shards":0,"unassigned_shards":2,"unassigned_primary_shards":1,
+		"active_shards_percent_as_number":92.3
+	}`))
+	if err != nil {
+		t.Fatalf("ParseClusterHealth() 失敗: %v", err)
+	}
+	if health.Status != "yellow" || health.NumberOfNodes == nil || *health.NumberOfNodes != 3 || health.NumberOfDataNodes == nil || *health.NumberOfDataNodes != 3 {
+		t.Fatalf("health status/nodes = %+v", health)
+	}
+	if health.ActiveShards == nil || *health.ActiveShards != 24 || health.UnassignedShards == nil || *health.UnassignedShards != 2 || health.ActiveShardsPercent == nil || *health.ActiveShardsPercent != 92.3 {
+		t.Fatalf("health shard metrics = %+v", health)
+	}
+}
+
 func TestDataTierNodeCounts(t *testing.T) {
 	body := `{
 		"nodes": {

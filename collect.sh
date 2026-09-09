@@ -2,7 +2,7 @@
 # elk-diagnostics 採集腳本
 #
 # 由 `elk-diagnostics collect-script` 依端點清單自動產生，請勿手動編輯。
-#   工具版本：0.0.4-mvp
+#   工具版本：1.0.1
 #
 # 預設只對 Elasticsearch 送出 43 個唯讀 GET 請求；透過 --services 可選擇
 # Host OS、Kibana、Logstash 子採集器。腳本保存 API 證據，並在壓縮前依選項遮蔽；
@@ -259,7 +259,7 @@ service_enabled es && ES_ENDPOINTS_TOTAL=43
 cat > "$MANIFEST" <<MANIFESTEOF
 {
   "bundle_schema_version": 2,
-  "collect_script_version": "0.0.4-mvp",
+  "collect_script_version": "1.0.1",
   "collected_at": "$COLLECTED_AT",
   "host": "$HOST",
   "endpoints_total": $ES_ENDPOINTS_TOTAL,
@@ -359,7 +359,7 @@ fetch '/_settings?flat_settings=true' 'all_settings.json' '30'
 fetch '/_cluster/allocation/explain' 'allocation_explain.json' '30'
 # 受管理 index 的 ILM 階段（tier 遷移候選）
 fetch '/_all/_ilm/explain?only_managed=true' 'ilm_explain_managed.json' '30'
-# 叢集節點數（master 穩定性佐證）
+# 叢集健康、節點數與 shard 可用性摘要
 fetch '/_cluster/health' 'cluster_health.json' '30'
 # 各節點角色（master-eligible 數、data tier 分布）
 fetch '/_nodes?timeout=5s&filter_path=nodes.*.roles' 'nodes_roles.json' '10'
