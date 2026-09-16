@@ -629,13 +629,28 @@ function name_hash(s, h, i, c, p) {
     }
     return sprintf("%06d", h)
 }
-function redact_name(s, n, h, t) {
-    n = length(s)
+function redact_name(s, n, h, t, prefix, body) {
+    # 保留可協助辨識資料類型的結構前綴；遮蔽長度只計算業務名稱本體。
+    prefix = ""
+    body = s
+    if (substr(s, 1, 4) == ".ds-") {
+        prefix = ".ds-"
+        body = substr(s, 5)
+    } else if (substr(s, 1, 9) == "logstash-") {
+        prefix = "logstash-"
+        body = substr(s, 10)
+    }
+    n = length(body)
     h = name_hash(s)
-    # 長度不足以同時保留前後四字元時，完整隱去名稱，避免前後綴重疊。
-    if (n <= 8) return "***-" h
-    t = substr(s, n - 3, 4)
-    return substr(s, 1, 4) "***" t "~" h
+    # 本體剛好八字元時，前後四字元會暴露完整名稱，改保留前二後二。
+    if (n == 8) return prefix substr(body, 1, 2) "***" substr(body, n - 1, 2) "~" h
+    # 本體超過八字元時，保留前四後四，中間遮蔽。
+    if (n > 8) {
+        t = substr(body, n - 3, 4)
+        return prefix substr(body, 1, 4) "***" t "~" h
+    }
+    # 本體不足八字元時完整隱去，避免前後綴重疊。
+    return prefix "***-" h
 }
 function mask_ips(s, out, token, parts, count) {
     out = ""

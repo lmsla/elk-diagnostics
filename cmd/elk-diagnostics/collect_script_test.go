@@ -327,7 +327,7 @@ done
 bundle_dir=$(dirname "$out")
 printf '\377\000\376\001' > "$bundle_dir/.DS_Store"
 case "$url" in
-  */_mapping) body='{"customer_orders-prod":{"mappings":{"properties":{"customer_id":{"type":"keyword"}}}},"logs":{"mappings":{"properties":{"message":{"type":"keyword"}}}}}' ;;
+  */_mapping) body='{"customer_orders-prod":{"mappings":{"properties":{"customer_id":{"type":"keyword"}}}},"logs":{"mappings":{"properties":{"message":{"type":"keyword"}}}},"logstash-cust0819":{"mappings":{}},"logstash-cust-0819":{"mappings":{}}}' ;;
   */_data_stream*) body='{"data_streams":[{"name":"customer-orders","indices":[{"index_name":".ds-customer-orders-2026.000001"}]}]}' ;;
   */_all/_ilm/explain*) body='{"indices":{"customer_orders-prod":{"index":"customer_orders-prod","managed":true}}}' ;;
   */_cluster/health*) body='{"number_of_nodes":3,"indices":["customer_orders-prod"]}' ;;
@@ -361,6 +361,9 @@ printf '200'
 		if strings.Contains(string(mapping), "customer_orders-prod") || !strings.Contains(string(mapping), "cust***prod~") || !strings.Contains(string(mapping), "\"***-") {
 			t.Fatalf("mapping 的 index 名稱未按預期部分遮蔽:\n%s", mapping)
 		}
+		if !strings.Contains(string(mapping), "logstash-cu***19~") || !strings.Contains(string(mapping), "logstash-cust***0819~") {
+			t.Fatalf("保留 logstash- 前綴或八字元名稱規則不正確:\n%s", mapping)
+		}
 
 		streams, err := os.ReadFile(filepath.Join(out, collector.BundleElasticsearchDir, "data_streams.json"))
 		if err != nil {
@@ -368,6 +371,9 @@ printf '200'
 		}
 		if strings.Contains(string(streams), "customer-orders") || !strings.Contains(string(streams), "cust***ders~") || strings.Contains(string(streams), ".ds-customer-orders-2026.000001") {
 			t.Fatalf("data stream/backing index 未按預期部分遮蔽:\n%s", streams)
+		}
+		if !strings.Contains(string(streams), ".ds-cust***0001~") {
+			t.Fatalf("保留 .ds- 前綴的 backing index 遮蔽規則不正確:\n%s", streams)
 		}
 		ilm, err := os.ReadFile(filepath.Join(out, collector.BundleElasticsearchDir, "ilm_explain_errors.json"))
 		if err != nil {

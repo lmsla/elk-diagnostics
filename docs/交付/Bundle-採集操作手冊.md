@@ -1,4 +1,4 @@
-# Route A：採集操作手冊
+# bundle 採集操作手冊
 
 本路線是主要交付方式。使用者端只執行 Shell 採集腳本；交付包不需要診斷執行檔。
 
@@ -10,10 +10,12 @@
 
 ## 1. 準備交付檔案
 
-將 Route A 交付包解壓到可寫入目錄，並切換到該目錄：
+將 bundle 採集交付包解壓到可寫入目錄，並切換到該目錄：
 
 ```bash
-cd /交付包實際路徑
+cd /可寫入目錄
+tar -xzf /交付包實際路徑/webcomm-elk-diagnostics-<git-short-commit>-v1.0.1.tar.gz
+cd webcomm-elk-diagnostics-<git-short-commit>-v1.0.1/
 ```
 
 應看到：
@@ -25,7 +27,7 @@ expected-es-nodes.txt.example
 kibana-instances.conf.example
 logstash-instances.conf.example
 API清單.md
-路線A-採集操作手冊.md
+Bundle-採集操作手冊.md
 checksums/
 ```
 
@@ -76,9 +78,7 @@ echo '採集前置檢查：OK'
 這份清單用來找出「採集開始前已離線」的節點。
 
 ```bash
-if [ ! -f expected-es-nodes.txt ]; then
-  cp expected-es-nodes.txt.example expected-es-nodes.txt
-fi
+cp expected-es-nodes.txt.example expected-es-nodes.txt
 ```
 
 用文字編輯器開啟 `expected-es-nodes.txt`，將範例內容全部替換為現場實際的 ES `node.name`：
@@ -193,7 +193,7 @@ test -s "$PWD/expected-es-nodes.txt" || exit 2
     --redact-index-names \
 ```
 
-此選項會對 index、data stream 與 data stream backing index 做固定、可重現的部分遮蔽，讓同一名稱在同一份 bundle 內仍可互相比對；不遮蔽 node name、hostname、mapping 欄位名稱或 pipeline／policy／snapshot 名稱。遮蔽會同時套用到保留的 bundle 目錄與同層 `.tar.gz`，並在 `_manifest.json` 記錄是否啟用名稱遮蔽。遮蔽失敗時流程會中止，不產生壓縮檔。
+此選項會對 index、data stream 與 data stream backing index 做固定、可重現的部分遮蔽，讓同一名稱在同一份 bundle 內仍可互相比對。目前會保留 `.ds-`、`logstash-` 這兩種結構前綴；名稱本體超過 8 碼時保留前 4、後 4，中間顯示 `***`；剛好 8 碼時保留前 2、後 2；更短時完整隱去，並都附上 6 位固定雜湊。不遮蔽 node name、hostname、mapping 欄位名稱或 pipeline／policy／snapshot 名稱。遮蔽會同時套用到保留的 bundle 目錄與同層 `.tar.gz`，並在 `_manifest.json` 記錄是否啟用名稱遮蔽。遮蔽失敗時流程會中止，不產生壓縮檔。
 
 ## 5. 選配採集 Kibana 與 Logstash
 
@@ -212,6 +212,64 @@ kibana-02|https://kibana-02.example.local:5601
 ```
 
 若某服務只有一個 instance，也可不建立清單，改用單一 `--kibana-url`／`--kibana-id` 或 `--logstash-url`／`--logstash-id`。多 instance 時使用清單；兩種方式不可同時指定同一服務。
+
+### 5.1 Logstash API 連線判斷（獨立流程，必要時才執行）
+
+本小節只處理 Logstash API 的連線，不是下方 ELK 採集指令的一部分。只有在執行採集腳本的 ES 主機無法直接取得 Logstash API 時，才需要繼續閱讀 5.2；若直連成功，保留清單中的原 URL，直接跳到 5.3 執行採集。
+
+在執行 `collect.sh` 的 ES 主機上，逐一測試清單中的 Logstash URL。`127.0.0.1` 只代表 Logstash 自己所在的主機；從另一台 ES 主機直接連線時，不會指向 Logstash。
+
+```bash
+LOGSTASH_URL='http://logstash.example.local:9600'
+
+curl --connect-timeout 5 --max-time 10 \
+  -sS -o /tmp/logstash-root.json \
+  -w 'HTTP %{http_code}\n' \
+  "$LOGSTASH_URL/"
+```
+
+判讀結果：
+
+- `2xx`：可直接連線；保留原 URL，跳過 5.2，直接到 5.3。
+- `401`／`403`：網路可達，但要修正認證或權限；不需要建立 SSH 通道。
+- `Connection refused`、逾時或 TLS 錯誤：先檢查服務、埠號、防火牆、TLS 與 URL，不能只據此判定是 `127.0.0.1`。
+
+只有在連線被拒絕、逾時或需要確認是否為 loopback 時，才到 Logstash 主機確認 API 實際監聽位址：
+
+```bash
+sudo ss -lntp | grep -E ':(9600|9601)\b'
+sudo grep -E '^[[:space:]]*api\.http\.(host|port):' /etc/logstash/logstash.yml
+```
+
+容器部署請改查容器內的 `logstash.yml`，並用 `podman port <container>` 確認主機發布的埠號。
+
+### 5.2 API 僅綁定 `127.0.0.1` 時建立一次性 SSH 通道
+
+只有在 5.1 直連失敗，且已確認 Logstash API 只監聽 `127.0.0.1` 時，才執行本段。可在 ES 主機建立一次性本機轉送，不需修改 Logstash 設定：
+
+```bash
+ssh -N -T \
+  -o ExitOnForwardFailure=yes \
+  -L 127.0.0.1:19600:127.0.0.1:9600 \
+  user@logstash-host
+```
+
+保持此 SSH 視窗開啟，另開視窗確認轉送：
+
+```bash
+curl --connect-timeout 5 --max-time 10 \
+  http://127.0.0.1:19600/
+```
+
+確認成功後，將清單中的 URL 改為轉送後的本機埠：
+
+```text
+logstash-01|http://127.0.0.1:19600
+```
+
+第二個 Logstash 使用另一個本機埠，例如 `19601`；採集完成後關閉 SSH 視窗，一次性通道即失效。若 API 使用 HTTPS，URL 仍須使用 `https://` 並依現場憑證配置 CA，不得以 `--insecure` 略過驗證。
+
+### 5.3 執行 ELK 採集
 
 另開一次新採集，只修改 `cd` 路徑與下列現場值。下列範例採 Basic Auth；若服務使用 API key，請由交付人員提供對應的秘密注入方式，且每個服務的 Basic Auth／API key 只能選一種：
 
@@ -253,6 +311,9 @@ test -d "$PWD/collectors" || exit 2
     --output "$BUNDLE_ROOT"
 )
 ```
+
+正式環境不得以 `--insecure` 取代憑證驗證。
+若需要對 index、data stream 做遮蔽，請參考 `4.4 選配遮蔽`。
 
 採集時終端機會逐一列出每個 label 與 URL 的結果，並在最後輸出 ES、Kibana、Logstash 摘要。`連線失敗` 只表示該 URL 當下無法取得核心 API，不能單憑此結果判定 instance 已離線；可能原因包括 URL、網路、TLS、帳號或權限設定錯誤。採集腳本會繼續處理其他目標，並將每個目標的 `_status.txt` 保留在對應目錄。
 

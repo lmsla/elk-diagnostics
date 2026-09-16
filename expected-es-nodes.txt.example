@@ -1,3 +1,7 @@
-# 預期 ES node.name 清單：每行一個目前叢集中的實際 node.name。
+# 預期 ES node.name 清單：每行一個目前叢集中的實際 node.name，格式如下。
 # 請刪除註解並填入現場清單後，另存為 expected-es-nodes.txt。
 # 不要直接使用以下範例名稱，否則可能產生錯誤的缺少節點告警。
+
+es-node-01
+es-node-02
+es-node-03
