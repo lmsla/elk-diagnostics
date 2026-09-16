@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 
 	"elk-diagnostics/internal/collector"
@@ -130,6 +131,44 @@ func TestCurrentShardsCapacityExcludesFrozenNodes(t *testing.T) {
 	}
 }
 
+func TestCurrentShardsUsesHealthReportCapacityForMixedRoles(t *testing.T) {
+	snapshot := &nodecontext.Snapshot{
+		StatsCoverage: nodecontext.Coverage{Available: true, Total: 3, Successful: 3, Returned: 3},
+		Nodes: []nodecontext.Node{
+			{Name: "a", Roles: []string{"data_hot", "data_frozen"}},
+			{Name: "b", Roles: []string{"data_hot", "data_frozen"}},
+			{Name: "c", Roles: []string{"data_hot", "data_frozen"}},
+		},
+	}
+	state := currentShardsWithReport(collector.ClusterHealth{
+		ActiveShards: intPtr(2865), UnassignedShards: intPtr(0),
+		RelocatingShards: intPtr(0), InitializingShards: intPtr(0),
+	}, collector.ClusterShardLimits{MaxShardsPerNode: intPtr(1000), MaxShardsPerNodeFrozen: intPtr(3000)}, true,
+		&collector.HealthReport{Indicators: map[string]collector.HRIndicator{
+			"shards_capacity": {Details: json.RawMessage(`{"data":{"max_shards_in_cluster":3000},"frozen":{"max_shards_in_cluster":9000,"current_used_shards":17}}`)},
+		}}, snapshot)
+	if state.Capacity == nil || *state.Capacity != 3000 || state.FrozenCapacity == nil || *state.FrozenCapacity != 9000 || state.FrozenUsed == nil || *state.FrozenUsed != 17 {
+		t.Fatalf("mixed roles should use health report capacity: %+v", state)
+	}
+}
+
+func TestCurrentShardsHidesFrozenCapacityWithoutFrozenRole(t *testing.T) {
+	snapshot := &nodecontext.Snapshot{
+		StatsCoverage: nodecontext.Coverage{Available: true, Total: 2, Successful: 2, Returned: 2},
+		Nodes: []nodecontext.Node{
+			{Name: "a", Roles: []string{"data_hot"}},
+			{Name: "b", Roles: []string{"data_warm"}},
+		},
+	}
+	state := currentShardsWithReport(collector.ClusterHealth{ActiveShards: intPtr(10), UnassignedShards: intPtr(0)}, collector.ClusterShardLimits{MaxShardsPerNode: intPtr(1000), MaxShardsPerNodeFrozen: intPtr(3000)}, true,
+		&collector.HealthReport{Indicators: map[string]collector.HRIndicator{
+			"shards_capacity": {Details: json.RawMessage(`{"data":{"max_shards_in_cluster":2000},"frozen":{"max_shards_in_cluster":6000}}`)},
+		}}, snapshot)
+	if state.FrozenCapacity != nil || state.MaxPerFrozenNode != nil {
+		t.Fatalf("no frozen role should hide frozen capacity: %+v", state)
+	}
+}
+
 func TestCurrentDiskAggregatesCompleteNodes(t *testing.T) {
 	totalA, availableA := int64Ptr(100), int64Ptr(40)
 	totalB, availableB := int64Ptr(200), int64Ptr(100)
@@ -145,5 +184,47 @@ func TestCurrentDiskAggregatesCompleteNodes(t *testing.T) {
 	})
 	if state.UsedBytes == nil || *state.UsedBytes != 160 || state.AvailableBytes == nil || *state.AvailableBytes != 140 || state.TotalBytes == nil || *state.TotalBytes != 300 || state.UsedPercent == nil || *state.UsedPercent != 53 {
 		t.Fatalf("完整節點應提供磁碟合計: %+v", state)
+	}
+}
+
+func TestAttachNodeDiskUsageUsesIdentityForDuplicateNames(t *testing.T) {
+	one, two := 36, 26
+	snapshot := &nodecontext.Snapshot{
+		Nodes: []nodecontext.Node{
+			{ID: "node-a", Name: "Elasticsearch02", IP: "10.0.0.251"},
+			{ID: "node-b", Name: "Elasticsearch02", IP: "10.0.0.252"},
+		},
+	}
+	attachNodeDiskUsage(snapshot, []collector.NodeCPU{
+		{ID: "node-b", IP: "10.0.0.252:9300", Name: "Elasticsearch02", DiskPercent: two, DiskKnown: true},
+		{ID: "node-a", IP: "10.0.0.251:9300", Name: "Elasticsearch02", DiskPercent: one, DiskKnown: true},
+	})
+	if snapshot.Nodes[0].DiskUsedPercent == nil || *snapshot.Nodes[0].DiskUsedPercent != one {
+		t.Fatalf("node-a disk = %v, want %d", snapshot.Nodes[0].DiskUsedPercent, one)
+	}
+	if snapshot.Nodes[1].DiskUsedPercent == nil || *snapshot.Nodes[1].DiskUsedPercent != two {
+		t.Fatalf("node-b disk = %v, want %d", snapshot.Nodes[1].DiskUsedPercent, two)
+	}
+}
+
+func TestAttachNodeDiskUsageFallsBackToFilesystemForLegacyBundle(t *testing.T) {
+	total := int64(100)
+	availableA, availableB := int64(64), int64(74)
+	snapshot := &nodecontext.Snapshot{
+		Nodes: []nodecontext.Node{
+			{ID: "node-a", Name: "Elasticsearch02", IP: "10.0.0.251", Filesystem: nodecontext.Filesystem{TotalBytes: &total, AvailableBytes: &availableA}},
+			{ID: "node-b", Name: "Elasticsearch02", IP: "10.0.0.252", Filesystem: nodecontext.Filesystem{TotalBytes: &total, AvailableBytes: &availableB}},
+		},
+	}
+	// 舊版 cat_nodes.json 只有重複的 node.name，沒有可用的 ID／IP。
+	attachNodeDiskUsage(snapshot, []collector.NodeCPU{
+		{Name: "Elasticsearch02", DiskPercent: 36, DiskKnown: true},
+		{Name: "Elasticsearch02", DiskPercent: 26, DiskKnown: true},
+	})
+	if snapshot.Nodes[0].DiskUsedPercent == nil || *snapshot.Nodes[0].DiskUsedPercent != 36 {
+		t.Fatalf("filesystem fallback node-a = %v, want 36", snapshot.Nodes[0].DiskUsedPercent)
+	}
+	if snapshot.Nodes[1].DiskUsedPercent == nil || *snapshot.Nodes[1].DiskUsedPercent != 26 {
+		t.Fatalf("filesystem fallback node-b = %v, want 26", snapshot.Nodes[1].DiskUsedPercent)
 	}
 }

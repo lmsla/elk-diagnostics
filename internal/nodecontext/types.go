@@ -2,7 +2,10 @@
 // 這是內部領域模型：collector 只負責填值，analyzer 下判斷，reporter 只呈現。
 package nodecontext
 
-import "sort"
+import (
+	"sort"
+	"strings"
+)
 
 // Coverage 是單一 Nodes API 的回應完整性。Available=false 表示回應沒有可驗證的
 // _nodes 統計；此時其餘數值不得被解讀為 0 個失敗。
@@ -28,28 +31,113 @@ type Snapshot struct {
 	Issues        []string `json:"issues,omitempty"`
 }
 
-// MissingExpectedNames compares a caller-provided node.name inventory with the
-// names returned by Nodes Stats. Callers must check StatsCoverage.Complete
-// before using the result; an incomplete response cannot prove a node is absent.
+// ExpectedNode 是人工維護的 ES 節點盤點項目。IP 是主要識別值；Name 只作為
+// 顯示與舊版純 node.name 清單的相容欄位。
+type ExpectedNode struct {
+	Name string
+	IP   string
+}
+
+// ParseExpectedNode 解析 "node.name|IP"；沒有 | 時保留舊版純 node.name 格式。
+func ParseExpectedNode(value string) ExpectedNode {
+	parts := strings.SplitN(strings.TrimSpace(value), "|", 2)
+	node := ExpectedNode{Name: strings.TrimSpace(parts[0])}
+	if len(parts) == 2 {
+		node.IP = NormalizeIP(parts[1])
+	}
+	return node
+}
+
+func ExpectedNodeIdentity(value string) string {
+	node := ParseExpectedNode(value)
+	if node.IP != "" {
+		return node.IP
+	}
+	return node.Name
+}
+
+func ExpectedNodeLabel(value string) string {
+	node := ParseExpectedNode(value)
+	switch {
+	case node.Name != "" && node.IP != "":
+		return node.Name + " (" + node.IP + ")"
+	case node.Name != "":
+		return node.Name
+	default:
+		return node.IP
+	}
+}
+
+// NormalizeIP 去掉 Nodes API 常見的 transport port 與 IPv6 括號。
+// 遮蔽後的 xx.xx.x.x:port 也能在 bundle 模式穩定比對。
+func NormalizeIP(value string) string {
+	s := strings.TrimSpace(value)
+	if strings.HasPrefix(s, "[") {
+		if end := strings.IndexByte(s, ']'); end > 0 {
+			s = s[1:end]
+		}
+	} else if strings.Count(s, ":") == 1 {
+		if colon := strings.LastIndexByte(s, ':'); colon > 0 {
+			port := s[colon+1:]
+			allDigits := port != ""
+			for _, r := range port {
+				if r < '0' || r > '9' {
+					allDigits = false
+					break
+				}
+			}
+			if allDigits {
+				s = s[:colon]
+			}
+		}
+	}
+	return strings.TrimSpace(strings.Trim(s, "[]"))
+}
+
+// NodeIdentity 使用 IP 作為主要識別值；舊版或缺少 IP 時退回 node ID/name。
+func NodeIdentity(node Node) string {
+	if ip := NormalizeIP(node.IP); ip != "" {
+		return ip
+	}
+	if node.ID != "" {
+		return node.ID
+	}
+	return node.Name
+}
+
+// MissingExpectedNames compares the expected inventory with Nodes Stats. Each
+// entry is compared by IP when supplied, otherwise by node.name for backwards
+// compatibility. Callers must check StatsCoverage.Complete before using the
+// result; an incomplete response cannot prove a node is absent.
 func MissingExpectedNames(expected []string, snapshot *Snapshot) []string {
 	if len(expected) == 0 || snapshot == nil {
 		return nil
 	}
-	observed := make(map[string]bool, len(snapshot.Nodes))
+	observed := make(map[string]bool, len(snapshot.Nodes)*2)
 	for _, node := range snapshot.Nodes {
+		if identity := NodeIdentity(node); identity != "" {
+			observed[identity] = true
+		}
 		if node.Name != "" {
 			observed[node.Name] = true
+		}
+		if ip := NormalizeIP(node.IP); ip != "" {
+			observed[ip] = true
 		}
 	}
 	seen := make(map[string]bool, len(expected))
 	missing := make([]string, 0, len(expected))
-	for _, name := range expected {
-		if name == "" || seen[name] {
+	for _, raw := range expected {
+		entry := ParseExpectedNode(raw)
+		identity := ExpectedNodeIdentity(raw)
+		if identity == "" || seen[identity] {
 			continue
 		}
-		seen[name] = true
-		if !observed[name] {
-			missing = append(missing, name)
+		seen[identity] = true
+		if !observed[identity] {
+			missing = append(missing, ExpectedNodeLabel(raw))
+		} else if entry.IP == "" && entry.Name != "" && !observed[entry.Name] {
+			missing = append(missing, ExpectedNodeLabel(raw))
 		}
 	}
 	sort.Strings(missing)

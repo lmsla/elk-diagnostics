@@ -1,7 +1,8 @@
-# 預期 ES node.name 清單：每行一個目前叢集中的實際 node.name，格式如下。
+# 預期 ES 節點清單：每行一個目前叢集中的實際 node.name|IP。
+# IP 是主要比對值；node.name 只作為報告顯示。舊版純 node.name 仍可讀取。
 # 請刪除註解並填入現場清單後，另存為 expected-es-nodes.txt。
-# 不要直接使用以下範例名稱，否則可能產生錯誤的缺少節點告警。
+# 不要直接使用以下範例名稱或 IP，否則可能產生錯誤的缺少節點告警。
 
-es-node-01
-es-node-02
-es-node-03
+es-node-01|10.0.0.11
+es-node-02|10.0.0.12
+es-node-03|10.0.0.13

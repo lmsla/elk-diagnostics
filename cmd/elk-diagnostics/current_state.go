@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 
 	"elk-diagnostics/internal/collector"
@@ -39,7 +40,7 @@ func buildCurrentState(in currentStateInput) *diagnostic.CurrentState {
 		SnapshotNote: "本區塊為單次採集快照，不代表長期監控結論",
 		Health:       currentHealth(in.ClusterHealth, in.HealthReport),
 		Nodes:        currentNodes(in.ExpectedNodes, in.NodeSnapshot, in.ClusterHealth),
-		Shards:       currentShards(in.ClusterHealth, in.ShardLimits, in.ShardLimitsKnown, in.NodeSnapshot),
+		Shards:       currentShardsWithReport(in.ClusterHealth, in.ShardLimits, in.ShardLimitsKnown, in.HealthReport, in.NodeSnapshot),
 		Disk:         currentDiskWithSnapshot(in.ExpectedNodes, in.NodeSnapshot, in.CPUs),
 		Master:       currentMaster(in.MasterEligible, in.MasterEligibleKnown, in.NodeSnapshot),
 		ILM:          currentService(in.ILMStatus, in.ILMKnown),
@@ -109,6 +110,10 @@ func currentNodes(expected []string, snapshot *nodecontext.Snapshot, health coll
 }
 
 func currentShards(health collector.ClusterHealth, limits collector.ClusterShardLimits, limitsKnown bool, snapshots ...*nodecontext.Snapshot) diagnostic.CurrentShards {
+	return currentShardsWithReport(health, limits, limitsKnown, nil, snapshots...)
+}
+
+func currentShardsWithReport(health collector.ClusterHealth, limits collector.ClusterShardLimits, limitsKnown bool, report *collector.HealthReport, snapshots ...*nodecontext.Snapshot) diagnostic.CurrentShards {
 	var snapshot *nodecontext.Snapshot
 	if len(snapshots) > 0 {
 		snapshot = snapshots[0]
@@ -130,53 +135,130 @@ func currentShards(health collector.ClusterHealth, limits collector.ClusterShard
 	}
 	if limitsKnown {
 		state.MaxPerNode = limits.MaxShardsPerNode
-		state.MaxPerFrozenNode = limits.MaxShardsPerNodeFrozen
-		if limits.MaxShardsPerNode != nil {
-			if nodeCount := nonFrozenDataNodeCount(snapshot); nodeCount != nil {
-				capacity := *limits.MaxShardsPerNode * *nodeCount
-				state.CapacityNodeCount = nodeCount
-				state.Capacity = &capacity
-				// MaxTotal is retained as a compatibility alias for older consumers.
-				state.MaxTotal = &capacity
-				if state.Total != nil && capacity > 0 {
-					remaining := capacity - *state.Total
-					if remaining < 0 {
-						remaining = 0
-					}
-					state.Remaining = &remaining
-					usedPercent := float64(*state.Total) * 100 / float64(capacity)
-					state.CapacityUsedPercent = &usedPercent
-				}
+	}
+	if frozenCount := frozenDataNodeCount(snapshot); frozenCount != nil && *frozenCount > 0 {
+		state.FrozenNodeCount = frozenCount
+		if limitsKnown {
+			state.MaxPerFrozenNode = limits.MaxShardsPerNodeFrozen
+		}
+	}
+
+	// _health_report/shards_capacity is the authoritative cluster-level value.
+	// The settings fallback below exists for older ES versions or incomplete bundles.
+	dataCapacity, frozenCapacity, frozenUsed := healthReportShardCapacity(report)
+	if nodeCount := dataNodeCount(snapshot); nodeCount != nil && *nodeCount > 0 {
+		state.CapacityNodeCount = nodeCount
+	}
+	if state.FrozenNodeCount != nil && *state.FrozenNodeCount > 0 {
+		if frozenCapacity != nil {
+			state.FrozenCapacity = frozenCapacity
+		} else if limitsKnown && limits.MaxShardsPerNodeFrozen != nil && *limits.MaxShardsPerNodeFrozen > 0 {
+			capacity := *limits.MaxShardsPerNodeFrozen * *state.FrozenNodeCount
+			state.FrozenCapacity = &capacity
+		}
+		if state.FrozenCapacity != nil && frozenUsed != nil {
+			state.FrozenUsed = frozenUsed
+		}
+	}
+	if dataCapacity != nil {
+		state.Capacity = dataCapacity
+	} else if limitsKnown && limits.MaxShardsPerNode != nil {
+		if nodeCount := dataNodeCount(snapshot); nodeCount != nil && *nodeCount > 0 {
+			capacity := *limits.MaxShardsPerNode * *nodeCount
+			state.CapacityNodeCount = nodeCount
+			state.Capacity = &capacity
+		}
+	}
+	if state.Capacity != nil {
+		// MaxTotal is retained as a compatibility alias for older consumers.
+		state.MaxTotal = state.Capacity
+		if state.Total != nil && *state.Capacity > 0 {
+			remaining := *state.Capacity - *state.Total
+			if remaining < 0 {
+				remaining = 0
 			}
+			state.Remaining = &remaining
+			usedPercent := float64(*state.Total) * 100 / float64(*state.Capacity)
+			state.CapacityUsedPercent = &usedPercent
 		}
 	}
 	return state
 }
 
-func nonFrozenDataNodeCount(snapshot *nodecontext.Snapshot) *int {
+func dataNodeCount(snapshot *nodecontext.Snapshot) *int {
 	if snapshot == nil || !snapshot.StatsCoverage.Complete() {
 		return nil
 	}
 	count := 0
 	for _, node := range snapshot.Nodes {
-		if isNonFrozenDataNode(node.Roles) {
+		if hasGeneralDataRole(node.Roles) {
 			count++
 		}
 	}
 	return &count
 }
 
-func isNonFrozenDataNode(roles []string) bool {
-	hasDataRole := false
+func frozenDataNodeCount(snapshot *nodecontext.Snapshot) *int {
+	if snapshot == nil || !snapshot.StatsCoverage.Complete() {
+		return nil
+	}
+	count := 0
+	for _, node := range snapshot.Nodes {
+		for _, role := range node.Roles {
+			if role == "data_frozen" {
+				count++
+				break
+			}
+		}
+	}
+	return &count
+}
+
+func hasGeneralDataRole(roles []string) bool {
 	for _, role := range roles {
 		switch role {
 		case "data", "data_content", "data_hot", "data_warm", "data_cold":
-			hasDataRole = true
-		case "data_frozen":
-			return false
+			return true
 		}
 	}
-	return hasDataRole
+	return false
+}
+
+func healthReportShardCapacity(report *collector.HealthReport) (data, frozen, frozenUsed *int) {
+	if report == nil {
+		return nil, nil, nil
+	}
+	indicator, ok := report.Indicators["shards_capacity"]
+	if !ok || indicator.Details == nil {
+		return nil, nil, nil
+	}
+	var details struct {
+		Data struct {
+			MaxShardsInCluster *int `json:"max_shards_in_cluster"`
+		} `json:"data"`
+		Frozen struct {
+			MaxShardsInCluster *int `json:"max_shards_in_cluster"`
+			CurrentUsedShards  *int `json:"current_used_shards"`
+		} `json:"frozen"`
+	}
+	if err := json.Unmarshal(indicator.Details, &details); err != nil {
+		return nil, nil, nil
+	}
+	return positivePtr(details.Data.MaxShardsInCluster), positivePtr(details.Frozen.MaxShardsInCluster), nonNegativePtr(details.Frozen.CurrentUsedShards)
+}
+
+func positivePtr(value *int) *int {
+	if value == nil || *value <= 0 {
+		return nil
+	}
+	return value
+}
+
+func nonNegativePtr(value *int) *int {
+	if value == nil || *value < 0 {
+		return nil
+	}
+	return value
 }
 
 func shardTransitionsSettled(state diagnostic.CurrentShards) bool {
@@ -189,62 +271,92 @@ func currentDisk(cpus []collector.NodeCPU) diagnostic.CurrentDisk {
 }
 
 func currentDiskWithSnapshot(expected []string, snapshot *nodecontext.Snapshot, cpus []collector.NodeCPU) diagnostic.CurrentDisk {
-	cpuByName := make(map[string]collector.NodeCPU, len(cpus))
-	for _, cpu := range cpus {
-		if cpu.Name != "" {
-			cpuByName[cpu.Name] = cpu
-		}
-	}
-	nodeByName := make(map[string]nodecontext.Node)
+	cpuIndex := newNodeCPUIndex(cpus)
+	nodeByKey := make(map[string]nodecontext.Node)
+	nodeKeysByName := make(map[string][]string)
 	if snapshot != nil {
-		for _, node := range snapshot.Nodes {
-			name := node.Name
-			if name == "" {
-				name = node.ID
+		for index, node := range snapshot.Nodes {
+			key := nodecontext.NodeIdentity(node)
+			if key == "" {
+				key = "node-" + strconv.Itoa(index)
 			}
-			if name != "" {
-				nodeByName[name] = node
+			base := key
+			for suffix := 2; ; suffix++ {
+				if _, exists := nodeByKey[key]; !exists {
+					break
+				}
+				key = base + "#" + strconv.Itoa(suffix)
+			}
+			nodeByKey[key] = node
+			if node.Name != "" {
+				nodeKeysByName[node.Name] = append(nodeKeysByName[node.Name], key)
 			}
 		}
 	}
 
-	names := make(map[string]bool, len(expected)+len(nodeByName)+len(cpuByName))
-	for _, name := range expected {
-		if name != "" {
-			names[name] = true
+	type diskEntry struct {
+		key      string
+		label    string
+		expected bool
+	}
+	entries := make(map[string]diskEntry, len(expected)+len(nodeByKey)+len(cpus))
+	add := func(key, label string, isExpected bool) {
+		if key == "" {
+			return
+		}
+		entry, exists := entries[key]
+		if !exists || (isExpected && !entry.expected) {
+			entries[key] = diskEntry{key: key, label: label, expected: isExpected}
 		}
 	}
-	for name := range nodeByName {
-		names[name] = true
-	}
-	for name := range cpuByName {
-		names[name] = true
-	}
-	orderedNames := make([]string, 0, len(names))
-	for name := range names {
-		orderedNames = append(orderedNames, name)
-	}
-	sort.Strings(orderedNames)
-
-	expectedSet := make(map[string]bool, len(expected))
-	for _, name := range expected {
-		if name != "" {
-			expectedSet[name] = true
+	for _, raw := range expected {
+		expectedNode := nodecontext.ParseExpectedNode(raw)
+		if expectedNode.IP != "" {
+			add(expectedNode.IP, nodecontext.ExpectedNodeLabel(raw), true)
+			continue
+		}
+		keys := nodeKeysByName[expectedNode.Name]
+		if len(keys) == 0 {
+			add("expected:"+expectedNode.Name, nodecontext.ExpectedNodeLabel(raw), true)
+			continue
+		}
+		for _, key := range keys {
+			add(key, diskNodeLabel(nodeByKey[key], len(keys) > 1), true)
 		}
 	}
+	for key, node := range nodeByKey {
+		add(key, diskNodeLabel(node, len(nodeKeysByName[node.Name]) > 1), false)
+	}
+	for name, values := range cpuIndex.byName {
+		if len(values) == 1 && len(nodeKeysByName[name]) == 0 {
+			add("cpu:"+name, name, false)
+		}
+	}
+	orderedKeys := make([]string, 0, len(entries))
+	for key := range entries {
+		orderedKeys = append(orderedKeys, key)
+	}
+	sort.Strings(orderedKeys)
 	state := diagnostic.CurrentDisk{}
-	rows := make([]diagnostic.CurrentDiskNode, 0, len(orderedNames))
+	rows := make([]diagnostic.CurrentDiskNode, 0, len(orderedKeys))
 	observedCount := 0
-	allBytesKnown := len(orderedNames) > 0
+	allBytesKnown := len(orderedKeys) > 0
 	var totalBytes, availableBytes, usedBytes int64
 	var maxPercent int
 	var maxNode string
 	maxKnown := false
-	for _, name := range orderedNames {
-		node, nodeOK := nodeByName[name]
-		cpu, cpuOK := cpuByName[name]
-		row := diagnostic.CurrentDiskNode{Name: name}
-		if expectedSet[name] && snapshot != nil && snapshot.StatsCoverage.Complete() && !nodeOK {
+	for _, key := range orderedKeys {
+		entry := entries[key]
+		node, nodeOK := nodeByKey[key]
+		var cpu collector.NodeCPU
+		cpuOK := false
+		if nodeOK {
+			cpu, cpuOK = cpuIndex.lookup(node)
+		} else if strings.HasPrefix(key, "cpu:") && len(cpuIndex.byName[entry.label]) == 1 {
+			cpu, cpuOK = cpuIndex.byName[entry.label][0], true
+		}
+		row := diagnostic.CurrentDiskNode{Name: entry.label}
+		if entry.expected && snapshot != nil && snapshot.StatsCoverage.Complete() && !nodeOK {
 			row.Missing = true
 		}
 		if nodeOK || cpuOK {
@@ -264,7 +376,7 @@ func currentDiskWithSnapshot(expected []string, snapshot *nodecontext.Snapshot, 
 		}
 		if row.UsedPercent != nil && (!maxKnown || *row.UsedPercent > maxPercent) {
 			maxPercent = *row.UsedPercent
-			maxNode = name
+			maxNode = entry.label
 			maxKnown = true
 		}
 		if row.TotalBytes == nil || row.AvailableBytes == nil || row.UsedBytes == nil || row.Missing {
@@ -293,6 +405,17 @@ func currentDiskWithSnapshot(expected []string, snapshot *nodecontext.Snapshot, 
 	return state
 }
 
+func diskNodeLabel(node nodecontext.Node, duplicateName bool) string {
+	name := node.Name
+	if name == "" {
+		name = node.ID
+	}
+	if duplicateName && node.IP != "" {
+		return name + " (" + node.IP + ")"
+	}
+	return name
+}
+
 func filesystemUsedBytes(total, available *int64) *int64 {
 	if total == nil || available == nil || *total < 0 || *available < 0 || *available > *total {
 		return nil
@@ -313,20 +436,67 @@ func attachNodeDiskUsage(snapshot *nodecontext.Snapshot, cpus []collector.NodeCP
 	if snapshot == nil {
 		return
 	}
-	byName := make(map[string]collector.NodeCPU, len(cpus))
-	for _, cpu := range cpus {
-		if cpu.Name != "" {
-			byName[cpu.Name] = cpu
-		}
-	}
+	cpuIndex := newNodeCPUIndex(cpus)
 	for i := range snapshot.Nodes {
-		cpu, ok := byName[snapshot.Nodes[i].Name]
-		if !ok || !cpu.DiskKnown {
+		cpu, ok := cpuIndex.lookup(snapshot.Nodes[i])
+		if ok && cpu.DiskKnown {
+			value := cpu.DiskPercent
+			snapshot.Nodes[i].DiskUsedPercent = &value
 			continue
 		}
-		value := cpu.DiskPercent
-		snapshot.Nodes[i].DiskUsedPercent = &value
+		// 舊版 bundle 的 _cat/nodes 可能只有 node.name，重複名稱無法安全配對。
+		// Nodes Stats 同時帶有每個節點自己的 filesystem 數值，可作為不猜測
+		// 節點歸屬的相容 fallback。
+		used := filesystemUsedBytes(snapshot.Nodes[i].Filesystem.TotalBytes, snapshot.Nodes[i].Filesystem.AvailableBytes)
+		if value := bytesPercent(used, snapshot.Nodes[i].Filesystem.TotalBytes); value != nil {
+			snapshot.Nodes[i].DiskUsedPercent = value
+		}
 	}
+}
+
+type nodeCPUIndex struct {
+	byID   map[string][]collector.NodeCPU
+	byIP   map[string][]collector.NodeCPU
+	byName map[string][]collector.NodeCPU
+}
+
+func newNodeCPUIndex(cpus []collector.NodeCPU) nodeCPUIndex {
+	index := nodeCPUIndex{
+		byID:   make(map[string][]collector.NodeCPU, len(cpus)),
+		byIP:   make(map[string][]collector.NodeCPU, len(cpus)),
+		byName: make(map[string][]collector.NodeCPU, len(cpus)),
+	}
+	for _, cpu := range cpus {
+		if id := strings.TrimSpace(cpu.ID); id != "" {
+			index.byID[id] = append(index.byID[id], cpu)
+		}
+		if ip := nodecontext.NormalizeIP(cpu.IP); ip != "" {
+			index.byIP[ip] = append(index.byIP[ip], cpu)
+		}
+		if name := strings.TrimSpace(cpu.Name); name != "" {
+			index.byName[name] = append(index.byName[name], cpu)
+		}
+	}
+	return index
+}
+
+func (index nodeCPUIndex) lookup(node nodecontext.Node) (collector.NodeCPU, bool) {
+	if id := strings.TrimSpace(node.ID); id != "" {
+		if values := index.byID[id]; len(values) == 1 {
+			return values[0], true
+		}
+	}
+	if ip := nodecontext.NormalizeIP(node.IP); ip != "" {
+		if values := index.byIP[ip]; len(values) == 1 {
+			return values[0], true
+		}
+	}
+	if name := strings.TrimSpace(node.Name); name != "" {
+		if values := index.byName[name]; len(values) == 1 {
+			return values[0], true
+		}
+	}
+	return collector.NodeCPU{}, false
 }
 
 func currentMaster(eligible int, known bool, snapshot *nodecontext.Snapshot) diagnostic.CurrentMaster {

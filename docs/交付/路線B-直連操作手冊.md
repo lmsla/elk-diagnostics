@@ -44,7 +44,7 @@ fi
 | `ES_USER` | Basic Auth 必填 | 有必要唯讀權限的 ES 帳號；API key 路徑不要設定。 |
 | `CA_CERT` | 自簽／私有 CA 必填 | CA 憑證檔實際路徑；公有 CA 環境依第 4.2 節操作。 |
 | `API_KEY_FILE` | API key 路徑必填其一 | 權限為 `600` 的 API key 檔案；也可改由核准的秘密管理系統注入 `ELK_DIAGNOSTICS_API_KEY`。Basic Auth 路徑不要設定。 |
-| `expected-es-nodes.txt` | 建議必做 | 每行一個正確的 ES `node.name`，不填 IP 或 role。 |
+| `expected-es-nodes.txt` | 建議必做 | 每行 `node.name|IP`；IP 是主要比對值，node.name 用於顯示。 |
 | `REPORT_ROOT` | 指令已自動產生 | 用時間建立新報告目錄，不要改成舊報告目錄。 |
 | `CLIENT_LOGO` | 選用 | SVG／PNG／JPEG 檔絕對路徑；檔案上限 512 KiB。 |
 
@@ -58,13 +58,15 @@ if [ ! -f expected-es-nodes.txt ]; then
 fi
 ```
 
-用文字編輯器開啟 `expected-es-nodes.txt`，將範例內容全部替換為現場實際的 ES `node.name`：
+用文字編輯器開啟 `expected-es-nodes.txt`，將範例內容全部替換為現場實際的 ES `node.name|IP`：
 
 ```text
-es-node-01
-es-node-02
-es-node-03
+es-node-01|10.0.0.11
+es-node-02|10.0.0.12
+es-node-03|10.0.0.13
 ```
+
+IP 是主要識別值；如果兩個節點的 `node.name` 相同，仍要填各自 IP。IP 變更後必須同步更新清單。舊版純 `node.name` 清單仍可讀取，但重複名稱時無法可靠區分節點。
 
 這是該叢集的執行前拓撲基準。同一份清單不得沿用到另一個叢集。
 

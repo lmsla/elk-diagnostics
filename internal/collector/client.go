@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"elk-diagnostics/internal/nodecontext"
 )
 
 // HTTPStatusError 保留端點與狀態碼，讓選配功能能區分「此 API 不可用」和一般採集失敗。
@@ -236,7 +238,8 @@ func readBundleManifest(dir string) bundleManifest {
 	return m
 }
 
-// ReadExpectedESNodes 讀取每行一個 node.name 的基準清單。空白、註解與重複值會忽略。
+// ReadExpectedESNodes 讀取每行一個 node.name|IP 的基準清單。沒有 | 的舊版
+// 純 node.name 格式仍可讀取；空白、註解與重複識別值會忽略。
 func ReadExpectedESNodes(file string) ([]string, error) {
 	b, err := os.ReadFile(file)
 	if err != nil {
@@ -245,12 +248,35 @@ func ReadExpectedESNodes(file string) ([]string, error) {
 	seen := map[string]bool{}
 	var nodes []string
 	for _, line := range strings.Split(string(b), "\n") {
-		name := strings.TrimSpace(line)
-		if name == "" || strings.HasPrefix(name, "#") || seen[name] {
+		value := strings.TrimSpace(line)
+		if value == "" || strings.HasPrefix(value, "#") {
 			continue
 		}
-		seen[name] = true
-		nodes = append(nodes, name)
+		parts := strings.SplitN(value, "|", 2)
+		name := strings.TrimSpace(parts[0])
+		ip := ""
+		if len(parts) == 2 {
+			ip = strings.TrimSpace(parts[1])
+			if ip == "" {
+				return nil, fmt.Errorf("%s 含有空白 IP：%q", file, value)
+			}
+		}
+		if name == "" {
+			return nil, fmt.Errorf("%s 含有空白 node.name：%q", file, value)
+		}
+		canonical := name
+		if ip != "" {
+			canonical += "|" + ip
+		}
+		identity := name
+		if ip != "" {
+			identity = nodecontext.NormalizeIP(ip)
+		}
+		if identity == "" || seen[identity] {
+			continue
+		}
+		seen[identity] = true
+		nodes = append(nodes, canonical)
 	}
 	if len(nodes) == 0 {
 		return nil, fmt.Errorf("%s 未包含任何節點名稱", file)

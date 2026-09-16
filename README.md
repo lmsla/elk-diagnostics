@@ -30,6 +30,7 @@ docs/交付/            # 使用者操作手冊與 API 清單
 - ES 8.4+ 可使用完整 `_health_report`；部分單次快照指標仍需 Monitoring／時間序列佐證。
 - `implemented` 不等於 `verified`；異常分支的真機狀態以內部驗證狀態為準。
 - 採集包的 IPv4 前兩段會固定遮蔽；需要時可在 `collect.sh` 加上 `--redact-index-names`，對 index、data stream 與 backing index 做一致的部分遮蔽（目前保留 `.ds-`、`logstash-` 結構前綴；本體剛好 8 碼時保留前 2、後 2）。node name、hostname、mapping 欄位與 pipeline／policy 名稱不在此選項範圍，仍須依資料政策審閱。
+- `expected-es-nodes.txt` 建議每行使用 `node.name|IP`；IP 是節點盤點的主要識別值，node.name 只作顯示。這可避免不同節點使用相同 node.name 時產生錯誤的缺失判定。
 
 ## 開發驗證
 

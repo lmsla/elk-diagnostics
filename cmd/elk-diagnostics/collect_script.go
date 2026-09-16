@@ -33,6 +33,7 @@ func newCollectScriptCmd() *cobra.Command {
 
 腳本在使用者環境執行，只用 curl 送出唯讀 GET 並把回應存成 bundle 目錄；
 IP 前兩段會固定遮蔽，另可用 --redact-index-names 選擇遮蔽 index／data stream 名稱。
+預期 ES 節點清單使用每行 node.name|IP，IP 是主要比對值。
 之後在自己的機器上以 check --from-bundle 分析。使用者不需要執行本二進位檔。
 
   elk-diagnostics collect-script > collect.sh

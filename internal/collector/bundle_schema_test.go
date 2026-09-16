@@ -60,14 +60,24 @@ func TestNewFromBundleRejectsUnsupportedSchema(t *testing.T) {
 
 func TestReadExpectedESNodes(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "nodes.txt")
-	if err := os.WriteFile(file, []byte("# baseline\nnode-b\n\nnode-a\nnode-b\n"), 0o600); err != nil {
+	if err := os.WriteFile(file, []byte("# baseline\nnode-b|10.0.0.2\n\nnode-a|10.0.0.1\nnode-b|10.0.0.2\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	got, err := ReadExpectedESNodes(file)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := []string{"node-a", "node-b"}; !reflect.DeepEqual(got, want) {
+	if want := []string{"node-a|10.0.0.1", "node-b|10.0.0.2"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("got=%v want=%v", got, want)
+	}
+}
+
+func TestReadExpectedESNodesRejectsIncompletePair(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "nodes.txt")
+	if err := os.WriteFile(file, []byte("node-a|\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadExpectedESNodes(file); err == nil {
+		t.Fatal("node.name| 空 IP 應被拒絕")
 	}
 }

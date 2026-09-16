@@ -439,7 +439,7 @@ func TestCollectScriptEmbedsExpectedESNodesFile(t *testing.T) {
 		t.Fatal(err)
 	}
 	expected := filepath.Join(tmp, "expected.txt")
-	if err := os.WriteFile(expected, []byte("node-a\nnode-b\n"), 0o600); err != nil {
+	if err := os.WriteFile(expected, []byte("node-a|10.99.1.11\nnode-b|10.99.1.12\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	out := filepath.Join(tmp, "bundle")
@@ -448,7 +448,7 @@ func TestCollectScriptEmbedsExpectedESNodesFile(t *testing.T) {
 		t.Fatalf("collect failed: %v\n%s", err, b)
 	}
 	b, err := os.ReadFile(filepath.Join(out, collector.BundleExpectedESNodesFile))
-	if err != nil || string(b) != "node-a\nnode-b\n" {
+	if err != nil || string(b) != "node-a|xx.xx.1.11\nnode-b|xx.xx.1.12\n" {
 		t.Fatalf("embedded expected nodes=%q err=%v", b, err)
 	}
 }

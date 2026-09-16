@@ -443,16 +443,11 @@ var htmlFuncs = template.FuncMap{
 		if err != nil {
 			return v
 		}
-		local := parsed.In(time.Local)
-		_, offset := local.Zone()
-		sign := "+"
-		if offset < 0 {
-			sign = "-"
-			offset = -offset
+		location, err := time.LoadLocation("Asia/Taipei")
+		if err != nil {
+			location = time.FixedZone("UTC+08:00", 8*60*60)
 		}
-		return fmt.Sprintf("%s（UTC%s%02d:%02d）",
-			local.Format("2006-01-02 15:04:05"),
-			sign, offset/3600, offset%3600/60)
+		return fmt.Sprintf("%s（Asia/Taipei，UTC+08:00）", parsed.In(location).Format("2006-01-02 15:04:05"))
 	},
 	"sourcePath": func(host string) string {
 		for _, prefix := range []string{"(bundle) ", "(from-file) "} {
@@ -490,6 +485,21 @@ var htmlFuncs = template.FuncMap{
 		return strings.Join(v, ", ")
 	},
 	"joinNodes": func(v []string) string { return strings.Join(v, "、") },
+	"versionsText": func(v []string) string {
+		if len(v) == 0 {
+			return "—"
+		}
+		if len(v) == 1 {
+			return v[0]
+		}
+		return "多版本（" + strings.Join(v, "、") + "）"
+	},
+	"versionText": func(v string) string {
+		if strings.TrimSpace(v) == "" {
+			return "—"
+		}
+		return v
+	},
 	"rolePreview": func(v []string) []string {
 		if len(v) <= 3 {
 			return v
@@ -1271,15 +1281,15 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   .banner-body{padding:12px 16px 16px}.banner-head{display:flex;gap:12px;align-items:center}.banner-icon{width:36px;height:36px;display:grid;place-items:center;border-radius:999px;background:#e4e9f2;color:#62748e}.banner.pass{background:#cdefe2}.banner.pass .banner-icon{background:#e4f7f0;color:#00875a}.banner.info{background:#dbe1ec}.banner.warning{background:#fbe6c4}.banner.critical{background:#ffd6d9}.banner.unknown{background:#d5dae6}
   .banner-title{margin:0;font-size:15px;font-weight:700;color:#48566f}.banner.warning .banner-title{color:#8a5708}.banner.critical .banner-title{color:#b81d5b}.banner.pass .banner-title{color:#00694a}.banner-counts{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;margin:2px 0 0;color:var(--ui-muted);font-size:12px;line-height:1.5}.banner-counts .count{display:inline-flex;align-items:center;gap:4px}.banner-counts .count b{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-weight:600}.banner-counts .count-total{color:var(--ui-muted)}
   .deflist{display:flex;flex-wrap:wrap;gap:10px 24px;margin:16px 0 0}.deflist>div{min-width:0}.deflist dt{font-size:11px;color:var(--ui-muted);line-height:1.5}.deflist dd{margin:0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;color:var(--ui-ink);overflow-wrap:anywhere}.technical-info{margin-top:12px;padding-top:12px;border-top:1px solid rgba(34,43,69,.10)}
-  .kpi-row{display:flex;flex-wrap:wrap;gap:16px;margin-top:16px}.kpi{display:flex;flex-direction:column;justify-content:space-between;min-width:0;min-height:120px;padding:16px;background:#fff;border:1px solid var(--ui-line);border-radius:8px}.kpi-rate{width:188px;flex:none}.kpi-stat{flex:1 1 180px}.kpi-label{display:flex;align-items:center;gap:8px;color:var(--ui-muted);font-size:14px}.kpi-rate .kpi-label{font-weight:700}.kpi-icon{width:24px;height:24px;display:grid;place-items:center;border-radius:6px;background:#e4e9f2;color:#62748e}.kpi-figure{display:flex;align-items:flex-end;justify-content:flex-end;gap:8px;padding-top:12px}.kpi-value{font-size:32px;font-weight:700;line-height:1;color:#62748e}.kpi-unit{font-size:13px;color:var(--ui-subtle)}.kpi-track{height:6px;margin-top:12px;border-radius:999px;background:var(--ui-line);overflow:hidden}.kpi-fill{height:100%;border-radius:999px;background:#8f9bb3}.kpi[data-status="pass"] .kpi-value{color:#00875a}.kpi[data-status="pass"] .kpi-fill{background:#00b383}.kpi[data-status="warning"] .kpi-value{color:#b5730a}.kpi[data-status="warning"] .kpi-fill{background:#e0930a}.kpi[data-status="critical"] .kpi-value{color:#db2c5b}.kpi[data-status="critical"] .kpi-fill{background:#ff3d71}
+  .kpi-row{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:16px;margin-top:16px}.kpi{display:flex;flex-direction:column;justify-content:space-between;min-width:0;min-height:120px;padding:16px;background:#fff;border:1px solid var(--ui-line);border-radius:8px}.kpi-stat{min-width:0}.kpi-label{display:flex;align-items:center;gap:8px;color:var(--ui-muted);font-size:14px}.kpi-icon{width:24px;height:24px;display:grid;place-items:center;border-radius:6px;background:#e4e9f2;color:#62748e}.kpi-figure{display:flex;align-items:flex-end;justify-content:flex-end;gap:8px;padding-top:12px}.kpi-value{font-size:32px;font-weight:700;line-height:1;color:#62748e}.kpi-unit{font-size:13px;color:var(--ui-subtle)}.kpi-track{height:6px;margin-top:12px;border-radius:999px;background:var(--ui-line);overflow:hidden}.kpi-fill{height:100%;border-radius:999px;background:#8f9bb3}
   .service-nav{display:none}
   .service-section{margin:16px 0 24px;padding:0;background:#fff;border:1px solid var(--ui-line);border-radius:8px;overflow:visible}.service-section.kibana,.service-section.logstash{background:#fbfdff;border-top:0}.service-section-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0;padding:14px 20px;background:var(--ui-brand);color:#fff;border:0;border-radius:8px 8px 0 0}.service-section.kibana .service-section-heading,.service-section.logstash .service-section-heading{background:#2a6191}.service-section-heading h2{margin:0;padding:0;border:0;color:#fff;font-size:16px}.service-section-heading p{margin:2px 0 0;color:rgba(255,255,255,.78);font-size:12px}.service-section-count{color:rgba(255,255,255,.85);font-size:12px;font-weight:600}
   .diagnostic-section{margin:16px 20px;background:#fff;border:1px solid var(--ui-line);border-radius:8px;overflow:hidden;scroll-margin-top:120px}.diagnostic-section .section-head{padding:12px 16px;background:#f7f9fc;color:var(--ui-ink);border-bottom:1px solid var(--ui-line)}.diagnostic-section .section-title{font-size:16px;color:var(--ui-ink)}.diagnostic-section .section-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ui-subtle);font-size:12px}.diagnostic-section .section-en{color:var(--ui-subtle);font-size:11px}.diagnostic-section .section-counts{color:var(--ui-muted)}.diagnostic-section .count-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:#eef1f6;color:var(--ui-muted);font-size:12px}.diagnostic-section .section-body{padding:0 16px}
   .check{border:0;border-bottom:1px solid var(--ui-line);border-left:0;border-radius:0;margin:0;overflow:visible;padding:16px 0}.check:last-child{border-bottom:0}.check>summary{display:grid;grid-template-columns:16px minmax(0,1fr);gap:4px 8px;align-items:start;padding:0;font-weight:400;list-style:none;cursor:pointer}.check>summary::-webkit-details-marker{display:none}.check>summary .chev{margin-top:3px;color:var(--ui-subtle);font-size:20px;line-height:1;transition:transform .15s ease}.check[open]>summary .chev{transform:rotate(90deg)}.check-head{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;gap:6px}.check-desc{grid-column:2;max-width:768px;color:var(--ui-muted);font-size:14px;line-height:1.625}.check-title{color:var(--ui-ink);font-size:15px;font-weight:500;line-height:1.5}.check-src{display:inline-flex;align-items:center;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ui-subtle);font-size:11px;line-height:1.5}.status-label{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#eef1f6;color:#62748e;font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1.5}.check.pass .status-label{background:#e4f7f0;color:#00875a}.check.info .status-label{background:#e4e9f2;color:#62748e}.check.warning .status-label{background:#fdf1dc;color:#b5730a}.check.critical .status-label{background:#ffe6ee;color:#db2c5b}.check.skipped .status-label{background:#f2f5f9;color:#a8b3c7}.check.unknown .status-label{background:#dfe3ec;color:#465272}
   .body.check-body{padding:16px 0 0 24px;border:0}.body.check-body h4{margin:16px 0 6px;color:var(--ui-ink);font-size:13px}.body.check-body h4:first-child{margin-top:0}.body.check-body li{color:var(--ui-muted);font-size:14px}.measurement-wrap,.judgment-wrap{border:1px solid var(--ui-line);border-radius:6px;overflow-x:auto}.measurement-table,.judgment-table{font-size:13px;min-width:560px}.measurement-table th,.judgment-table th{padding:8px 12px;background:var(--ui-brand);color:#fff;font-size:12px;font-weight:500}.measurement-table td,.judgment-table td{padding:8px 12px;border-top:1px solid var(--ui-line);color:var(--ui-ink)}.measurement-table .measurement-number{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.measurement-kind{display:inline-flex;padding:1px 8px;border-radius:999px;background:#eef1f6;color:var(--ui-muted);font-size:11px}.measurement-kind.counter{background:#fdf1dc;color:#b5730a}.measurement-note,.extra,.vw{color:var(--ui-muted);font-size:12px}.extra.info{color:#62748e}
   .footer{margin:24px 0;padding:16px 0;border-top:1px solid var(--ui-line);background:transparent;color:var(--ui-subtle);font-size:12px;line-height:1.75}
-  @media(max-width:980px){.wrap{padding:0 16px}.topbar,.section-nav{margin-left:-16px;margin-right:-16px}.section-nav-inner{justify-content:flex-start}.kpi-rate{width:100%}.diagnostic-section{margin-left:12px;margin-right:12px}.body.check-body{padding-left:0}}
-  @media(max-width:600px){.topbar{height:auto;padding:8px 16px}.topbar-inner{flex-wrap:wrap;justify-content:center;row-gap:4px}.section-nav{top:auto}.banner-head{align-items:flex-start}.deflist{gap:8px 16px}}
+  @media(max-width:980px){.wrap{padding:0 16px}.topbar,.section-nav{margin-left:-16px;margin-right:-16px}.section-nav-inner{justify-content:flex-start}.kpi-row{grid-template-columns:repeat(3,minmax(0,1fr))}.diagnostic-section{margin-left:12px;margin-right:12px}.body.check-body{padding-left:0}}
+  @media(max-width:600px){.topbar{height:auto;padding:8px 16px}.topbar-inner{flex-wrap:wrap;justify-content:center;row-gap:4px}.section-nav{top:auto}.banner-head{align-items:flex-start}.deflist{gap:8px 16px}.kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media print{.topbar{position:static;box-shadow:none}.section-nav{display:none}.check,.diagnostic-section,.service-section{break-inside:avoid;page-break-inside:avoid}.wrap{max-width:none;padding:0}.node-mobile-list{display:none}.node-overview-wrap{display:block}}
 
   /* 與核准模板一致的最終版面規則。前述既有樣式保留供舊元件相容，以下規則優先。 */
@@ -1305,7 +1315,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   .banner-icon{background:var(--s-bg);color:var(--s-fg)}.banner-title{color:var(--s-deep)}
   .banner-counts .count{color:var(--s-deep)}
   .tech>summary{display:flex;align-items:center;gap:6px;color:var(--s-deep);list-style:none;cursor:pointer}.tech>summary::-webkit-details-marker{display:none}
-  .kpi{min-height:142px}.kpi-rate-body{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;padding-top:8px}.kpi-rate-value{font-size:40px;font-weight:700;line-height:.9;color:var(--brand)}.kpi-rate-note{font-size:12px;color:var(--ink-2)}.kpi-rate-method{display:block;margin-top:7px;color:var(--ink-3);font-size:11px;line-height:1.45}
+  .kpi{min-height:142px}
   .kpi-icon{background:var(--s-bg);color:var(--s-fg)}.kpi-value{color:var(--s-fg)}.kpi-fill{background:var(--s-bar)}
   .section,.service-section,.diagnostic-section{margin:16px 0 0;padding:0;background:var(--surface);border:1px solid var(--line);border-radius:8px;overflow:hidden;scroll-margin-top:calc(var(--topbar-h) + var(--nav-h) + 8px)}
   .section-head,.diagnostic-section .section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 20px;background:var(--brand);color:#fff;border:0}
@@ -1320,6 +1330,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   .current-state-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;padding:12px 0 20px}
   .current-state-card{min-width:0;padding:14px;background:var(--canvas);border:1px solid var(--line);border-radius:6px}
   .current-state-card h3{margin:0 0 10px;color:var(--ink);font-size:13px;font-weight:700}
+  .current-state-uncollected p{margin:24px 0 8px;color:var(--ink-2);font-size:12px;line-height:1.6}
   .state-primary{margin-bottom:10px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:24px;font-weight:700;line-height:1.2}
   .state-subline{margin:-4px 0 10px;color:var(--ink-2);font-size:11px}
   .state-progress{height:7px;margin:7px 0 12px;border-radius:999px;background:var(--line);overflow:hidden}
@@ -1414,10 +1425,12 @@ const htmlTmpl = `{{define "diagnostic-results"}}
 </section>
 
 <section class="kpi-row" aria-label="檢查結果統計">
-  <div class="kpi kpi-rate"><span class="kpi-label">通過率</span><div class="kpi-rate-body"><span class="kpi-rate-value">{{pctOf (passRateCount .R.Summary) (addCounts .R.Summary)}}%</span><span class="kpi-rate-note">{{passRateCount .R.Summary}} / {{addCounts .R.Summary}} 項</span></div><small class="kpi-rate-method">計算：（通過＋資訊＋略過）÷ 全部項目</small></div>
   <div class="kpi kpi-stat" data-status="pass"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-check-circle"/></svg></span>通過</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Pass}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Pass (addCounts .R.Summary)}}%"></div></div></div></div>
+  <div class="kpi kpi-stat" data-status="info"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-info"/></svg></span>資訊</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Info}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Info (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Info (addCounts .R.Summary)}}%"></div></div></div></div>
   <div class="kpi kpi-stat" data-status="warning"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-alert-triangle"/></svg></span>警告</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Warning}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Warning (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Warning (addCounts .R.Summary)}}%"></div></div></div></div>
   <div class="kpi kpi-stat" data-status="critical"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-x-circle"/></svg></span>嚴重</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Critical}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Critical (addCounts .R.Summary)}}%"></div></div></div></div>
+  <div class="kpi kpi-stat" data-status="skipped"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-skip-forward"/></svg></span>略過</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Skipped}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Skipped (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Skipped (addCounts .R.Summary)}}%"></div></div></div></div>
+  <div class="kpi kpi-stat" data-status="unknown"><span class="kpi-label"><span class="kpi-icon"><svg class="ic ic-14"><use href="#i-help-circle"/></svg></span>未知</span><div><div class="kpi-figure"><span class="kpi-value">{{.R.Summary.Unknown}}</span><span class="kpi-unit">項 · {{pctOf .R.Summary.Unknown (addCounts .R.Summary)}}%</span></div><div class="kpi-track"><div class="kpi-fill" style="width:{{pctOf .R.Summary.Unknown (addCounts .R.Summary)}}%"></div></div></div></div>
 </section>
 
 {{if .R.VersionNotice}}
@@ -1433,6 +1446,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
 </div>
 {{end}}
 
+{{$report := .R}}
 {{with .R.CurrentState}}
 <section id="current-state" class="section current-state-section">
   <header class="section-head">
@@ -1445,6 +1459,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
       <article class="current-state-card">
         <h3>Elasticsearch 節點</h3>
         <dl class="state-list">
+          <dt>版本</dt><dd>{{versionText $report.Meta.Cluster.ESVersion}}</dd>
           <dt>預期節點</dt><dd>{{intp .Nodes.Expected}}</dd>
           <dt>目前回應</dt><dd>{{intp .Nodes.Responding}}</dd>
           <dt>缺失節點</dt><dd>{{intp .Nodes.Missing}}</dd>
@@ -1455,22 +1470,22 @@ const htmlTmpl = `{{define "diagnostic-results"}}
         <h3>Kibana</h3>
         <dl class="state-list">
           <dt>總數</dt><dd>{{intp .Kibana.Total}}</dd>
-          {{if .Kibana.Versions}}<dt>版本</dt><dd>{{joinNodes .Kibana.Versions}}</dd>{{end}}
+          <dt>版本</dt><dd>{{versionsText .Kibana.Versions}}</dd>
           <dt>可用</dt><dd>{{intp .Kibana.Available}}</dd>
           <dt>降級／不可用</dt><dd>{{intp .Kibana.Degraded}} / {{intp .Kibana.Unavailable}}</dd>
           <dt>未知</dt><dd>{{intp .Kibana.Unknown}}</dd>
         </dl>
-      </article>{{else}}<article class="current-state-card current-state-placeholder" aria-hidden="true"></article>{{end}}
+      </article>{{else}}<article class="current-state-card current-state-uncollected"><h3>Kibana</h3><p>本次健檢未採集 Kibana 資料。</p></article>{{end}}
       {{if .Logstash}}<article class="current-state-card">
         <h3>Logstash</h3>
         <dl class="state-list">
           <dt>總數</dt><dd>{{intp .Logstash.Total}}</dd>
-          {{if .Logstash.Versions}}<dt>版本</dt><dd>{{joinNodes .Logstash.Versions}}</dd>{{end}}
+          <dt>版本</dt><dd>{{versionsText .Logstash.Versions}}</dd>
           <dt>可用</dt><dd>{{intp .Logstash.Available}}</dd>
           <dt>降級／不可用</dt><dd>{{intp .Logstash.Degraded}} / {{intp .Logstash.Unavailable}}</dd>
           <dt>未知</dt><dd>{{intp .Logstash.Unknown}}</dd>
         </dl>
-      </article>{{else}}<article class="current-state-card current-state-placeholder" aria-hidden="true"></article>{{end}}
+      </article>{{else}}<article class="current-state-card current-state-uncollected"><h3>Logstash</h3><p>本次健檢未採集 Logstash 資料。</p></article>{{end}}
       <article class="current-state-card">
         <h3>核心服務</h3>
         <dl class="state-list">
@@ -1510,11 +1525,11 @@ const htmlTmpl = `{{define "diagnostic-results"}}
             <dt>設定鍵</dt><dd>cluster.max_shards_per_node</dd>
             <dt>每個非 frozen data node</dt><dd>{{intp .Shards.MaxPerNode}}</dd>
             <dt>納入計算節點</dt><dd>{{intp .Shards.CapacityNodeCount}}</dd>
-            {{if .Shards.MaxPerFrozenNode}}<dt>frozen 設定上限</dt><dd>{{intp .Shards.MaxPerFrozenNode}}</dd>{{end}}
+            {{if .Shards.FrozenCapacity}}<dt>frozen data node</dt><dd>{{intp .Shards.FrozenNodeCount}}</dd><dt>frozen shard 已用／有效上限</dt><dd>{{intp .Shards.FrozenUsed}} / {{intp .Shards.FrozenCapacity}}</dd>{{end}}
             <dt>活動比例</dt><dd>{{floatPct .Shards.ActivePercent}}</dd>
             <dt>搬移／初始化</dt><dd>{{intp .Shards.Relocating}} / {{intp .Shards.Initializing}}</dd>
           </dl>
-          <p class="state-technical-note">容量以 cluster.max_shards_per_node × 本次回應的非 frozen data node 數量計算；若節點角色或設定不足，顯示「—」。</p>
+          <p class="state-technical-note">優先採用 _health_report 的叢集容量；缺少時才以 cluster.max_shards_per_node × 本次回應的 data node 數量估算。Frozen shard 使用量僅在 health report 提供 current_used_shards 時顯示；缺少時顯示「—」，不當作 0。</p>
         </details>
       </article>
     </div>

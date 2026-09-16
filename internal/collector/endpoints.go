@@ -25,7 +25,7 @@ const (
 	EpNodesResourceInfo     = "/_nodes/os,process?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.ip,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall"
 	EpNodesBreakers         = "/_nodes/stats/breaker?timeout=5s&filter_path=nodes.*.name,nodes.*.breakers"
 	EpNodesIngest           = "/_nodes/stats/ingest?timeout=5s&filter_path=nodes.*.ingest.pipelines"
-	EpCatNodes              = "/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent"
+	EpCatNodes              = "/_cat/nodes?format=json&h=id,ip,name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent"
 	EpCatAllocation         = "/_cat/allocation?format=json&h=node,shards,shards.undesired,disk.percent"
 	EpCatIndices            = "/_cat/indices?format=json&h=index,health,status"
 	EpCatThreadPool         = "/_cat/thread_pool?format=json&h=node_name,name,active,queue,rejected,completed"
@@ -79,7 +79,7 @@ var Endpoints = []Endpoint{
 	{EpNodesResourceStats, "nodes_stats_jvm.json", "各節點 OS／process／filesystem／JVM 快照與 JVM old pool 記憶體壓力"},
 	{EpNodesResourceInfo, "nodes_info_os_process.json", "各節點 OS 版本／架構／processors、PID 與 memory lock 狀態"},
 	{EpNodesBreakers, "nodes_stats_breaker.json", "circuit breaker 跳閘累積次數"},
-	{EpCatNodes, "cat_nodes.json", "各節點 CPU／heap／disk 使用率與 allocated_processors"},
+	{EpCatNodes, "cat_nodes.json", "各節點 Node ID／IP、CPU／heap／disk 使用率與 allocated_processors"},
 	{EpCatAllocation, "cat_allocation.json", "各節點 shard 分布與待搬移數"},
 	{EpMapping, "mapping.json", "各 index 的 mapping（僅欄位結構，不含文件內容）"},
 	{EpNodesIngest, "nodes_stats_ingest.json", "ingest pipeline 處理數與失敗數"},

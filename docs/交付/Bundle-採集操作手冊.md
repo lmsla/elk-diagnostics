@@ -65,7 +65,7 @@ echo '採集前置檢查：OK'
 | `ES_USER` | Basic Auth 必填 | 有必要唯讀權限的 ES 帳號；API key 路徑不要設定。 |
 | `CA_CERT` | 自簽／私有 CA 必填 | CA 憑證檔實際路徑；公有 CA 環境依第 4.2 節操作。 |
 | `API_KEY_FILE` | API key 路徑必填其一 | 權限為 `600` 的 API key 檔案；也可改由核准的秘密管理系統注入 `ES_API_KEY`。Basic Auth 路徑不要設定。 |
-| `expected-es-nodes.txt` | 建議必做 | 每行一個正確的 ES `node.name`，不填 IP 或 role。 |
+| `expected-es-nodes.txt` | 建議必做 | 每行 `node.name|IP`；IP 是主要比對值，node.name 用於顯示。 |
 | `kibana-instances.conf` | 多 Kibana 時使用 | 每行 `instance-label|Kibana URL`；label 是自訂且不可重複的目錄／報告名稱。 |
 | `logstash-instances.conf` | 多 Logstash 時使用 | 每行 `instance-label|Logstash Node API URL`；label 是自訂且不可重複的目錄／報告名稱。 |
 | `BUNDLE_ROOT` | 指令已自動產生 | 每次採集都會用時間建立新目錄，不要改成舊採集包。 |
@@ -81,13 +81,15 @@ echo '採集前置檢查：OK'
 cp expected-es-nodes.txt.example expected-es-nodes.txt
 ```
 
-用文字編輯器開啟 `expected-es-nodes.txt`，將範例內容全部替換為現場實際的 ES `node.name`：
+用文字編輯器開啟 `expected-es-nodes.txt`，將範例內容全部替換為現場實際的 ES `node.name|IP`：
 
 ```text
-es-node-01
-es-node-02
-es-node-03
+es-node-01|10.0.0.11
+es-node-02|10.0.0.12
+es-node-03|10.0.0.13
 ```
+
+IP 是主要識別值；同一叢集若有兩個節點使用相同 `node.name`，仍要填入各自的 IP。IP 變更後必須同步更新清單。舊版只有 `node.name` 的清單仍可讀取，但遇到重複名稱時無法可靠區分節點。
 
 檢查清單：
 

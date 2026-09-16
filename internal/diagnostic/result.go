@@ -147,10 +147,13 @@ type CurrentShards struct {
 	MaxPerNode        *int     `json:"max_per_node,omitempty"`
 	MaxPerFrozenNode  *int     `json:"max_per_frozen_node,omitempty"`
 	MaxTotal          *int     `json:"max_total,omitempty"`
-	// Capacity 是依本次回應的非 frozen data node 數量計算出的叢集容量。
-	// MaxTotal 保留作為舊版欄位相容別名；新呈現應使用 Capacity。
+	// Capacity 是本次回應的 data shard 有效叢集容量；優先取 health report，
+	// 缺少時才以設定值與 data node 數量估算。MaxTotal 保留作為舊版欄位相容別名。
 	Capacity            *int     `json:"capacity,omitempty"`
 	CapacityNodeCount   *int     `json:"capacity_node_count,omitempty"`
+	FrozenNodeCount     *int     `json:"frozen_node_count,omitempty"`
+	FrozenUsed          *int     `json:"frozen_used,omitempty"`
+	FrozenCapacity      *int     `json:"frozen_capacity,omitempty"`
 	Remaining           *int     `json:"remaining,omitempty"`
 	CapacityUsedPercent *float64 `json:"capacity_used_percent,omitempty"`
 }

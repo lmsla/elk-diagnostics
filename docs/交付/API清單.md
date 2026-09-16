@@ -25,7 +25,7 @@
 | GET | `/_nodes/stats/os,process,fs,jvm?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.ip,nodes.*.roles,nodes.*.os.cpu,nodes.*.os.load_average,nodes.*.os.mem,nodes.*.os.swap,nodes.*.os.cgroup,nodes.*.process.cpu,nodes.*.process.mem,nodes.*.process.open_file_descriptors,nodes.*.process.max_file_descriptors,nodes.*.fs.total,nodes.*.fs.data,nodes.*.fs.io_stats,nodes.*.jvm.uptime_in_millis,nodes.*.jvm.mem,nodes.*.jvm.gc` | 各節點 OS／process／filesystem／JVM 快照與 JVM old pool 記憶體壓力 |
 | GET | `/_nodes/os,process?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.ip,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall` | 各節點 OS 版本／架構／processors、PID 與 memory lock 狀態 |
 | GET | `/_nodes/stats/breaker?timeout=5s&filter_path=nodes.*.name,nodes.*.breakers` | circuit breaker 跳閘累積次數 |
-| GET | `/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent` | 各節點 CPU／heap／disk 使用率與 allocated_processors |
+| GET | `/_cat/nodes?format=json&h=id,ip,name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent` | 各節點 Node ID／IP、CPU／heap／disk 使用率與 allocated_processors |
 | GET | `/_cat/allocation?format=json&h=node,shards,shards.undesired,disk.percent` | 各節點 shard 分布與待搬移數 |
 | GET | `/_mapping` | 各 index 的 mapping（僅欄位結構，不含文件內容） |
 | GET | `/_nodes/stats/ingest?timeout=5s&filter_path=nodes.*.ingest.pipelines` | ingest pipeline 處理數與失敗數 |

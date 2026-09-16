@@ -10,10 +10,11 @@ type HealthReport struct {
 }
 
 type HRIndicator struct {
-	Status    string        `json:"status"`
-	Symptom   string        `json:"symptom"`
-	Diagnosis []HRDiagnosis `json:"diagnosis"`
-	Impacts   []HRImpact    `json:"impacts"`
+	Status    string          `json:"status"`
+	Symptom   string          `json:"symptom"`
+	Details   json.RawMessage `json:"details"`
+	Diagnosis []HRDiagnosis   `json:"diagnosis"`
+	Impacts   []HRImpact      `json:"impacts"`
 }
 
 type HRDiagnosis struct {

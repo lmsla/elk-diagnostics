@@ -34,7 +34,7 @@
 #   - 指定 --redact-index-names 時，index、data stream 與 backing index 會做一致的部分遮蔽
 #   - _status.txt 記錄每個端點的 HTTP 狀態碼，供分析端還原採集當下的真實情況
 #   - _manifest.json 記錄採集包格式、採集時間（UTC）與腳本版本
-#   - 若提供預期節點清單，會複製成 _expected_es_nodes.txt，供分析端找出採集前已離線節點
+#   - 若提供預期節點清單（每行 node.name|IP），會複製成 _expected_es_nodes.txt，供分析端找出採集前已離線節點
 #   - 離開此環境前，請確認遮蔽選項符合客戶資料政策
 
 set -eu
@@ -333,8 +333,8 @@ fetch '/_nodes/stats/os,process,fs,jvm?timeout=5s&filter_path=_nodes,nodes.*.nam
 fetch '/_nodes/os,process?timeout=5s&filter_path=_nodes,nodes.*.name,nodes.*.ip,nodes.*.roles,nodes.*.os.name,nodes.*.os.pretty_name,nodes.*.os.arch,nodes.*.os.version,nodes.*.os.available_processors,nodes.*.os.allocated_processors,nodes.*.process.id,nodes.*.process.mlockall' 'nodes_info_os_process.json' '10'
 # circuit breaker 跳閘累積次數
 fetch '/_nodes/stats/breaker?timeout=5s&filter_path=nodes.*.name,nodes.*.breakers' 'nodes_stats_breaker.json' '10'
-# 各節點 CPU／heap／disk 使用率與 allocated_processors
-fetch '/_cat/nodes?format=json&h=name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent' 'cat_nodes.json' '10'
+# 各節點 Node ID／IP、CPU／heap／disk 使用率與 allocated_processors
+fetch '/_cat/nodes?format=json&h=id,ip,name,node.role,cpu,load_1m,allocated_processors,heap.percent,disk.used_percent' 'cat_nodes.json' '10'
 # 各節點 shard 分布與待搬移數
 fetch '/_cat/allocation?format=json&h=node,shards,shards.undesired,disk.percent' 'cat_allocation.json' '30'
 # 各 index 的 mapping（僅欄位結構，不含文件內容）
@@ -593,7 +593,7 @@ redact_bundle() {
     redact_failed=0
     while IFS= read -r redact_file; do
         case "$redact_file" in
-            "$OUT/_expected_es_nodes.txt"|"$OUT"/.redact-files.*) continue ;;
+            "$OUT"/.redact-files.*) continue ;;
         esac
         redact_tmp="$redact_file.redact.$$"
         if [ "$REDACT_INDEX_NAMES" -eq 1 ]; then

@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"sort"
 	"strconv"
+
+	"elk-diagnostics/internal/nodecontext"
 )
 
 // NodeJVM：JVM old pool 記憶體壓力（官方建議用 old pool used/max，比瞬時 heap% 準）。
@@ -92,6 +94,8 @@ func (c *Client) NodesBreakers() ([]NodeBreaker, error) {
 
 // NodeCPU：cat nodes 的資源利用（cpu/heap/disk 為瞬時值）。
 type NodeCPU struct {
+	ID                  string
+	IP                  string
 	Name                string
 	Role                string
 	CPU                 int
@@ -116,6 +120,8 @@ func (c *Client) CatNodesCPU() ([]NodeCPU, error) {
 	for _, m := range raw {
 		disk, diskKnown := percentIntKnown(m["disk.used_percent"])
 		out = append(out, NodeCPU{
+			ID:                  m["id"],
+			IP:                  nodecontext.NormalizeIP(m["ip"]),
 			Name:                m["name"],
 			Role:                m["node.role"],
 			CPU:                 atoi(m["cpu"]),
@@ -126,7 +132,15 @@ func (c *Client) CatNodesCPU() ([]NodeCPU, error) {
 			AllocatedProcessors: atoi(m["allocated_processors"]),
 		})
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name != out[j].Name {
+			return out[i].Name < out[j].Name
+		}
+		if out[i].ID != out[j].ID {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].IP < out[j].IP
+	})
 	return out, nil
 }
 

@@ -138,8 +138,8 @@ func NodeAPICoverage(snapshot *nodecontext.Snapshot) diagnostic.Result {
 	return unknownNodeContext(res, "Nodes API 回應不完整，無法宣稱已涵蓋所有節點", findings)
 }
 
-// ExpectedESNodeCoverage 用明確提供的 node.name 基準找出採集前就已離線的節點。
-// IP 與 roles 仍由 Nodes API 回傳，不納入人工維護的比對條件。
+// ExpectedESNodeCoverage 用明確提供的 node.name|IP 基準找出採集前就已離線的節點。
+// IP 是主要識別值；純 node.name 清單只為相容舊版 bundle。
 func ExpectedESNodeCoverage(expected []string, snapshot *nodecontext.Snapshot) diagnostic.Result {
 	res := diagnostic.Result{ID: "expected_es_node_coverage", Title: "預期 ES 節點完整性", Category: "node", Source: "raw_api", Docs: []string{docNodeInfo}}
 	if len(expected) == 0 {
@@ -149,9 +149,20 @@ func ExpectedESNodeCoverage(expected []string, snapshot *nodecontext.Snapshot) d
 	}
 
 	observed := map[string]bool{}
+	compareByIP := false
+	for _, raw := range expected {
+		if nodecontext.ParseExpectedNode(raw).IP != "" {
+			compareByIP = true
+			break
+		}
+	}
 	if snapshot != nil {
 		for _, node := range snapshot.Nodes {
-			if node.Name != "" {
+			if compareByIP {
+				if identity := nodecontext.NodeIdentity(node); identity != "" {
+					observed[identity] = true
+				}
+			} else if node.Name != "" {
 				observed[node.Name] = true
 			}
 		}

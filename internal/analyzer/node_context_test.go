@@ -63,6 +63,26 @@ func TestExpectedESNodeCoverage(t *testing.T) {
 	}
 }
 
+func TestExpectedESNodeCoverageUsesIPForDuplicateNames(t *testing.T) {
+	snapshot := &nodecontext.Snapshot{
+		StatsCoverage: completeCoverage(3),
+		Nodes: []nodecontext.Node{
+			{Name: "Elasticsearch01", IP: "10.99.1.250:9300"},
+			{Name: "Elasticsearch02", IP: "10.99.1.251:9300"},
+			{Name: "Elasticsearch02", IP: "10.99.1.252:9300"},
+		},
+	}
+	expected := []string{
+		"Elasticsearch01|10.99.1.250",
+		"Elasticsearch02|10.99.1.251",
+		"Elasticsearch02|10.99.1.252",
+	}
+	got := ExpectedESNodeCoverage(expected, snapshot)
+	if got.Status != diagnostic.StatusPass {
+		t.Fatalf("duplicate names should match by IP: %+v", got)
+	}
+}
+
 func TestNodeContextResultsConvergesPartialCoverage(t *testing.T) {
 	unlimited := true
 	locked := true
