@@ -39,6 +39,117 @@
 
 set -eu
 
+# 只在互動式終端機啟用 ANSI 顏色；輸出到檔案／管線或設定 NO_COLOR 時保持純文字。
+COLOR_ENABLED=0
+COLOR_RESET=''
+COLOR_RED=''
+COLOR_GREEN=''
+COLOR_YELLOW=''
+COLOR_CYAN=''
+COLOR_BOLD=''
+if [ -t 1 ] && [ -z "${NO_COLOR+x}" ] && [ "${TERM:-}" != "dumb" ]; then
+    COLOR_ENABLED=1
+    COLOR_RESET=$(printf '\033[0m')
+    COLOR_RED=$(printf '\033[31m')
+    COLOR_GREEN=$(printf '\033[32m')
+    COLOR_YELLOW=$(printf '\033[33m')
+    COLOR_CYAN=$(printf '\033[36m')
+    COLOR_BOLD=$(printf '\033[1m')
+fi
+
+print_colored() {
+    print_color="$1"
+    shift
+    if [ "$COLOR_ENABLED" -eq 1 ]; then
+        printf '%s%s%s\n' "$print_color" "$*" "$COLOR_RESET"
+    else
+        printf '%s\n' "$*"
+    fi
+}
+
+ES_API_TABLE_RULE='+--------------------------+--------+--------+--------------------------+'
+ES_NODE_TABLE_RULE='+--------------------------+--------+--------+--------+'
+SERVICES_TABLE_RULE='+--------------+-----------+-------------------+--------------------+--------------------+'
+
+# macOS/BSD 與 GNU 的 wc -L 對 UTF-8 全形字元的行寬計算不一致；表格中的非 ASCII
+# 標籤是固定值，直接記錄其終端機顯示寬度，避免不同作業系統造成分隔線錯位。
+# 未列入的值限於 ASCII 數字／標籤，使用 byte 數即可。ANSI 顏色在整行格式化後才套用。
+table_value_width() {
+    case "$1" in
+        '項目'|'總數'|'預期'|'回應'|'缺失'|'服務') printf '4' ;;
+        '目標數') printf '6' ;;
+        '核心 API 可用'|'核心 API 失敗') printf '13' ;;
+        '部分端點失敗') printf '12' ;;
+        '非 2xx／連線失敗') printf '16' ;;
+        'Elasticsearch API') printf '17' ;;
+        'Elasticsearch 節點') printf '18' ;;
+        'Kibana') printf '6' ;;
+        'Logstash') printf '8' ;;
+        '—') printf '1' ;;
+        *) printf '%s' "$1" | wc -c | tr -d ' ' ;;
+    esac
+}
+
+table_pad() {
+    table_align="$1"
+    table_value="$2"
+    table_width="$3"
+    table_used=$(table_value_width "$table_value")
+    table_padding=$((table_width - table_used))
+    [ "$table_padding" -lt 0 ] && table_padding=0
+    if [ "$table_align" = right ]; then
+        while [ "$table_padding" -gt 0 ]; do
+            printf ' '
+            table_padding=$((table_padding - 1))
+        done
+    fi
+    printf '%s' "$table_value"
+    if [ "$table_align" = left ]; then
+        while [ "$table_padding" -gt 0 ]; do
+            printf ' '
+            table_padding=$((table_padding - 1))
+        done
+    fi
+}
+
+table_es_api_row() {
+    printf '| '
+    table_pad left "$1" 24
+    printf ' | '
+    table_pad right "$2" 6
+    printf ' | '
+    table_pad right "$3" 6
+    printf ' | '
+    table_pad right "$4" 24
+    printf ' |'
+}
+
+table_es_node_row() {
+    printf '| '
+    table_pad left "$1" 24
+    printf ' | '
+    table_pad right "$2" 6
+    printf ' | '
+    table_pad right "$3" 6
+    printf ' | '
+    table_pad right "$4" 6
+    printf ' |'
+}
+
+table_services_row() {
+    printf '| '
+    table_pad left "$1" 12
+    printf ' | '
+    table_pad right "$2" 9
+    printf ' | '
+    table_pad right "$3" 17
+    printf ' | '
+    table_pad right "$4" 18
+    printf ' | '
+    table_pad right "$5" 18
+    printf ' |'
+}
+
 HOST=""
 OUT=""
 USERNAME=""
@@ -87,6 +198,7 @@ usage() {
   KIBANA_USERNAME / KIBANA_PASSWORD_FILE / KIBANA_API_KEY / KIBANA_CA_CERT
   LOGSTASH_USERNAME / LOGSTASH_PASSWORD_FILE / LOGSTASH_API_KEY / LOGSTASH_CA_CERT
   COLLECT_MODULE_DIR / SSH_CONNECT_TIMEOUT
+  NO_COLOR=1（停用終端機顏色；非互動輸出也會自動停用）
 
 互動式 Terminal：KIBANA／LOGSTASH 設定 username 且未提供 password file 時會不回顯詢問密碼。
 非互動執行：請提供 password file 或 API key，避免程序停在 prompt。
@@ -297,11 +409,11 @@ fetch() {
     fi
     printf 'elasticsearch/%s %s\n' "$2" "$code" >> "$STATUS"
     case "$code" in
-        2*)  printf '  [%2d/%2d] %s\n' "$n" "$TOTAL" "$2" ;;
-        000) printf '  [%2d/%2d] %s — 連線失敗（詳見 elasticsearch/_errors.log）\n' "$n" "$TOTAL" "$2"
+        2*)  print_colored "$COLOR_GREEN" "$(printf '  [%2d/%2d] %s' "$n" "$TOTAL" "$2")" ;;
+        000) print_colored "$COLOR_RED" "$(printf '  [%2d/%2d] %s — 連線失敗（詳見 elasticsearch/_errors.log）' "$n" "$TOTAL" "$2")"
              rm -f "$ES_OUT/$2"
              failed=$((failed + 1)) ;;
-        *)   printf '  [%2d/%2d] %s — HTTP %s\n' "$n" "$TOTAL" "$2" "$code"
+        *)   print_colored "$COLOR_YELLOW" "$(printf '  [%2d/%2d] %s — HTTP %s' "$n" "$TOTAL" "$2" "$code")"
              failed=$((failed + 1)) ;;
     esac
 }
@@ -403,7 +515,6 @@ fetch '/_nodes/shutdown' 'planned_shutdown.json' '30'
 fetch '/_cluster/state/metadata?filter_path=metadata.cluster_coordination.voting_config_exclusions' 'voting_exclusions.json' '30'
 fi
 
-module_failed=0
 KIBANA_TOTAL=0
 KIBANA_OK=0
 KIBANA_PARTIAL=0
@@ -452,9 +563,9 @@ summarize_instance() {
     fi
 
     case "$summary_result" in
-        ok) printf '[%s] %s (%s)：可用，%s\n' "$summary_service" "$summary_label" "$summary_url" "$summary_reason" ;;
-        partial) printf '[%s] %s (%s)：部分端點失敗，%s\n' "$summary_service" "$summary_label" "$summary_url" "$summary_reason" ;;
-        *) printf '[%s] %s (%s)：採集失敗，%s\n' "$summary_service" "$summary_label" "$summary_url" "$summary_reason" >&2 ;;
+        ok) print_colored "$COLOR_GREEN" "[$summary_service] $summary_label ($summary_url)：可用，$summary_reason" ;;
+        partial) print_colored "$COLOR_YELLOW" "[$summary_service] $summary_label ($summary_url)：部分端點失敗，$summary_reason" ;;
+        *) print_colored "$COLOR_RED" "[$summary_service] $summary_label ($summary_url)：採集失敗，$summary_reason" >&2 ;;
     esac
     MODULE_RESULT="$summary_result"
 }
@@ -475,7 +586,7 @@ collect_kibana_target() {
     case "$MODULE_RESULT" in
         ok) KIBANA_OK=$((KIBANA_OK + 1)) ;;
         partial) KIBANA_PARTIAL=$((KIBANA_PARTIAL + 1)) ;;
-        *) KIBANA_FAILED=$((KIBANA_FAILED + 1)); module_failed=$((module_failed + 1)) ;;
+        *) KIBANA_FAILED=$((KIBANA_FAILED + 1)) ;;
     esac
 }
 
@@ -496,7 +607,7 @@ collect_logstash_target() {
     case "$MODULE_RESULT" in
         ok) LOGSTASH_OK=$((LOGSTASH_OK + 1)) ;;
         partial) LOGSTASH_PARTIAL=$((LOGSTASH_PARTIAL + 1)) ;;
-        *) LOGSTASH_FAILED=$((LOGSTASH_FAILED + 1)); module_failed=$((module_failed + 1)) ;;
+        *) LOGSTASH_FAILED=$((LOGSTASH_FAILED + 1)) ;;
     esac
 }
 
@@ -505,7 +616,6 @@ if service_enabled host; then
         if ! "$MODULE_DIR/ssh.sh" --hosts-file "$SSH_HOSTS_FILE" \
             --host-collector "$MODULE_DIR/host.sh" --output "$OUT/host"; then
             echo "Host SSH 採集部分或全部失敗，詳見 host/_status.txt" >&2
-            module_failed=$((module_failed + 1))
         fi
     else
         if [ -z "$HOST_ID" ]; then
@@ -515,7 +625,6 @@ if service_enabled host; then
         case "$HOST_ID" in *[!A-Za-z0-9._-]*) echo "不合法的 host-id：$HOST_ID" >&2; exit 2 ;; esac
         if ! "$MODULE_DIR/host.sh" --output "$OUT/host/$HOST_ID"; then
             echo "本機 Host OS 採集失敗" >&2
-            module_failed=$((module_failed + 1))
         fi
     fi
 fi
@@ -783,8 +892,20 @@ if ! redact_bundle; then
 fi
 
 echo
-echo "完成：ES $n/$TOTAL 個端點，其中 $failed 個非 2xx；子採集器失敗 $module_failed 個。"
+print_colored "$COLOR_CYAN" "採集摘要"
 if service_enabled es; then
+    ES_OK_COUNT=$((TOTAL - failed))
+    print_colored "$COLOR_CYAN" "Elasticsearch 端點摘要"
+    print_colored "$COLOR_BOLD" "$ES_API_TABLE_RULE"
+    print_colored "$COLOR_BOLD" "$(table_es_api_row "項目" "總數" "2xx" "非 2xx／連線失敗")"
+    print_colored "$COLOR_BOLD" "$ES_API_TABLE_RULE"
+    if [ "$failed" -gt 0 ]; then
+        print_colored "$COLOR_YELLOW" "$(table_es_api_row "Elasticsearch API" "$TOTAL" "$ES_OK_COUNT" "$failed")"
+    else
+        print_colored "$COLOR_GREEN" "$(table_es_api_row "Elasticsearch API" "$TOTAL" "$ES_OK_COUNT" "$failed")"
+    fi
+    print_colored "$COLOR_BOLD" "$ES_API_TABLE_RULE"
+
     if [ -n "$EXPECTED_ES_NODES_FILE" ]; then
         ES_EXPECTED_COUNT="$(awk 'NF && $1 !~ /^#/ { count++ } END { print count + 0 }' "$EXPECTED_ES_NODES_FILE")"
         ES_RESPONDING_COUNT=""
@@ -793,22 +914,64 @@ if service_enabled es; then
         fi
         case "$ES_RESPONDING_COUNT" in
             ''|*[!0-9]*)
-                echo "Elasticsearch 摘要：預期 $ES_EXPECTED_COUNT 個節點，但目前回應數無法判定。" ;;
+                print_colored "$COLOR_CYAN" "ES 節點盤點"
+                print_colored "$COLOR_BOLD" "$ES_NODE_TABLE_RULE"
+                print_colored "$COLOR_BOLD" "$(table_es_node_row "項目" "預期" "回應" "缺失")"
+                print_colored "$COLOR_BOLD" "$ES_NODE_TABLE_RULE"
+                print_colored "$COLOR_YELLOW" "$(table_es_node_row "Elasticsearch 節點" "$ES_EXPECTED_COUNT" "—" "—")"
+                print_colored "$COLOR_BOLD" "$ES_NODE_TABLE_RULE"
+                print_colored "$COLOR_YELLOW" "回應數無法判定。" ;;
             *)
                 ES_MISSING_COUNT=$((ES_EXPECTED_COUNT - ES_RESPONDING_COUNT))
                 [ "$ES_MISSING_COUNT" -lt 0 ] && ES_MISSING_COUNT=0
-                echo "Elasticsearch 摘要：預期 $ES_EXPECTED_COUNT 個節點，$ES_RESPONDING_COUNT 個回應，缺失 $ES_MISSING_COUNT 個。"
+                print_colored "$COLOR_CYAN" "ES 節點盤點"
+                print_colored "$COLOR_BOLD" "$ES_NODE_TABLE_RULE"
+                print_colored "$COLOR_BOLD" "$(table_es_node_row "項目" "預期" "回應" "缺失")"
+                print_colored "$COLOR_BOLD" "$ES_NODE_TABLE_RULE"
+                if [ "$ES_MISSING_COUNT" -gt 0 ]; then
+                    print_colored "$COLOR_RED" "$(table_es_node_row "Elasticsearch 節點" "$ES_EXPECTED_COUNT" "$ES_RESPONDING_COUNT" "$ES_MISSING_COUNT")"
+                else
+                    print_colored "$COLOR_GREEN" "$(table_es_node_row "Elasticsearch 節點" "$ES_EXPECTED_COUNT" "$ES_RESPONDING_COUNT" "$ES_MISSING_COUNT")"
+                fi
+                print_colored "$COLOR_BOLD" "$ES_NODE_TABLE_RULE"
                 ;;
         esac
     else
-        echo "Elasticsearch 摘要：未提供預期節點清單，只能確認目前叢集回應數。"
+        print_colored "$COLOR_CYAN" "ES 節點盤點"
+        print_colored "$COLOR_BOLD" "$ES_NODE_TABLE_RULE"
+        print_colored "$COLOR_BOLD" "$(table_es_node_row "項目" "預期" "回應" "缺失")"
+        print_colored "$COLOR_BOLD" "$ES_NODE_TABLE_RULE"
+        print_colored "$COLOR_YELLOW" "$(table_es_node_row "Elasticsearch 節點" "—" "—" "—")"
+        print_colored "$COLOR_BOLD" "$ES_NODE_TABLE_RULE"
+        print_colored "$COLOR_YELLOW" "未提供預期節點清單，只能確認目前叢集回應數。"
     fi
 fi
-if service_enabled kibana; then
-    echo "Kibana 摘要：$KIBANA_TOTAL 個目標，$KIBANA_OK 可用，$KIBANA_PARTIAL 部分端點失敗，$KIBANA_FAILED 採集失敗。"
-fi
-if service_enabled logstash; then
-    echo "Logstash 摘要：$LOGSTASH_TOTAL 個目標，$LOGSTASH_OK 可用，$LOGSTASH_PARTIAL 部分端點失敗，$LOGSTASH_FAILED 採集失敗。"
+if service_enabled kibana || service_enabled logstash; then
+    print_colored "$COLOR_CYAN" "選配服務摘要"
+    print_colored "$COLOR_BOLD" "$SERVICES_TABLE_RULE"
+    print_colored "$COLOR_BOLD" "$(table_services_row "服務" "目標數" "核心 API 可用" "部分端點失敗" "核心 API 失敗")"
+    print_colored "$COLOR_BOLD" "$SERVICES_TABLE_RULE"
+    if service_enabled kibana; then
+        if [ "$KIBANA_FAILED" -gt 0 ]; then
+            KIBANA_ROW_COLOR="$COLOR_RED"
+        elif [ "$KIBANA_PARTIAL" -gt 0 ]; then
+            KIBANA_ROW_COLOR="$COLOR_YELLOW"
+        else
+            KIBANA_ROW_COLOR="$COLOR_GREEN"
+        fi
+        print_colored "$KIBANA_ROW_COLOR" "$(table_services_row "Kibana" "$KIBANA_TOTAL" "$KIBANA_OK" "$KIBANA_PARTIAL" "$KIBANA_FAILED")"
+    fi
+    if service_enabled logstash; then
+        if [ "$LOGSTASH_FAILED" -gt 0 ]; then
+            LOGSTASH_ROW_COLOR="$COLOR_RED"
+        elif [ "$LOGSTASH_PARTIAL" -gt 0 ]; then
+            LOGSTASH_ROW_COLOR="$COLOR_YELLOW"
+        else
+            LOGSTASH_ROW_COLOR="$COLOR_GREEN"
+        fi
+        print_colored "$LOGSTASH_ROW_COLOR" "$(table_services_row "Logstash" "$LOGSTASH_TOTAL" "$LOGSTASH_OK" "$LOGSTASH_PARTIAL" "$LOGSTASH_FAILED")"
+    fi
+    print_colored "$COLOR_BOLD" "$SERVICES_TABLE_RULE"
 fi
 echo
 
@@ -823,13 +986,6 @@ else
     echo "找不到 tar，未產生採集包壓縮檔" >&2
 fi
 
-if service_enabled es; then
-    echo "下一步（在可執行 elk-diagnostics 的機器上）："
-    echo "    elk-diagnostics check --from-bundle $OUT"
-    echo
-    echo "註：非 2xx 不一定代表有問題——部分端點以 4xx 表達語意（例如叢集健康時，"
-    echo "    allocation/explain 會回 400「沒有未分配的 shard」）。分析端會依 _status.txt"
-    echo "    的實際狀態碼判讀；真正無法判讀者一律標示為「無法判定」，不會被當成正常。"
-else
+if ! service_enabled es; then
     echo "此採集包未包含 Elasticsearch，現行 check 無法單獨分析；請作為原始證據保存。"
 fi

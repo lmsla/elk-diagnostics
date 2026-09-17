@@ -50,8 +50,34 @@ func RejectedRequests(rows []collector.ThreadPoolRow) diagnostic.Result {
 func JVMPressure(nodes []collector.NodeJVM, t rules.Thresholds) diagnostic.Result {
 	jvmWarnPct, jvmCritPct := t.Performance.JVMWarnPct, t.Performance.JVMCritPct
 	res := diagnostic.Result{ID: "jvm_memory_pressure", Title: "JVM 記憶體壓力", Category: "performance", Source: "raw_api", Docs: []string{docJVM}}
-	var crit, warn []string
+	judgment := numericJudgment(
+		"elasticsearch.node.jvm.old_pool.pressure", "JVM Old pool 壓力", "bytes", jvmWarnPct, jvmCritPct,
+		"官方建議 + 工具預警門檻", "單次快照，無法判斷壓力是否持續偏高；需搭配 GC 或時間序列確認。",
+	)
+	var crit, warn, missing []string
 	for _, n := range nodes {
+		if n.MaxBytes <= 0 {
+			// 保留既有 collector／測試只提供壓力百分比的相容性；完整資料仍應
+			// 優先呈現已用與上限，真正沒有任何可用比例時才標 unknown。
+			if n.PressurePct > 0 {
+				status := numericStatus(float64(n.PressurePct), jvmWarnPct, jvmCritPct)
+				judgment.Rows = append(judgment.Rows, numericRow(n.Name, nil, nil, float64p(float64(n.PressurePct)), status))
+				switch status {
+				case diagnostic.StatusCritical:
+					crit = append(crit, fmt.Sprintf("%s：old pool 壓力 %d%%", n.Name, n.PressurePct))
+				case diagnostic.StatusWarning:
+					warn = append(warn, fmt.Sprintf("%s：old pool 壓力 %d%%", n.Name, n.PressurePct))
+				}
+			} else {
+				judgment.Rows = append(judgment.Rows, numericRow(n.Name, nil, nil, nil, diagnostic.StatusUnknown))
+				missing = append(missing, fmt.Sprintf("%s：JVM old pool 上限不可得", n.Name))
+			}
+			continue
+		}
+		status := numericStatus(float64(n.PressurePct), jvmWarnPct, jvmCritPct)
+		judgment.Rows = append(judgment.Rows, numericRow(
+			n.Name, float64p(float64(n.UsedBytes)), float64p(float64(n.MaxBytes)), float64p(float64(n.PressurePct)), status,
+		))
 		res.Measurements = append(res.Measurements,
 			gauge("elasticsearch.node.jvm.old_pool.used", float64(n.UsedBytes), "bytes", "node", n.Name, n.Name, ""),
 			gauge("elasticsearch.node.jvm.old_pool.max", float64(n.MaxBytes), "bytes", "node", n.Name, n.Name, ""),
@@ -64,7 +90,8 @@ func JVMPressure(nodes []collector.NodeJVM, t rules.Thresholds) diagnostic.Resul
 			warn = append(warn, fmt.Sprintf("%s：old pool 壓力 %d%%", n.Name, n.PressurePct))
 		}
 	}
-	res.Findings = append(crit, warn...)
+	res.NumericJudgment = &judgment
+	res.Findings = append(append(crit, warn...), missing...)
 	switch {
 	case len(crit) > 0:
 		res.Status, res.Conclusion = diagnostic.StatusCritical, diagnostic.ConclusionConfirmed
@@ -74,8 +101,14 @@ func JVMPressure(nodes []collector.NodeJVM, t rules.Thresholds) diagnostic.Resul
 		res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
 		res.Summary = fmt.Sprintf("%d 個節點 JVM old pool 壓力 ≥%d%%", len(warn), jvmWarnPct)
 		res.Recommendations = []diagnostic.Recommendation{{Desc: "檢視昂貴查詢與 fielddata；持續偏高建議擴記憶體"}}
+	case len(missing) > 0 || len(nodes) == 0:
+		return unknownNodeContext(res, "部分或全部節點缺少 JVM old pool 資料，無法判定", missing)
 	default:
 		return pass(res, fmt.Sprintf("各節點 JVM old pool 壓力 <%d%%", jvmWarnPct))
+	}
+	if len(missing) > 0 {
+		res.RequiresExtra = true
+		res.ExtraReason = "部分節點缺少 JVM old pool 上限，異常數量可能低估"
 	}
 	return res
 }

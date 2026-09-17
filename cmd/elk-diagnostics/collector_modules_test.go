@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 func collectorModuleDir(t *testing.T) string {
@@ -112,6 +113,58 @@ func TestCollectScriptRunsOptionalAPIModules(t *testing.T) {
 	}
 }
 
+func TestCollectScriptDefinesTTYColorPolicy(t *testing.T) {
+
+	s, err := renderCollectScript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"[ -t 1 ]",
+		"NO_COLOR",
+		"COLOR_GREEN=$(printf '\\033[32m')",
+		"COLOR_YELLOW=$(printf '\\033[33m')",
+		"COLOR_RED=$(printf '\\033[31m')",
+		"print_colored()",
+		"table_value_width()",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("產生的採集腳本缺少顏色控制 %q", want)
+		}
+	}
+	if strings.Contains(s, "| wc -L") {
+		t.Error("表格欄寬不應依賴平台差異較大的 wc -L")
+	}
+}
+
+func terminalDisplayWidth(s string) int {
+	width := 0
+	for _, r := range s {
+		switch {
+		case unicode.In(r, unicode.Han), r == '／':
+			width += 2
+		default:
+			width++
+		}
+	}
+	return width
+}
+
+func assertSummaryTableRowsHaveMatchingWidths(t *testing.T, output string) {
+	t.Helper()
+	borderWidth := 0
+	for _, line := range strings.Split(output, "\n") {
+		switch {
+		case strings.HasPrefix(line, "+"):
+			borderWidth = terminalDisplayWidth(line)
+		case borderWidth > 0 && strings.HasPrefix(line, "|"):
+			if got := terminalDisplayWidth(line); got != borderWidth {
+				t.Errorf("摘要表格欄寬不一致：預期 %d、實際 %d：%q", borderWidth, got, line)
+			}
+		}
+	}
+}
+
 func TestCollectScriptRunsMultipleServiceInstances(t *testing.T) {
 	sh, err := exec.LookPath("sh")
 	if err != nil {
@@ -168,13 +221,32 @@ func TestCollectScriptRunsMultipleServiceInstances(t *testing.T) {
 		}
 	}
 	output := string(log)
+	if strings.Contains(output, "\x1b[") {
+		t.Error("非互動式測試輸出不應包含 ANSI 顏色控制碼")
+	}
+	assertSummaryTableRowsHaveMatchingWidths(t, output)
 	for _, want := range []string{
 		"[Kibana] kb-01", "[Kibana] kb-02",
 		"[Logstash] ls-01", "[Logstash] ls-02",
-		"Kibana 摘要：2 個目標", "Logstash 摘要：2 個目標",
+		"採集摘要", "Elasticsearch 端點摘要", "ES 節點盤點", "選配服務摘要",
+		"服務", "目標數", "核心 API 可用", "部分端點失敗", "核心 API 失敗",
+		"+--------------------------+--------+--------+--------------------------+",
+		"+--------------------------+--------+--------+--------+",
+		"+--------------+-----------+-------------------+--------------------+--------------------+",
+		"| 項目", "| Elasticsearch API", "| Kibana", "| Logstash",
+		"Kibana", "Logstash",
 	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("採集輸出缺少 %q", want)
+		}
+	}
+	for _, unwanted := range []string{
+		"子採集器失敗",
+		"下一步（在可執行 elk-diagnostics 的機器上）",
+		"註：非 2xx 不一定代表有問題",
+	} {
+		if strings.Contains(output, unwanted) {
+			t.Errorf("採集輸出不應包含 %q", unwanted)
 		}
 	}
 }

@@ -53,6 +53,32 @@ type Measurement struct {
 	PeerGroup string `json:"peer_group,omitempty"`
 }
 
+// NumericJudgment 是需要以「目前值／上限／比例」解讀的數值型判定。
+// Measurements 保留原始觀測值；NumericJudgment 提供 reporter 可直接呈現的
+// 判定欄位，避免從 Findings 文字反向解析門檻或狀態。
+type NumericJudgment struct {
+	Metric          string               `json:"metric"`
+	MetricLabel     string               `json:"metric_label"`
+	CurrentLabel    string               `json:"current_label"`
+	LimitLabel      string               `json:"limit_label"`
+	RatioLabel      string               `json:"ratio_label"`
+	ValueUnit       string               `json:"value_unit"`
+	RatioUnit       string               `json:"ratio_unit"`
+	WarningAt       *float64             `json:"warning_at,omitempty"`
+	CriticalAt      *float64             `json:"critical_at,omitempty"`
+	ThresholdSource string               `json:"threshold_source"`
+	SnapshotNote    string               `json:"snapshot_note,omitempty"`
+	Rows            []NumericJudgmentRow `json:"rows"`
+}
+
+type NumericJudgmentRow struct {
+	Entity  string   `json:"entity"`
+	Current *float64 `json:"current,omitempty"`
+	Limit   *float64 `json:"limit,omitempty"`
+	Ratio   *float64 `json:"ratio,omitempty"`
+	Status  Status   `json:"status"`
+}
+
 // Result 是單一診斷項目的標準輸出。
 type Result struct {
 	ID              string           `json:"id"`
@@ -71,6 +97,7 @@ type Result struct {
 	VersionWarning  string           `json:"version_warning,omitempty"`
 	Measurements    []Measurement    `json:"measurements,omitempty"`
 	JudgmentGuide   []JudgmentGuide  `json:"judgment_guide,omitempty"`
+	NumericJudgment *NumericJudgment `json:"numeric_judgment,omitempty"`
 }
 
 type ClusterMeta struct {

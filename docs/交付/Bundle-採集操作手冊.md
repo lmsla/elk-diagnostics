@@ -317,7 +317,7 @@ test -d "$PWD/collectors" || exit 2
 正式環境不得以 `--insecure` 取代憑證驗證。
 若需要對 index、data stream 做遮蔽，請參考 `4.4 選配遮蔽`。
 
-採集時終端機會逐一列出每個 label 與 URL 的結果，並在最後輸出 ES、Kibana、Logstash 摘要。`連線失敗` 只表示該 URL 當下無法取得核心 API，不能單憑此結果判定 instance 已離線；可能原因包括 URL、網路、TLS、帳號或權限設定錯誤。採集腳本會繼續處理其他目標，並將每個目標的 `_status.txt` 保留在對應目錄。
+採集時終端機會逐一列出每個 label 與 URL 的結果，最後以表格輸出 Elasticsearch 端點、ES 節點盤點，以及已啟用的 Kibana／Logstash 服務摘要。`核心 API 失敗` 只表示該目標當下無法取得核心 API，不能單憑此結果判定 instance 已離線；可能原因包括 URL、網路、TLS、帳號或權限設定錯誤。採集腳本會繼續處理其他目標，並將每個目標的 `_status.txt` 保留在對應目錄。
 
 只加入其中一項服務時，請由交付人員先準備對應指令，不要由使用者自行拆改上述區塊。
 
@@ -340,6 +340,8 @@ sed -n '1,200p' "$BUNDLE_ROOT/_status.txt"
 ```
 
 個別端點的 HTTP 400／403／timeout 可能來自版本、權限或當下語意；不得因為壓縮檔已產生就忽略。
+
+注意：非 2xx 不一定代表有問題。部分端點以 4xx 表達語意，例如叢集健康時，`allocation/explain` 可能回傳 400「沒有未分配的 shard」。分析端會依各端點 `_status.txt` 的實際狀態碼判讀；真正無法判讀的資料會標示為「無法判定」，不會被當成正常。
 
 ## 7. 交付採集包
 

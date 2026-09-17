@@ -221,14 +221,21 @@ func NodeFileDescriptorPressure(nodes []nodecontext.Node, t rules.Thresholds) di
 	warnPct, critPct := t.NodeContext.FDWarnPct, t.NodeContext.FDCritPct
 	res := diagnostic.Result{ID: "node_file_descriptor_pressure", Title: "File descriptor 使用率", Category: "node", Source: "raw_api", Docs: []string{docFileLimits}}
 	var critical, warning, missing []string
+	judgment := numericJudgment(
+		"elasticsearch.node.file_descriptor.pressure", "File descriptor 使用率", "count", warnPct, critPct,
+		"工具 heuristic", "單次快照；需確認 descriptor 是否持續增加。",
+	)
 	for _, n := range nodes {
 		name := nodeName(n)
 		open, max := n.Process.OpenFileDescriptors, n.Process.MaxFileDescriptors
 		if open == nil || max == nil || *max <= 0 {
+			judgment.Rows = append(judgment.Rows, numericRow(name, nil, nil, nil, diagnostic.StatusUnknown))
 			missing = append(missing, name+"：open/max file descriptors 不可得")
 			continue
 		}
 		pct := int(100 * *open / *max)
+		status := numericStatus(float64(pct), warnPct, critPct)
+		judgment.Rows = append(judgment.Rows, numericRow(name, float64p(float64(*open)), float64p(float64(*max)), float64p(float64(pct)), status))
 		finding := fmt.Sprintf("%s：open=%d max=%d（%d%%）", name, *open, *max, pct)
 		switch {
 		case pct >= critPct:
@@ -237,6 +244,7 @@ func NodeFileDescriptorPressure(nodes []nodecontext.Node, t rules.Thresholds) di
 			warning = append(warning, finding)
 		}
 	}
+	res.NumericJudgment = &judgment
 	res.Findings = append(append(critical, warning...), missing...)
 	switch {
 	case len(critical) > 0:
@@ -259,29 +267,41 @@ func NodeCgroupMemoryPressure(nodes []nodecontext.Node, t rules.Thresholds) diag
 	res := diagnostic.Result{ID: "node_cgroup_memory_pressure", Title: "Cgroup memory 餘裕", Category: "node", Source: "raw_api", Docs: []string{docNodeStats}}
 	var hits, missing []string
 	limited := 0
+	judgment := numericJudgment(
+		"elasticsearch.node.cgroup.memory.pressure", "Cgroup memory 使用率", "bytes", warnPct, 0,
+		"工具 heuristic", "usage 包含可回收 file cache；單次快照只標示警告，不升級為嚴重。",
+	)
 	for _, n := range nodes {
 		name := nodeName(n)
 		cg := n.OS.Cgroup.Memory
 		if cg.LimitUnlimited != nil && *cg.LimitUnlimited {
+			judgment.Rows = append(judgment.Rows, numericRow(name, nil, nil, nil, diagnostic.StatusSkipped))
 			continue
 		}
 		if cg.LimitBytes == nil {
 			// cgroup 是 Linux-only；已知非 Linux 時不算採集缺失。
 			if n.OS.Name == "" || strings.EqualFold(n.OS.Name, "Linux") {
+				judgment.Rows = append(judgment.Rows, numericRow(name, nil, nil, nil, diagnostic.StatusUnknown))
 				missing = append(missing, name+"：有限 cgroup memory limit 不可得")
+			} else {
+				judgment.Rows = append(judgment.Rows, numericRow(name, nil, nil, nil, diagnostic.StatusSkipped))
 			}
 			continue
 		}
 		limited++
 		if *cg.LimitBytes == 0 || cg.UsageBytes == nil {
+			judgment.Rows = append(judgment.Rows, numericRow(name, nil, nil, nil, diagnostic.StatusUnknown))
 			missing = append(missing, name+"：cgroup memory usage/limit 不完整")
 			continue
 		}
 		pct := int(100 * float64(*cg.UsageBytes) / float64(*cg.LimitBytes))
+		status := numericStatus(float64(pct), warnPct, 0)
+		judgment.Rows = append(judgment.Rows, numericRow(name, float64p(float64(*cg.UsageBytes)), float64p(float64(*cg.LimitBytes)), float64p(float64(pct)), status))
 		if pct >= warnPct {
 			hits = append(hits, fmt.Sprintf("%s：usage=%s limit=%s（%d%%）", name, formatBytesU(*cg.UsageBytes), formatBytesU(*cg.LimitBytes), pct))
 		}
 	}
+	res.NumericJudgment = &judgment
 	if len(hits) > 0 {
 		res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
 		res.Summary = fmt.Sprintf("%d 個節點 cgroup memory usage ≥%d%%", len(hits), warnPct)

@@ -44,6 +44,9 @@ func TestJVMPressure(t *testing.T) {
 		if res.Status != diagnostic.StatusPass {
 			t.Errorf("Status = %q, want pass", res.Status)
 		}
+		if res.NumericJudgment == nil || len(res.NumericJudgment.Rows) != 1 || res.NumericJudgment.Rows[0].Status != diagnostic.StatusPass {
+			t.Fatalf("NumericJudgment = %+v, want one pass row", res.NumericJudgment)
+		}
 	})
 	t.Run("達 warn 未達 crit", func(t *testing.T) {
 		res := JVMPressure([]collector.NodeJVM{{Name: "n1", PressurePct: 90}}, th)

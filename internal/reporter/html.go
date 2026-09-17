@@ -688,6 +688,8 @@ var htmlFuncs = template.FuncMap{
 		}
 		return "gauge"
 	},
+	"numericJudgment":   numericJudgment,
+	"numericStatusText": numericStatusText,
 	"hasCounter": func(values []diagnostic.Measurement) bool {
 		for _, value := range values {
 			if value.Kind == "counter" {
@@ -715,6 +717,106 @@ type hotspotObservationRow struct {
 	Median     string
 	Difference string
 	Nature     string
+}
+
+type numericJudgmentView struct {
+	MetricLabel     string
+	CurrentLabel    string
+	LimitLabel      string
+	RatioLabel      string
+	Thresholds      string
+	PeakValue       string
+	PeakEntity      string
+	OverallStatus   diagnostic.Status
+	ThresholdSource string
+	SnapshotNote    string
+	Rows            []numericJudgmentRowView
+}
+
+type numericJudgmentRowView struct {
+	Entity  string
+	Current string
+	Limit   string
+	Ratio   string
+	Status  diagnostic.Status
+}
+
+func numericJudgment(result diagnostic.Result) *numericJudgmentView {
+	judgment := result.NumericJudgment
+	if judgment == nil {
+		return nil
+	}
+	view := &numericJudgmentView{
+		MetricLabel:     judgment.MetricLabel,
+		CurrentLabel:    judgment.CurrentLabel,
+		LimitLabel:      judgment.LimitLabel,
+		RatioLabel:      judgment.RatioLabel,
+		Thresholds:      numericThresholdText(*judgment),
+		OverallStatus:   result.Status,
+		ThresholdSource: judgment.ThresholdSource,
+		SnapshotNote:    judgment.SnapshotNote,
+		Rows:            make([]numericJudgmentRowView, 0, len(judgment.Rows)),
+	}
+	var peak float64
+	var peakEntity string
+	peakKnown := false
+	for _, row := range judgment.Rows {
+		view.Rows = append(view.Rows, numericJudgmentRowView{
+			Entity:  row.Entity,
+			Current: formatNumericPointer(row.Current, judgment.ValueUnit),
+			Limit:   formatNumericPointer(row.Limit, judgment.ValueUnit),
+			Ratio:   formatNumericPointer(row.Ratio, judgment.RatioUnit),
+			Status:  row.Status,
+		})
+		if row.Ratio != nil && (!peakKnown || *row.Ratio > peak) {
+			peak, peakEntity, peakKnown = *row.Ratio, row.Entity, true
+		}
+	}
+	if peakKnown {
+		view.PeakValue = formatNumericValue(peak, judgment.RatioUnit)
+		view.PeakEntity = peakEntity
+	} else {
+		view.PeakValue = "—"
+	}
+	return view
+}
+
+func numericStatusText(status diagnostic.Status) string {
+	switch status {
+	case diagnostic.StatusPass:
+		return "通過"
+	case diagnostic.StatusWarning:
+		return "警告"
+	case diagnostic.StatusCritical:
+		return "嚴重"
+	case diagnostic.StatusSkipped:
+		return "不適用"
+	default:
+		return "無法判定"
+	}
+}
+
+func numericThresholdText(j diagnostic.NumericJudgment) string {
+	if j.WarningAt == nil {
+		return "門檻未設定"
+	}
+	warn := formatNumericValue(*j.WarningAt, j.RatioUnit)
+	if j.CriticalAt == nil {
+		return fmt.Sprintf("通過：< %s｜警告：≥ %s｜嚴重：未定義", warn, warn)
+	}
+	critical := formatNumericValue(*j.CriticalAt, j.RatioUnit)
+	return fmt.Sprintf("通過：< %s｜警告：%s ～ < %s｜嚴重：≥ %s", warn, warn, critical, critical)
+}
+
+func formatNumericPointer(value *float64, unit string) string {
+	if value == nil {
+		return "—"
+	}
+	return formatNumericValue(*value, unit)
+}
+
+func formatNumericValue(value float64, unit string) string {
+	return formatMeasurementValue(diagnostic.Measurement{Value: value, Unit: unit})
 }
 
 func hasHotspotMeasurements(id string, values []diagnostic.Measurement) bool {
@@ -1067,10 +1169,11 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   </summary>
   <div class="body check-body">
     {{if .Findings}}<h4>發現</h4><ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}
+    {{if numericJudgment .}}{{$numeric := numericJudgment .}}<h4>數值判定</h4><div class="numeric-judgment"><div class="numeric-summary"><div><span class="numeric-label">判定指標</span><b>{{$numeric.MetricLabel}}</b></div><div><span class="numeric-label">目前最高值</span><b>{{$numeric.PeakValue}}{{if $numeric.PeakEntity}}（{{$numeric.PeakEntity}}）{{end}}</b></div><div><span class="numeric-label">本次結果</span><span class="numeric-status {{cls $numeric.OverallStatus}}">{{numericStatusText $numeric.OverallStatus}}</span></div></div><p class="numeric-thresholds">{{$numeric.Thresholds}}</p><div class="measurement-wrap"><table class="measurement-table numeric-table"><thead><tr><th>節點</th><th>{{$numeric.CurrentLabel}}</th><th>{{$numeric.LimitLabel}}</th><th>{{$numeric.RatioLabel}}</th><th>判定</th></tr></thead><tbody>{{range $numeric.Rows}}<tr><td>{{.Entity}}</td><td class="measurement-number">{{.Current}}</td><td class="measurement-number">{{.Limit}}</td><td class="measurement-number">{{.Ratio}}</td><td><span class="numeric-status {{cls .Status}}">{{numericStatusText .Status}}</span></td></tr>{{end}}</tbody></table></div><p class="measurement-note">判定依據：{{$numeric.ThresholdSource}}{{if $numeric.SnapshotNote}}；{{$numeric.SnapshotNote}}{{end}}</p></div>{{end}}
     {{if hasHotspotMeasurements .ID .Measurements}}
     <h4>本次比較基準</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>比較群組</th><th>同類節點中位數</th></tr></thead><tbody>{{range hotspotBaselines .Measurements}}<tr><td>{{.Label}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Value}}</td></tr>{{end}}</tbody></table></div>
     <h4>節點觀測值</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>節點</th><th>比較群組</th><th>當下值</th><th>同類節點中位數</th><th>差距（百分點）</th><th>資料屬性</th></tr></thead><tbody>{{range hotspotRows .Measurements}}<tr><td>{{.Label}}</td><td>{{.Node}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Current}}</td><td class="measurement-number">{{if .Median}}{{.Median}}{{else}}—{{end}}</td><td class="measurement-number">{{if .Difference}}{{.Difference}}{{else}}—{{end}}</td><td>{{.Nature}}</td></tr>{{end}}</tbody></table></div><p class="measurement-note">中位數是本次同類節點的比較基準；差距以百分點表示。單次快照不能單獨判定 hot spotting。</p>
-    {{else if .Measurements}}<h4>本次觀測值</h4><div class="measurement-wrap"><table class="measurement-table"><thead><tr><th>指標</th><th>對象</th><th>數值</th><th>性質</th></tr></thead><tbody>{{range .Measurements}}<tr><td>{{measurementLabel .}}</td><td>{{measurementTarget .}}</td><td class="measurement-number">{{measurementValue .}}</td><td><span class="measurement-kind {{measurementKindClass .Kind}}">{{measurementKind .Kind}}</span></td></tr>{{end}}</tbody></table></div>{{if hasCounter .Measurements}}<p class="measurement-note">累積值需以前後兩次採集的差值判讀；節點或程序重啟後計數可能歸零。</p>{{end}}{{end}}
+    {{else if and .Measurements (not .NumericJudgment)}}<h4>本次觀測值</h4><div class="measurement-wrap"><table class="measurement-table"><thead><tr><th>指標</th><th>對象</th><th>數值</th><th>性質</th></tr></thead><tbody>{{range .Measurements}}<tr><td>{{measurementLabel .}}</td><td>{{measurementTarget .}}</td><td class="measurement-number">{{measurementValue .}}</td><td><span class="measurement-kind {{measurementKindClass .Kind}}">{{measurementKind .Kind}}</span></td></tr>{{end}}</tbody></table></div>{{if hasCounter .Measurements}}<p class="measurement-note">累積值需以前後兩次採集的差值判讀；節點或程序重啟後計數可能歸零。</p>{{end}}{{end}}
     {{if .JudgmentGuide}}<h4>判定方式</h4><div class="judgment-wrap"><table class="judgment-table"><thead><tr><th>情況</th><th>判讀</th></tr></thead><tbody>{{range .JudgmentGuide}}<tr><td>{{.Condition}}</td><td>{{.Interpretation}}</td></tr>{{end}}</tbody></table></div>{{end}}
     {{if .RootCauses}}<h4>可能根因（假設）</h4><ul>{{range .RootCauses}}<li>{{.}}</li>{{end}}</ul>{{end}}
     {{if .Recommendations}}<h4>建議（唯讀引導）</h4><ul>{{range .Recommendations}}<li>{{if .Cmd}}<code>{{.Cmd}}</code> — {{end}}{{.Desc}}</li>{{end}}</ul>{{end}}
@@ -1287,8 +1390,9 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   .diagnostic-section{margin:16px 20px;background:#fff;border:1px solid var(--ui-line);border-radius:8px;overflow:hidden;scroll-margin-top:120px}.diagnostic-section .section-head{padding:12px 16px;background:#f7f9fc;color:var(--ui-ink);border-bottom:1px solid var(--ui-line)}.diagnostic-section .section-title{font-size:16px;color:var(--ui-ink)}.diagnostic-section .section-id{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ui-subtle);font-size:12px}.diagnostic-section .section-en{color:var(--ui-subtle);font-size:11px}.diagnostic-section .section-counts{color:var(--ui-muted)}.diagnostic-section .count-chip{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:#eef1f6;color:var(--ui-muted);font-size:12px}.diagnostic-section .section-body{padding:0 16px}
   .check{border:0;border-bottom:1px solid var(--ui-line);border-left:0;border-radius:0;margin:0;overflow:visible;padding:16px 0}.check:last-child{border-bottom:0}.check>summary{display:grid;grid-template-columns:16px minmax(0,1fr);gap:4px 8px;align-items:start;padding:0;font-weight:400;list-style:none;cursor:pointer}.check>summary::-webkit-details-marker{display:none}.check>summary .chev{margin-top:3px;color:var(--ui-subtle);font-size:20px;line-height:1;transition:transform .15s ease}.check[open]>summary .chev{transform:rotate(90deg)}.check-head{grid-column:2;display:flex;flex-wrap:wrap;align-items:center;gap:6px}.check-desc{grid-column:2;max-width:768px;color:var(--ui-muted);font-size:14px;line-height:1.625}.check-title{color:var(--ui-ink);font-size:15px;font-weight:500;line-height:1.5}.check-src{display:inline-flex;align-items:center;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color:var(--ui-subtle);font-size:11px;line-height:1.5}.status-label{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;background:#eef1f6;color:#62748e;font-size:11px;font-weight:600;letter-spacing:.02em;line-height:1.5}.check.pass .status-label{background:#e4f7f0;color:#00875a}.check.info .status-label{background:#e4e9f2;color:#62748e}.check.warning .status-label{background:#fdf1dc;color:#b5730a}.check.critical .status-label{background:#ffe6ee;color:#db2c5b}.check.skipped .status-label{background:#f2f5f9;color:#a8b3c7}.check.unknown .status-label{background:#dfe3ec;color:#465272}
   .body.check-body{padding:16px 0 0 24px;border:0}.body.check-body h4{margin:16px 0 6px;color:var(--ui-ink);font-size:13px}.body.check-body h4:first-child{margin-top:0}.body.check-body li{color:var(--ui-muted);font-size:14px}.measurement-wrap,.judgment-wrap{border:1px solid var(--ui-line);border-radius:6px;overflow-x:auto}.measurement-table,.judgment-table{font-size:13px;min-width:560px}.measurement-table th,.judgment-table th{padding:8px 12px;background:var(--ui-brand);color:#fff;font-size:12px;font-weight:500}.measurement-table td,.judgment-table td{padding:8px 12px;border-top:1px solid var(--ui-line);color:var(--ui-ink)}.measurement-table .measurement-number{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.measurement-kind{display:inline-flex;padding:1px 8px;border-radius:999px;background:#eef1f6;color:var(--ui-muted);font-size:11px}.measurement-kind.counter{background:#fdf1dc;color:#b5730a}.measurement-note,.extra,.vw{color:var(--ui-muted);font-size:12px}.extra.info{color:#62748e}
+  .numeric-judgment{border:1px solid var(--ui-line);border-radius:6px;padding:12px;background:#fbfcfe}.numeric-summary{display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end}.numeric-summary>div{display:flex;flex-direction:column;gap:3px}.numeric-label{color:var(--ui-muted);font-size:11px}.numeric-summary b{color:var(--ui-ink);font-size:14px}.numeric-thresholds{margin:10px 0 8px;color:var(--ui-muted);font-size:12px}.numeric-table{min-width:0}.numeric-table td:first-child{font-weight:500}.numeric-status{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;background:#eef1f6;color:#62748e}.numeric-status.pass{background:#e4f7f0;color:#00875a}.numeric-status.warning{background:#fdf1dc;color:#b5730a}.numeric-status.critical{background:#ffe6ee;color:#db2c5b}.numeric-status.skipped{background:#f2f5f9;color:#8b98ad}.numeric-status.unknown{background:#dfe3ec;color:#465272}
   .footer{margin:24px 0;padding:16px 0;border-top:1px solid var(--ui-line);background:transparent;color:var(--ui-subtle);font-size:12px;line-height:1.75}
-  @media(max-width:980px){.wrap{padding:0 16px}.topbar,.section-nav{margin-left:-16px;margin-right:-16px}.section-nav-inner{justify-content:flex-start}.kpi-row{grid-template-columns:repeat(3,minmax(0,1fr))}.diagnostic-section{margin-left:12px;margin-right:12px}.body.check-body{padding-left:0}}
+  @media(max-width:980px){.wrap{padding:0 16px}.topbar,.section-nav{margin-left:-16px;margin-right:-16px}.section-nav-inner{justify-content:flex-start}.kpi-row{grid-template-columns:repeat(3,minmax(0,1fr))}.diagnostic-section{margin-left:12px;margin-right:12px}.body.check-body{padding-left:0}.numeric-summary{grid-template-columns:1fr 1fr}.numeric-summary>div:last-child{grid-column:1 / -1}}
   @media(max-width:600px){.topbar{height:auto;padding:8px 16px}.topbar-inner{flex-wrap:wrap;justify-content:center;row-gap:4px}.section-nav{top:auto}.banner-head{align-items:flex-start}.deflist{gap:8px 16px}.kpi-row{grid-template-columns:repeat(2,minmax(0,1fr))}}
   @media print{.topbar{position:static;box-shadow:none}.section-nav{display:none}.check,.diagnostic-section,.service-section{break-inside:avoid;page-break-inside:avoid}.wrap{max-width:none;padding:0}.node-mobile-list{display:none}.node-overview-wrap{display:block}}
 

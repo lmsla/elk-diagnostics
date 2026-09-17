@@ -469,6 +469,41 @@ func TestHTML_DiagnosticCardShowsCurrentMeasurements(t *testing.T) {
 	}
 }
 
+func TestHTML_DiagnosticCardShowsCompactNumericJudgment(t *testing.T) {
+	r := sampleReport()
+	r.Results = []diagnostic.Result{{
+		ID: "jvm_memory_pressure", Title: "JVM 記憶體壓力", Category: "performance", Status: diagnostic.StatusPass,
+		Summary: "各節點 JVM old pool 壓力 <85%",
+		NumericJudgment: &diagnostic.NumericJudgment{
+			MetricLabel: "JVM Old pool 壓力", CurrentLabel: "已用", LimitLabel: "上限", RatioLabel: "壓力",
+			ValueUnit: "bytes", RatioUnit: "percent", WarningAt: htmlFloat(85), CriticalAt: htmlFloat(95),
+			ThresholdSource: "官方建議 + 工具預警門檻", SnapshotNote: "單次快照，需搭配 GC 確認。",
+			Rows: []diagnostic.NumericJudgmentRow{
+				{Entity: "Elasticsearch01", Current: htmlFloat(1.7 * 1024 * 1024 * 1024), Limit: htmlFloat(4 * 1024 * 1024 * 1024), Ratio: htmlFloat(43), Status: diagnostic.StatusPass},
+				{Entity: "Elasticsearch02", Current: htmlFloat(1.6 * 1024 * 1024 * 1024), Limit: htmlFloat(4 * 1024 * 1024 * 1024), Ratio: htmlFloat(39), Status: diagnostic.StatusPass},
+			},
+		},
+	}}
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{
+		"數值判定", "目前最高值", "43%（Elasticsearch01）", "通過：&lt; 85%｜警告：85% ～ &lt; 95%｜嚴重：≥ 95%",
+		"節點", "已用", "上限", "壓力", "判定", "1.7 GiB", "4.0 GiB", "官方建議 &#43; 工具預警門檻", "單次快照，需搭配 GC 確認。",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("數值判定區塊缺少 %q", want)
+		}
+	}
+	if strings.Contains(s, "JVM Old pool 已用</td>") {
+		t.Error("數值判定卡不應再把每個原始 measurement 拆成多列")
+	}
+}
+
+func htmlFloat(value float64) *float64 { return &value }
+
 func TestHTML_HotspotUsesComparableGroupTable(t *testing.T) {
 	r := sampleReport()
 	r.Results = []diagnostic.Result{{

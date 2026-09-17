@@ -170,8 +170,12 @@ func TestNodeFileDescriptorPressure(t *testing.T) {
 	}{{799, diagnostic.StatusPass}, {800, diagnostic.StatusWarning}, {900, diagnostic.StatusCritical}}
 	for _, tc := range cases {
 		nodes := []nodecontext.Node{{Name: "n1", Process: nodecontext.Process{OpenFileDescriptors: i64p(tc.open), MaxFileDescriptors: i64p(1000)}}}
-		if got := NodeFileDescriptorPressure(nodes, th).Status; got != tc.want {
+		res := NodeFileDescriptorPressure(nodes, th)
+		if got := res.Status; got != tc.want {
 			t.Errorf("open=%d status=%s, want %s", tc.open, got, tc.want)
+		}
+		if res.NumericJudgment == nil || len(res.NumericJudgment.Rows) != 1 || res.NumericJudgment.Rows[0].Status != tc.want {
+			t.Fatalf("open=%d NumericJudgment=%+v, want one %s row", tc.open, res.NumericJudgment, tc.want)
 		}
 	}
 }
@@ -179,8 +183,12 @@ func TestNodeFileDescriptorPressure(t *testing.T) {
 func TestNodeCgroupMemoryPressure(t *testing.T) {
 	th := testThresholds()
 	linux := nodecontext.OS{Name: "Linux", Cgroup: nodecontext.Cgroup{Memory: nodecontext.CgroupMemory{UsageBytes: u64p(900), LimitBytes: u64p(1000), LimitUnlimited: boolp(false)}}}
-	if got := NodeCgroupMemoryPressure([]nodecontext.Node{{Name: "n1", OS: linux}}, th); got.Status != diagnostic.StatusWarning || !got.RequiresExtra {
+	got := NodeCgroupMemoryPressure([]nodecontext.Node{{Name: "n1", OS: linux}}, th)
+	if got.Status != diagnostic.StatusWarning || !got.RequiresExtra {
 		t.Errorf("90%% cgroup got=%+v", got)
+	}
+	if got.NumericJudgment == nil || len(got.NumericJudgment.Rows) != 1 || got.NumericJudgment.Rows[0].Status != diagnostic.StatusWarning {
+		t.Fatalf("90%% cgroup NumericJudgment=%+v, want one warning row", got.NumericJudgment)
 	}
 	unlimited := nodecontext.OS{Name: "Linux", Cgroup: nodecontext.Cgroup{Memory: nodecontext.CgroupMemory{LimitUnlimited: boolp(true)}}}
 	if got := NodeCgroupMemoryPressure([]nodecontext.Node{{Name: "n1", OS: unlimited}}, th).Status; got != diagnostic.StatusPass {
