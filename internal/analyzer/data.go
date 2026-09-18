@@ -116,19 +116,34 @@ func MappingExplosion(counts []collector.IndexFieldCount, t rules.Thresholds) di
 func IngestPipelineErrors(pipes []collector.IngestPipeline, t rules.Thresholds) diagnostic.Result {
 	ingestFailWarn := t.Data.IngestFailWarnPct
 	res := diagnostic.Result{ID: "ingest_pipeline_errors", Title: "Ingest pipeline 失敗", Category: "data", Source: "raw_api", Docs: []string{docIngest}}
+	table := newDetailTable("本次判定", "count／failed 為自節點啟動起的累積值；count=0 時失敗率不適用。", "Pipeline", "已處理", "失敗", "失敗率")
+	res.DetailTable = table
 	var hits []string
 	for _, p := range pipes {
+		status := diagnostic.StatusSkipped
+		rateText := "—"
 		res.Measurements = append(res.Measurements,
 			counter("elasticsearch.ingest.pipeline.processed", float64(p.Count), "count", "pipeline", p.Pipeline, p.Pipeline, ""),
 			counter("elasticsearch.ingest.pipeline.failed", float64(p.Failed), "count", "pipeline", p.Pipeline, p.Pipeline, ""),
 		)
 		if p.Count > 0 {
 			pct := int(100 * p.Failed / p.Count)
+			rateText = fmt.Sprintf("%d%%", pct)
+			status = diagnostic.StatusPass
+			if pct > ingestFailWarn {
+				status = diagnostic.StatusWarning
+			}
+			addDetailRow(table, status, p.Pipeline, fmt.Sprintf("%d", p.Count), fmt.Sprintf("%d", p.Failed), rateText)
 			res.Measurements = append(res.Measurements, gauge("elasticsearch.ingest.pipeline.failure_rate", float64(pct), "percent", "pipeline", p.Pipeline, p.Pipeline, ""))
 			if pct > ingestFailWarn {
 				hits = append(hits, fmt.Sprintf("%s：failed=%d / count=%d（%d%%）", p.Pipeline, p.Failed, p.Count, pct))
 			}
+		} else {
+			addDetailRow(table, status, p.Pipeline, fmt.Sprintf("%d", p.Count), fmt.Sprintf("%d", p.Failed), rateText)
 		}
+	}
+	if len(table.Rows) == 0 {
+		res.DetailTable = nil
 	}
 	if len(hits) == 0 {
 		return pass(res, "各 ingest pipeline 失敗率正常")

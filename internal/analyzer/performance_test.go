@@ -25,6 +25,9 @@ func TestRejectedRequests(t *testing.T) {
 		if res.Status != diagnostic.StatusWarning {
 			t.Errorf("Status = %q, want warning", res.Status)
 		}
+		if res.DetailTable == nil || len(res.DetailTable.Rows) != 1 {
+			t.Fatalf("DetailTable = %+v, want one pool row", res.DetailTable)
+		}
 		if !res.RequiresExtra {
 			t.Error("rejected 為累積值，應要求雙取樣確認")
 		}

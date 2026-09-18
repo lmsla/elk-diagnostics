@@ -521,6 +521,41 @@ func TestHTML_DiagnosticCardShowsCompactNumericJudgment(t *testing.T) {
 	}
 }
 
+func TestHTML_DiagnosticCardShowsDetailTable(t *testing.T) {
+	r := sampleReport()
+	r.Results = []diagnostic.Result{{
+		ID: "data_stream_health", Title: "Data stream 健康", Category: "data", Status: diagnostic.StatusWarning,
+		Summary: "1 個 data stream 為 yellow",
+		DetailTable: &diagnostic.DetailTable{
+			Title:        "本次判定",
+			Columns:      []string{"Data stream", "狀態", "Backing indices"},
+			StatusColumn: true,
+			Note:         "狀態由 API 直接回傳。",
+			SummaryRows:  []diagnostic.DetailTableRow{{Values: []string{"Data stream 總數", "叢集", "1"}}},
+			Rows: []diagnostic.DetailTableRow{{
+				Values: []string{"logs-prod", "yellow", "3"}, Status: diagnostic.StatusWarning,
+			}},
+		},
+		Measurements: []diagnostic.Measurement{{Metric: "elasticsearch.data_stream.count", Kind: "gauge", Value: 1, Unit: "count"}},
+	}}
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{"本次判定", "Data stream", "Data stream 總數", "叢集", "logs-prod", "yellow", "Backing indices", "警告", "狀態由 API 直接回傳。"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("明細表格缺少 %q", want)
+		}
+	}
+	if !strings.Contains(s, `class="measurement-table detail-table"`) {
+		t.Error("診斷卡應使用明細表格")
+	}
+	if strings.Contains(s, "本次觀測值") {
+		t.Error("已有 DetailTable 的診斷卡不應再顯示重複的觀測值表")
+	}
+}
+
 func htmlFloat(value float64) *float64 { return &value }
 
 func TestHTML_HotspotUsesComparableGroupTable(t *testing.T) {

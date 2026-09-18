@@ -26,6 +26,9 @@ func PendingClusterTasks(tasks []collector.PendingClusterTask, t rules.Threshold
 	warnMillis := int64(t.StaticHealth.PendingTaskWarnSeconds) * 1000
 	critMillis := int64(t.StaticHealth.PendingTaskCritSeconds) * 1000
 	res := diagnostic.Result{ID: "cluster_pending_tasks", Title: "Cluster pending tasks", Category: "cluster", Source: "raw_api", Docs: []string{docPendingTasks}}
+	note := fmt.Sprintf("排隊時間門檻：警告 ≥%d 秒；嚴重 ≥%d 秒。", t.StaticHealth.PendingTaskWarnSeconds, t.StaticHealth.PendingTaskCritSeconds)
+	table := newDetailTable("本次判定", note, "Priority／Source", "排隊時間", "執行中")
+	res.DetailTable = table
 	var critical, warning []string
 	var maxQueueMillis int64
 	for _, task := range tasks {
@@ -33,12 +36,25 @@ func PendingClusterTasks(tasks []collector.PendingClusterTask, t rules.Threshold
 			maxQueueMillis = task.QueueTimeMillis
 		}
 		finding := fmt.Sprintf("priority=%s queue=%s executing=%t source=%s", task.Priority, formatDurationMillis(task.QueueTimeMillis), task.CurrentlyExecuting, task.Source)
+		status := diagnostic.StatusPass
 		switch {
 		case task.QueueTimeMillis >= critMillis:
+			status = diagnostic.StatusCritical
 			critical = append(critical, finding)
 		case task.QueueTimeMillis >= warnMillis:
+			status = diagnostic.StatusWarning
 			warning = append(warning, finding)
 		}
+		executing := "否"
+		if task.CurrentlyExecuting {
+			executing = "是"
+		}
+		addDetailRow(table, status, valueOr(task.Priority, "未提供")+" / "+valueOr(task.Source, "未提供"), formatDurationMillis(task.QueueTimeMillis), executing)
+	}
+	if len(table.Rows) == 0 {
+		table = newDetailTable("本次判定", note, "指標", "本次值")
+		addDetailRow(table, diagnostic.StatusPass, "Pending task 數量", "0")
+		res.DetailTable = table
 	}
 	res.Measurements = append(res.Measurements,
 		gauge("elasticsearch.cluster.pending_task.count", float64(len(tasks)), "count", "", "", "", ""),
@@ -62,6 +78,9 @@ func PendingClusterTasks(tasks []collector.PendingClusterTask, t rules.Threshold
 func LongRunningTasks(tasks []collector.RunningTask, t rules.Thresholds) diagnostic.Result {
 	warnNanos := int64(t.StaticHealth.LongTaskWarnSeconds) * int64(time.Second)
 	res := diagnostic.Result{ID: "long_running_tasks", Title: "長時間執行 task", Category: "performance", Source: "raw_api", Docs: []string{docTasks}}
+	note := fmt.Sprintf("僅列出執行時間達 %d 秒的 task；監控 API 自身的 task 已排除。", t.StaticHealth.LongTaskWarnSeconds)
+	table := newDetailTable("本次判定", note, "Task／節點", "Action", "執行時間", "可取消")
+	res.DetailTable = table
 	var hits []string
 	var maxRunningNanos int64
 	for _, task := range tasks {
@@ -80,6 +99,16 @@ func LongRunningTasks(tasks []collector.RunningTask, t rules.Thresholds) diagnos
 			finding += " description=" + description
 		}
 		hits = append(hits, finding)
+		cancellable := "否"
+		if task.Cancellable {
+			cancellable = "是"
+		}
+		addDetailRow(table, diagnostic.StatusWarning, task.ID+" / "+valueOr(task.Node, "未提供"), task.Action, formatDurationMillis(task.RunningNanos/int64(time.Millisecond)), cancellable)
+	}
+	if len(table.Rows) == 0 {
+		table = newDetailTable("本次判定", note, "指標", "本次值")
+		addDetailRow(table, diagnostic.StatusPass, "超過門檻的 task 數量", "0")
+		res.DetailTable = table
 	}
 	res.Measurements = append(res.Measurements,
 		gauge("elasticsearch.task.long_running.count", float64(len(hits)), "count", "", "", "", ""),
@@ -97,20 +126,17 @@ func LongRunningTasks(tasks []collector.RunningTask, t rules.Thresholds) diagnos
 	return res
 }
 
+const shardLargeListGB = 40
+
 func ShardSizing(shards []collector.ShardSize, t rules.Thresholds) diagnostic.Result {
 	largeBytes := int64(t.StaticHealth.ShardLargeWarnGB) * 1024 * 1024 * 1024
+	listBytes := int64(shardLargeListGB) * 1024 * 1024 * 1024
 	smallBytes := int64(t.StaticHealth.ShardSmallMaxMB) * 1024 * 1024
 	res := diagnostic.Result{ID: "shard_sizing", Title: "Shard 大小規劃", Category: "capacity", Source: "raw_api", Docs: []string{docShardSizing}}
-	judgment := numericJudgment(
-		"elasticsearch.shard.primary.store", "Primary shard 大小", "bytes", 100, 0,
-		"官方 sizing 建議 + 工具 heuristic", "大型：達大型門檻；小型：低於小 shard 門檻且數量達預警值。單次快照需配合 workload 與 recovery 目標解讀。",
-	)
-	judgment.EntityLabel = "Index／shard"
-	judgment.CurrentLabel = "大小"
-	judgment.LimitLabel = "大型門檻"
-	judgment.RatioLabel = "大型門檻比例"
+
 	var large, small []string
-	var largeShards, smallShards []collector.ShardSize
+	var smallDetails []collector.ShardSize
+	var largeCandidates []collector.ShardSize
 	primaryCount := 0
 	var maxStoreBytes int64
 	for _, shard := range shards {
@@ -121,68 +147,95 @@ func ShardSizing(shards []collector.ShardSize, t rules.Thresholds) diagnostic.Re
 		if shard.StoreBytes > maxStoreBytes {
 			maxStoreBytes = shard.StoreBytes
 		}
-		switch {
-		case shard.StoreBytes >= largeBytes:
+		if shard.StoreBytes >= listBytes {
+			largeCandidates = append(largeCandidates, shard)
+		}
+		if shard.StoreBytes >= largeBytes {
 			large = append(large, fmt.Sprintf("%s shard=%d store=%s docs=%d node=%s", shard.Index, shard.Shard, formatBytes(shard.StoreBytes), shard.Docs, shard.Node))
-			largeShards = append(largeShards, shard)
-		case shard.StoreBytes <= smallBytes:
+		} else if shard.StoreBytes <= smallBytes {
 			small = append(small, fmt.Sprintf("%s shard=%d store=%s docs=%d", shard.Index, shard.Shard, formatBytes(shard.StoreBytes), shard.Docs))
-			smallShards = append(smallShards, shard)
+			smallDetails = append(smallDetails, shard)
 		}
 	}
-	appendJudgmentRow := func(shard collector.ShardSize, status diagnostic.Status) {
+
+	largeJudgment := numericJudgment(
+		"elasticsearch.shard.primary.store", "單一 shard 過大", "bytes", 100, 0,
+		"Elastic sizing guidance", "只列出達到列出門檻的 primary shard；單列達到 50 GiB 才判定警告。",
+	)
+	largeJudgment.Status = diagnostic.StatusPass
+	largeJudgment.EntityLabel = "Index／shard"
+	largeJudgment.CurrentLabel = "大小"
+	largeJudgment.LimitLabel = "警告門檻"
+	largeJudgment.RatioLabel = "50 GiB 比例"
+	largeJudgment.PeakLabel = "目前最大值"
+	largeJudgment.ThresholdText = fmt.Sprintf("列出：≥%d GiB；通過：< %s；警告：≥ %s；嚴重：未定義", shardLargeListGB, formatBytes(largeBytes), formatBytes(largeBytes))
+	appendLargeRow := func(shard collector.ShardSize) {
+		status := diagnostic.StatusPass
+		if shard.StoreBytes >= largeBytes {
+			status = diagnostic.StatusWarning
+			largeJudgment.Status = diagnostic.StatusWarning
+		}
 		ratio := float64(0)
 		if largeBytes > 0 {
 			ratio = float64(shard.StoreBytes) * 100 / float64(largeBytes)
 		}
-		judgment.Rows = append(judgment.Rows, numericRow(
+		largeJudgment.Rows = append(largeJudgment.Rows, numericRow(
 			fmt.Sprintf("%s / shard %d", shard.Index, shard.Shard),
 			float64p(float64(shard.StoreBytes)), float64p(float64(largeBytes)), float64p(ratio), status,
 		))
 	}
-	for _, shard := range largeShards {
-		if len(judgment.Rows) >= 20 {
-			break
-		}
-		appendJudgmentRow(shard, diagnostic.StatusWarning)
+	for _, shard := range largeCandidates {
+		appendLargeRow(shard)
 	}
+
+	smallStatus := diagnostic.StatusPass
 	if len(small) >= t.StaticHealth.ShardSmallCountWarn {
-		for _, shard := range smallShards {
-			if len(judgment.Rows) >= 20 {
-				break
-			}
-			appendJudgmentRow(shard, diagnostic.StatusWarning)
+		smallStatus = diagnostic.StatusWarning
+	}
+	smallJudgment := numericJudgment(
+		"elasticsearch.shard.primary.small.count", "小 shard 數量", "count", t.StaticHealth.ShardSmallCountWarn, 0,
+		"工具聚合 heuristic", "以 ≤1 GiB 的 primary shard 總數判定；不把聚合警告套用到單一 shard。",
+	)
+	smallJudgment.Status = smallStatus
+	smallJudgment.EntityLabel = "聚合項目"
+	smallJudgment.CurrentLabel = "目前數量"
+	smallJudgment.LimitLabel = "警告門檻"
+	smallJudgment.RatioLabel = ""
+	smallJudgment.PeakLabel = "目前數量"
+	smallJudgment.HideRows = true
+	smallJudgment.Rows = []diagnostic.NumericJudgmentRow{
+		numericRow(fmt.Sprintf("≤%d MiB 的 primary shard", t.StaticHealth.ShardSmallMaxMB), float64p(float64(len(small))), float64p(float64(t.StaticHealth.ShardSmallCountWarn)), nil, smallStatus),
+	}
+	if len(smallDetails) > 0 {
+		detail := newDetailTable("發現", fmt.Sprintf("列出 ≤%d MiB 的 primary shard；聚合數量門檻為 ≥%d 個。", t.StaticHealth.ShardSmallMaxMB, t.StaticHealth.ShardSmallCountWarn), "Index／shard", "大小", "Docs")
+		detail.StatusColumn = false
+		for _, shard := range smallDetails {
+			detail.Rows = append(detail.Rows, diagnostic.DetailTableRow{Values: []string{
+				fmt.Sprintf("%s / shard %d", shard.Index, shard.Shard), formatBytes(shard.StoreBytes), fmt.Sprintf("%d", shard.Docs),
+			}})
 		}
+		smallJudgment.DetailTable = detail
 	}
-	if len(judgment.Rows) == 0 && maxStoreBytes > 0 {
-		appendJudgmentRow(collector.ShardSize{Index: "最大 primary shard", Shard: 0, StoreBytes: maxStoreBytes}, diagnostic.StatusPass)
-	}
+
 	res.Measurements = append(res.Measurements,
 		gauge("elasticsearch.shard.primary.count", float64(primaryCount), "count", "", "", "", ""),
 		gauge("elasticsearch.shard.primary.max_store", float64(maxStoreBytes), "bytes", "", "", "", ""),
 		gauge("elasticsearch.shard.primary.large.count", float64(len(large)), "count", "", "", "", ""),
 		gauge("elasticsearch.shard.primary.small.count", float64(len(small)), "count", "", "", "", ""),
 	)
-	judgment.SnapshotNote = fmt.Sprintf("大型門檻 %s；小型門檻 ≤%d MiB 且數量 ≥%d（本次 %d）", formatBytes(largeBytes), t.StaticHealth.ShardSmallMaxMB, t.StaticHealth.ShardSmallCountWarn, len(small))
-	res.NumericJudgment = &judgment
-	if len(large) == 0 && len(small) < t.StaticHealth.ShardSmallCountWarn {
+	largeJudgment.SnapshotNote = fmt.Sprintf("僅列出 ≥%d GiB 的 shard；小於此值不列出。", shardLargeListGB)
+	smallJudgment.SnapshotNote = fmt.Sprintf("目前 %d 個；門檻為 ≥%d 個。這是聚合數量判定，不代表每個小 shard 個別異常。", len(small), t.StaticHealth.ShardSmallCountWarn)
+	res.NumericJudgments = []diagnostic.NumericJudgment{largeJudgment, smallJudgment}
+	if len(large) == 0 && smallStatus == diagnostic.StatusPass {
 		return pass(res, fmt.Sprintf("無 primary shard ≥%d GiB，且小 shard 數量低於 %d", t.StaticHealth.ShardLargeWarnGB, t.StaticHealth.ShardSmallCountWarn))
 	}
 	res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
-	res.Findings = append(res.Findings, large...)
-	if len(small) >= t.StaticHealth.ShardSmallCountWarn {
-		limit := len(small)
-		if limit > 20 {
-			limit = 20
-		}
-		res.Findings = append(res.Findings, small[:limit]...)
-	}
 	parts := []string{}
 	if len(large) > 0 {
-		parts = append(parts, fmt.Sprintf("%d 個大型 primary shard", len(large)))
+		parts = append(parts, fmt.Sprintf("%d 個 primary shard 達大型門檻 %s", len(large), formatBytes(largeBytes)))
 	}
-	if len(small) >= t.StaticHealth.ShardSmallCountWarn {
-		parts = append(parts, fmt.Sprintf("%d 個 ≤%d MiB 的小 primary shard", len(small), t.StaticHealth.ShardSmallMaxMB))
+	if smallStatus == diagnostic.StatusWarning {
+		parts = append(parts, "小 shard 數量達聚合門檻")
 	}
 	res.Summary = strings.Join(parts, "；")
 	res.RequiresExtra = true
@@ -193,8 +246,11 @@ func ShardSizing(shards []collector.ShardSize, t rules.Thresholds) diagnostic.Re
 
 func SnapshotFreshness(policies []collector.SLMPolicy, t rules.Thresholds, now time.Time) diagnostic.Result {
 	res := diagnostic.Result{ID: "snapshot_freshness", Title: "Snapshot 新鮮度 / RPO", Category: "snapshot", Source: "raw_api", Docs: []string{docSLMPolicy}}
+	table := newDetailTable("本次判定", fmt.Sprintf("預設 RPO 門檻：警告 ≥%d 小時；嚴重 ≥%d 小時。", t.StaticHealth.SnapshotWarnHours, t.StaticHealth.SnapshotCritHours), "SLM Policy", "最後成功", "距今", "已成功", "失敗")
+	res.DetailTable = table
 	res.Measurements = append(res.Measurements, gauge("elasticsearch.slm.freshness.evaluated_policy.count", float64(len(policies)), "count", "", "", "", ""))
 	if len(policies) == 0 {
+		res.DetailTable = nil
 		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
 		res.Summary = "未設定 SLM policy；無法由 SLM API 判斷外部或手動備份"
 		return res
@@ -211,26 +267,41 @@ func SnapshotFreshness(policies []collector.SLMPolicy, t rules.Thresholds, now t
 		if policy.LastSuccessMillis > 0 {
 			res.Measurements = append(res.Measurements, gauge("elasticsearch.slm.snapshot.last_success_age", float64(nowMillis-policy.LastSuccessMillis)/float64(time.Hour/time.Millisecond), "hours", "slm_policy", policy.Name, policy.Name, ""))
 		}
+		status := diagnostic.StatusPass
+		lastSuccess := formatEpochMillis(policy.LastSuccessMillis)
+		ageText := "—"
+		if policy.LastSuccessMillis > 0 {
+			ageText = formatDurationMillis(nowMillis - policy.LastSuccessMillis)
+		}
 		switch {
 		case policy.LastSuccessMillis == 0:
+			status = diagnostic.StatusWarning
 			finding := fmt.Sprintf("%s：尚無成功 snapshot（taken=%d failed=%d next=%s）", policy.Name, policy.SnapshotsTaken, policy.SnapshotsFailed, formatEpochMillis(policy.NextExecutionMillis))
 			if policy.SnapshotsFailed > 0 || (policy.NextExecutionMillis > 0 && policy.NextExecutionMillis < nowMillis) {
+				status = diagnostic.StatusCritical
 				critical = append(critical, finding)
 			} else {
 				warning = append(warning, finding)
 			}
 		case policy.LastFailureMillis > policy.LastSuccessMillis:
+			status = diagnostic.StatusCritical
 			critical = append(critical, fmt.Sprintf("%s：最後失敗 %s 晚於最後成功 %s", policy.Name, formatEpochMillis(policy.LastFailureMillis), formatEpochMillis(policy.LastSuccessMillis)))
 		default:
 			age := nowMillis - policy.LastSuccessMillis
 			finding := fmt.Sprintf("%s：最後成功 %s（%s前）snapshot=%s", policy.Name, formatEpochMillis(policy.LastSuccessMillis), formatDurationMillis(age), policy.LastSuccessSnapshot)
 			switch {
 			case age >= critAge:
+				status = diagnostic.StatusCritical
 				critical = append(critical, finding)
 			case age >= warnAge:
+				status = diagnostic.StatusWarning
 				warning = append(warning, finding)
 			}
 		}
+		addDetailRow(table, status, policy.Name, lastSuccess, ageText, fmt.Sprintf("%d", policy.SnapshotsTaken), fmt.Sprintf("%d", policy.SnapshotsFailed))
+	}
+	if len(table.Rows) == 0 {
+		res.DetailTable = nil
 	}
 	res.Findings = append(critical, warning...)
 	switch {
@@ -315,18 +386,23 @@ func NodeRuntimeConsistency(snapshot *collector.NodeRuntimeSnapshot) diagnostic.
 
 func TLSCertificateExpiry(certs []collector.TLSCertificate, t rules.Thresholds, now time.Time) diagnostic.Result {
 	res := diagnostic.Result{ID: "tls_certificate_expiry", Title: "TLS 憑證到期", Category: "security", Source: "raw_api", Docs: []string{docSSLCerts}}
+	table := newDetailTable("本次判定", fmt.Sprintf("到期提前量：%d 天；identity certificate 過期為嚴重，trust certificate 過期為警告。", t.StaticHealth.TLSExpiryWarnDays), "憑證", "到期日", "剩餘天數", "類型")
+	res.DetailTable = table
 	res.Measurements = append(res.Measurements, gauge("elasticsearch.tls.certificate.count", float64(len(certs)), "count", "", "", "", ""))
 	if len(certs) == 0 {
+		res.DetailTable = nil
+		res.HideMeasurementTable = true
 		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
-		res.Summary = "回應節點未回傳 Elasticsearch TLS certificate context"
+		res.Summary = "本次未取得 Elasticsearch TLS certificate 資料"
 		return res
 	}
-	warnBefore := now.Add(time.Duration(t.StaticHealth.ExpiryWarnDays) * 24 * time.Hour)
+	warnBefore := now.Add(time.Duration(t.StaticHealth.TLSExpiryWarnDays) * 24 * time.Hour)
 	var critical, warning, parseFailures []string
 	for _, cert := range certs {
 		expiry, err := time.Parse(time.RFC3339Nano, cert.Expiry)
 		if err != nil {
 			parseFailures = append(parseFailures, fmt.Sprintf("subject=%s expiry=%q 無法解析", cert.Subject, cert.Expiry))
+			addDetailRow(table, diagnostic.StatusUnknown, valueOr(cert.Alias, valueOr(cert.Subject, cert.Path)), cert.Expiry, "—", "無法判定")
 			continue
 		}
 		name := cert.Alias
@@ -336,16 +412,25 @@ func TLSCertificateExpiry(certs []collector.TLSCertificate, t rules.Thresholds, 
 		if name == "" {
 			name = cert.Path
 		}
+		certType := "trust"
+		if cert.HasPrivateKey {
+			certType = "identity"
+		}
 		res.Measurements = append(res.Measurements, gauge("elasticsearch.tls.certificate.days_remaining", expiry.Sub(now).Hours()/24, "days", "certificate", name, name, ""))
 		finding := fmt.Sprintf("subject=%s issuer=%s expiry=%s private_key=%t path=%s", cert.Subject, cert.Issuer, expiry.UTC().Format(time.RFC3339), cert.HasPrivateKey, cert.Path)
+		status := diagnostic.StatusPass
 		switch {
 		case !expiry.After(now) && cert.HasPrivateKey:
+			status = diagnostic.StatusCritical
 			critical = append(critical, finding)
 		case !expiry.After(now):
+			status = diagnostic.StatusWarning
 			warning = append(warning, "已過期 trust certificate："+finding)
 		case !expiry.After(warnBefore):
+			status = diagnostic.StatusWarning
 			warning = append(warning, finding)
 		}
+		addDetailRow(table, status, name, expiry.UTC().Format(time.RFC3339), fmt.Sprintf("%.1f 天", expiry.Sub(now).Hours()/24), certType)
 	}
 	res.Findings = append(append(critical, warning...), parseFailures...)
 	switch {
@@ -354,11 +439,11 @@ func TLSCertificateExpiry(certs []collector.TLSCertificate, t rules.Thresholds, 
 		res.Summary = fmt.Sprintf("%d 張 identity certificate 已過期", len(critical))
 	case len(warning) > 0:
 		res.Status, res.Conclusion = diagnostic.StatusWarning, diagnostic.ConclusionSuspected
-		res.Summary = fmt.Sprintf("%d 張 certificate 已過期或將於 %d 天內到期", len(warning), t.StaticHealth.ExpiryWarnDays)
+		res.Summary = fmt.Sprintf("%d 張 certificate 已過期或將於 %d 天內到期", len(warning), t.StaticHealth.TLSExpiryWarnDays)
 	case len(parseFailures) > 0:
 		return unknownStatic(res, "部分 certificate 到期日無法解析", parseFailures)
 	default:
-		res = pass(res, fmt.Sprintf("本次 API 回傳的憑證皆距到期超過 %d 天", t.StaticHealth.ExpiryWarnDays))
+		res = pass(res, fmt.Sprintf("本次 API 回傳的憑證皆距到期超過 %d 天", t.StaticHealth.TLSExpiryWarnDays))
 	}
 	res.RequiresExtra = true
 	res.ExtraReason = "/_ssl/certificates 只回報收到請求的 Elasticsearch 節點；完整叢集需逐節點採集"
@@ -401,8 +486,11 @@ func LicenseHealth(info collector.LicenseInfo, t rules.Thresholds, now time.Time
 
 func ReplicaCoverage(indices []collector.IndexReplica) diagnostic.Result {
 	res := diagnostic.Result{ID: "replica_resilience", Title: "Index replica 容錯", Category: "cluster", Source: "raw_api", Docs: []string{docRedYellow}}
+	table := newDetailTable("本次判定", "只在 number_of_replicas=0 或 auto-expand 上限為 all 時標示警告；是否符合 RPO 仍需人工確認。", "Index", "Replicas", "Auto-expand")
+	res.DetailTable = table
 	res.Measurements = append(res.Measurements, gauge("elasticsearch.index.replica.evaluated.count", float64(len(indices)), "count", "", "", "", ""))
 	if len(indices) == 0 {
+		res.DetailTable = nil
 		return pass(res, "未找到非系統 index")
 	}
 	var noReplica, unsafeAutoExpand []string
@@ -420,6 +508,16 @@ func ReplicaCoverage(indices []collector.IndexReplica) diagnostic.Result {
 		if strings.HasSuffix(strings.ToLower(index.AutoExpand), "-all") {
 			unsafeAutoExpand = append(unsafeAutoExpand, fmt.Sprintf("%s：auto_expand_replicas=%s（上限 all 會忽略 allocation awareness）", index.Index, index.AutoExpand))
 		}
+		status := diagnostic.StatusPass
+		if index.Replicas == 0 || strings.HasSuffix(strings.ToLower(index.AutoExpand), "-all") {
+			status = diagnostic.StatusWarning
+		}
+		if status == diagnostic.StatusWarning {
+			addDetailRow(table, status, index.Index, fmt.Sprintf("%d", index.Replicas), valueOr(index.AutoExpand, "未設定"))
+		}
+	}
+	if len(table.Rows) == 0 {
+		addDetailRow(table, diagnostic.StatusPass, "全部非系統 index", "≥ 1", "未觸發 all")
 	}
 	res.Measurements = append(res.Measurements,
 		gauge("elasticsearch.index.replica.minimum", float64(minReplicas), "count", "", "", "", ""),

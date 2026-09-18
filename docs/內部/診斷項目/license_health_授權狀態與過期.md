@@ -25,7 +25,7 @@ system: ELK 8.x / 9.x
 | 報告分類區塊 | 授權（License） / 靜態健檢 |
 | 診斷卡中文名稱 | License 授權狀態 |
 | 診斷卡 ID | `license_health` |
-| 典型嚴重度 | `WARNING`（剩餘 < 30 天）/ `CRITICAL`（剩餘 < 7 天或已過期） |
+| 典型嚴重度 | `WARNING`（剩餘 < 100 天）/ `CRITICAL`（已過期或 API 回報 `expired/invalid`） |
 | 觸發關鍵特徵 | `_license` 顯示商業授權（Platinum/Enterprise）即將到期或狀態非 `active` |
 
 ## 文件目的

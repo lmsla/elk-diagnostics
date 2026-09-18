@@ -22,11 +22,18 @@ var watchPools = map[string]bool{"search": true, "write": true}
 // RejectedRequests #6：thread pool 請求拒絕（rejected 累積值）。
 func RejectedRequests(rows []collector.ThreadPoolRow) diagnostic.Result {
 	res := diagnostic.Result{ID: "rejected_requests", Title: "請求拒絕 (thread pool)", Category: "performance", Source: "raw_api", Docs: []string{docRejected}}
+	table := newDetailTable("本次判定", "Rejected／Completed 為自節點啟動起的累積值；需以前後兩次採集差值確認是否持續。", "節點／Pool", "Rejected", "Completed")
+	res.DetailTable = table
 	var hits []string
 	for _, r := range rows {
 		if !watchPools[r.Name] {
 			continue
 		}
+		status := diagnostic.StatusPass
+		if r.Rejected > 0 {
+			status = diagnostic.StatusWarning
+		}
+		addDetailRow(table, status, r.Node+" / "+r.Name, fmt.Sprintf("%d", r.Rejected), fmt.Sprintf("%d", r.Completed))
 		res.Measurements = append(res.Measurements,
 			counter("elasticsearch.node.thread_pool.rejected", float64(r.Rejected), "count", "node", r.Node, r.Node, r.Name),
 			counter("elasticsearch.node.thread_pool.completed", float64(r.Completed), "count", "node", r.Node, r.Node, r.Name),
@@ -34,6 +41,9 @@ func RejectedRequests(rows []collector.ThreadPoolRow) diagnostic.Result {
 		if r.Rejected > 0 {
 			hits = append(hits, fmt.Sprintf("%s / %s：rejected=%d completed=%d", r.Node, r.Name, r.Rejected, r.Completed))
 		}
+	}
+	if len(table.Rows) == 0 {
+		res.DetailTable = nil
 	}
 	if len(hits) == 0 {
 		return pass(res, "search / write thread pool 無拒絕")

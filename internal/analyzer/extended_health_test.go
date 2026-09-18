@@ -53,7 +53,7 @@ func TestCCRHealth(t *testing.T) {
 		t.Fatalf("unused CCR status=%s, want skipped", got)
 	}
 	lag := collector.CCRStats{Followers: []collector.CCRFollower{{Index: "copy", GlobalCheckpointLag: int64(th.StaticHealth.CCRLagWarnOps)}}}
-	if got := CCRHealth(lag, th); got.Status != diagnostic.StatusWarning || !got.RequiresExtra {
+	if got := CCRHealth(lag, th); got.Status != diagnostic.StatusWarning || got.DetailTable == nil || len(got.DetailTable.Rows) != 1 || !got.RequiresExtra {
 		t.Fatalf("lag got=%+v", got)
 	}
 	fatal := collector.CCRStats{Followers: []collector.CCRFollower{{Index: "copy", FatalErrors: []string{"fatal"}}}}

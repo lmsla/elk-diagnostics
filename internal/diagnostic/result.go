@@ -57,19 +57,25 @@ type Measurement struct {
 // Measurements 保留原始觀測值；NumericJudgment 提供 reporter 可直接呈現的
 // 判定欄位，避免從 Findings 文字反向解析門檻或狀態。
 type NumericJudgment struct {
-	Metric          string               `json:"metric"`
-	MetricLabel     string               `json:"metric_label"`
-	EntityLabel     string               `json:"entity_label,omitempty"`
-	CurrentLabel    string               `json:"current_label"`
-	LimitLabel      string               `json:"limit_label"`
-	RatioLabel      string               `json:"ratio_label"`
-	ValueUnit       string               `json:"value_unit"`
-	RatioUnit       string               `json:"ratio_unit"`
-	WarningAt       *float64             `json:"warning_at,omitempty"`
-	CriticalAt      *float64             `json:"critical_at,omitempty"`
+	Metric       string   `json:"metric"`
+	MetricLabel  string   `json:"metric_label"`
+	EntityLabel  string   `json:"entity_label,omitempty"`
+	CurrentLabel string   `json:"current_label"`
+	LimitLabel   string   `json:"limit_label"`
+	RatioLabel   string   `json:"ratio_label"`
+	ValueUnit    string   `json:"value_unit"`
+	RatioUnit    string   `json:"ratio_unit"`
+	WarningAt    *float64 `json:"warning_at,omitempty"`
+	CriticalAt   *float64 `json:"critical_at,omitempty"`
+	Status       Status   `json:"status,omitempty"`
+	PeakLabel    string   `json:"peak_label,omitempty"`
+	HideRows     bool     `json:"hide_rows,omitempty"`
+	// ThresholdText 可在單一數值欄位同時包含聚合判定時，覆寫 reporter 的單一門檻文字。
+	ThresholdText   string               `json:"threshold_text,omitempty"`
 	ThresholdSource string               `json:"threshold_source"`
 	SnapshotNote    string               `json:"snapshot_note,omitempty"`
 	Rows            []NumericJudgmentRow `json:"rows"`
+	DetailTable     *DetailTable         `json:"detail_table,omitempty"`
 }
 
 type NumericJudgmentRow struct {
@@ -80,25 +86,44 @@ type NumericJudgmentRow struct {
 	Status  Status   `json:"status"`
 }
 
+// DetailTable 是多實體診斷卡的固定欄位明細。數值原始值仍保留在
+// Measurements；此表只提供報告用的一列一實體呈現，避免從 Findings 文字反向解析。
+type DetailTable struct {
+	Title        string           `json:"title"`
+	Columns      []string         `json:"columns"`
+	Rows         []DetailTableRow `json:"rows"`
+	SummaryRows  []DetailTableRow `json:"summary_rows,omitempty"`
+	StatusColumn bool             `json:"status_column,omitempty"`
+	Note         string           `json:"note,omitempty"`
+}
+
+type DetailTableRow struct {
+	Values []string `json:"values"`
+	Status Status   `json:"status,omitempty"`
+}
+
 // Result 是單一診斷項目的標準輸出。
 type Result struct {
-	ID              string           `json:"id"`
-	Title           string           `json:"title"`
-	Category        string           `json:"category"`
-	Status          Status           `json:"status"`
-	Conclusion      Conclusion       `json:"conclusion"`
-	Summary         string           `json:"summary"`
-	Findings        []string         `json:"findings"`
-	RootCauses      []string         `json:"root_causes"`
-	Recommendations []Recommendation `json:"recommendations"`
-	Docs            []string         `json:"docs"`
-	Source          string           `json:"source"` // health_report | raw_api | fallback
-	RequiresExtra   bool             `json:"requires_extra"`
-	ExtraReason     string           `json:"extra_reason,omitempty"`
-	VersionWarning  string           `json:"version_warning,omitempty"`
-	Measurements    []Measurement    `json:"measurements,omitempty"`
-	JudgmentGuide   []JudgmentGuide  `json:"judgment_guide,omitempty"`
-	NumericJudgment *NumericJudgment `json:"numeric_judgment,omitempty"`
+	ID                   string            `json:"id"`
+	Title                string            `json:"title"`
+	Category             string            `json:"category"`
+	Status               Status            `json:"status"`
+	Conclusion           Conclusion        `json:"conclusion"`
+	Summary              string            `json:"summary"`
+	Findings             []string          `json:"findings"`
+	RootCauses           []string          `json:"root_causes"`
+	Recommendations      []Recommendation  `json:"recommendations"`
+	Docs                 []string          `json:"docs"`
+	Source               string            `json:"source"` // health_report | raw_api | fallback
+	RequiresExtra        bool              `json:"requires_extra"`
+	ExtraReason          string            `json:"extra_reason,omitempty"`
+	VersionWarning       string            `json:"version_warning,omitempty"`
+	Measurements         []Measurement     `json:"measurements,omitempty"`
+	HideMeasurementTable bool              `json:"hide_measurement_table,omitempty"`
+	JudgmentGuide        []JudgmentGuide   `json:"judgment_guide,omitempty"`
+	NumericJudgment      *NumericJudgment  `json:"numeric_judgment,omitempty"`
+	NumericJudgments     []NumericJudgment `json:"numeric_judgments,omitempty"`
+	DetailTable          *DetailTable      `json:"detail_table,omitempty"`
 }
 
 type ClusterMeta struct {

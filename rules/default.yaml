@@ -39,7 +39,8 @@ static_health:
   shard_small_count_warn: 100     # 大量小 shard heuristic
   snapshot_warn_hours: 48         # 預設 RPO heuristic，可依使用者政策覆寫
   snapshot_crit_hours: 168
-  expiry_warn_days: 30            # TLS／License 到期預警
+  tls_expiry_warn_days: 100       # TLS 到期預警（配合每季健檢週期；工具 heuristic）
+  expiry_warn_days: 100           # License 到期預警（配合每季健檢週期；工具 heuristic）
   indexing_pressure_warn_pct: 80  # 當下 coordinating+primary／replica 各自相對拒絕上限
   indexing_pressure_crit_pct: 95
   recent_restart_warn_minutes: 60 # 單次快照只提示近期重啟，不推斷原因

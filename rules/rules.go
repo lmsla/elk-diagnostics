@@ -48,6 +48,7 @@ type Thresholds struct {
 		ShardSmallCountWarn      int `yaml:"shard_small_count_warn"`
 		SnapshotWarnHours        int `yaml:"snapshot_warn_hours"`
 		SnapshotCritHours        int `yaml:"snapshot_crit_hours"`
+		TLSExpiryWarnDays        int `yaml:"tls_expiry_warn_days"`
 		ExpiryWarnDays           int `yaml:"expiry_warn_days"`
 		IndexingPressureWarnPct  int `yaml:"indexing_pressure_warn_pct"`
 		IndexingPressureCritPct  int `yaml:"indexing_pressure_crit_pct"`
@@ -100,6 +101,7 @@ func Load(overridePath string) (Thresholds, []string) {
 	mergeInt(&t.StaticHealth.ShardSmallCountWarn, o.StaticHealth.ShardSmallCountWarn)
 	mergeInt(&t.StaticHealth.SnapshotWarnHours, o.StaticHealth.SnapshotWarnHours)
 	mergeInt(&t.StaticHealth.SnapshotCritHours, o.StaticHealth.SnapshotCritHours)
+	mergeInt(&t.StaticHealth.TLSExpiryWarnDays, o.StaticHealth.TLSExpiryWarnDays)
 	mergeInt(&t.StaticHealth.ExpiryWarnDays, o.StaticHealth.ExpiryWarnDays)
 	mergeInt(&t.StaticHealth.IndexingPressureWarnPct, o.StaticHealth.IndexingPressureWarnPct)
 	mergeInt(&t.StaticHealth.IndexingPressureCritPct, o.StaticHealth.IndexingPressureCritPct)

@@ -101,12 +101,17 @@ func SnapshotRepositoryReferences(policies []collector.SLMPolicy, repositories [
 
 func DataStreamHealth(streams []collector.DataStream) diagnostic.Result {
 	res := diagnostic.Result{ID: "data_stream_health", Title: "Data stream 健康", Category: "data", Source: "raw_api", Docs: []string{docDataStreams}}
+	table := newDetailTable("本次判定", "狀態由 Data stream API 直接回傳；backing index 數量只提供脈絡。", "Data stream", "狀態", "Backing indices", "ILM policy", "Managed by")
+	res.DetailTable = table
 	res.Measurements = append(res.Measurements, gauge("elasticsearch.data_stream.count", float64(len(streams)), "count", "", "", "", ""))
 	if len(streams) == 0 {
+		res.DetailTable = nil
+		res.HideMeasurementTable = true
 		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
-		res.Summary = "未設定 data stream"
+		res.Summary = "本次未偵測到 data stream"
 		return res
 	}
+	table.SummaryRows = []diagnostic.DetailTableRow{{Values: []string{"Data stream 總數", "叢集", fmt.Sprintf("%d", len(streams))}}}
 	var critical, warning, unknown []string
 	statusCounts := map[string]int{}
 	for _, stream := range streams {
@@ -114,19 +119,24 @@ func DataStreamHealth(streams []collector.DataStream) diagnostic.Result {
 		res.Measurements = append(res.Measurements, gauge("elasticsearch.data_stream.backing_index.count", float64(stream.BackingIndices), "count", "data_stream", stream.Name, stream.Name, ""))
 		finding := fmt.Sprintf("%s：status=%s backing_indices=%d template=%s managed_by=%s ilm_policy=%s",
 			stream.Name, stream.Status, stream.BackingIndices, stream.Template, stream.ManagedBy, stream.ILMPolicy)
+		rowStatus := diagnostic.StatusPass
 		switch status {
 		case "green":
 			statusCounts[status]++
 		case "red", "unavailable":
 			statusCounts[status]++
+			rowStatus = diagnostic.StatusCritical
 			critical = append(critical, finding)
 		case "yellow":
 			statusCounts[status]++
+			rowStatus = diagnostic.StatusWarning
 			warning = append(warning, finding)
 		default:
 			statusCounts["unknown"]++
+			rowStatus = diagnostic.StatusUnknown
 			unknown = append(unknown, finding)
 		}
+		addDetailRow(table, rowStatus, stream.Name, valueOr(stream.Status, "unknown"), fmt.Sprintf("%d", stream.BackingIndices), valueOr(stream.ILMPolicy, "未設定"), valueOr(stream.ManagedBy, "未提供"))
 	}
 	for _, status := range []string{"green", "yellow", "red", "unavailable", "unknown"} {
 		res.Measurements = append(res.Measurements, gauge("elasticsearch.data_stream.status.count", float64(statusCounts[status]), "count", "", "", "", status))

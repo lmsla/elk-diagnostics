@@ -20,7 +20,7 @@ func TestLoad_Default(t *testing.T) {
 	if th.NodeContext.FDWarnPct != 80 || th.NodeContext.FDCritPct != 90 || th.NodeContext.CgroupMemoryWarnPct != 90 {
 		t.Errorf("NodeContext defaults = %+v", th.NodeContext)
 	}
-	if th.StaticHealth.PendingTaskWarnSeconds != 30 || th.StaticHealth.ShardLargeWarnGB != 50 || th.StaticHealth.ExpiryWarnDays != 30 ||
+	if th.StaticHealth.PendingTaskWarnSeconds != 30 || th.StaticHealth.ShardLargeWarnGB != 50 || th.StaticHealth.TLSExpiryWarnDays != 100 || th.StaticHealth.ExpiryWarnDays != 100 ||
 		th.StaticHealth.IndexingPressureWarnPct != 80 || th.StaticHealth.IndexingPressureCritPct != 95 ||
 		th.StaticHealth.RecentRestartWarnMinutes != 60 || th.StaticHealth.CCRLagWarnOps != 10000 {
 		t.Errorf("StaticHealth defaults = %+v", th.StaticHealth)
@@ -55,7 +55,7 @@ func TestLoad_OverrideNonPositiveTreatedAsUnset(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "override.yaml")
 	// 顯式寫 0 等同未提供（0 為合法範圍外的哨兵值，非真實門檻）。
-	content := "performance:\n  jvm_warn_pct: 0\nstatic_health:\n  expiry_warn_days: -1\n"
+	content := "performance:\n  jvm_warn_pct: 0\nstatic_health:\n  tls_expiry_warn_days: -1\n  expiry_warn_days: -1\n"
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -64,8 +64,8 @@ func TestLoad_OverrideNonPositiveTreatedAsUnset(t *testing.T) {
 	if th.Performance.JVMWarnPct != 85 {
 		t.Errorf("JVMWarnPct = %d, want 85（覆寫值為 0 應視為未提供，沿用預設值）", th.Performance.JVMWarnPct)
 	}
-	if th.StaticHealth.ExpiryWarnDays != 30 {
-		t.Errorf("ExpiryWarnDays = %d, want 30（負值應視為無效，沿用預設值）", th.StaticHealth.ExpiryWarnDays)
+	if th.StaticHealth.ExpiryWarnDays != 100 || th.StaticHealth.TLSExpiryWarnDays != 100 {
+		t.Errorf("expiry defaults = tls:%d license:%d, want tls:100 license:100（負值應視為無效，沿用預設值）", th.StaticHealth.TLSExpiryWarnDays, th.StaticHealth.ExpiryWarnDays)
 	}
 }
 
@@ -142,6 +142,7 @@ static_health:
   shard_small_count_warn: 20
   snapshot_warn_hours: 21
   snapshot_crit_hours: 22
+  tls_expiry_warn_days: 24
   expiry_warn_days: 23
   indexing_pressure_warn_pct: 24
   indexing_pressure_crit_pct: 25
@@ -179,6 +180,7 @@ static_health:
 	want.StaticHealth.ShardSmallCountWarn = 20
 	want.StaticHealth.SnapshotWarnHours = 21
 	want.StaticHealth.SnapshotCritHours = 22
+	want.StaticHealth.TLSExpiryWarnDays = 24
 	want.StaticHealth.ExpiryWarnDays = 23
 	want.StaticHealth.IndexingPressureWarnPct = 24
 	want.StaticHealth.IndexingPressureCritPct = 25

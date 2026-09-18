@@ -33,6 +33,26 @@ func TestDataTierAvailability(t *testing.T) {
 	})
 }
 
+func TestDataStreamHealthDetailTable(t *testing.T) {
+	res := DataStreamHealth([]collector.DataStream{{Name: "logs", Status: "yellow", BackingIndices: 3}})
+	if res.Status != diagnostic.StatusWarning {
+		t.Fatalf("status=%s, want warning", res.Status)
+	}
+	if res.DetailTable == nil || len(res.DetailTable.Rows) != 1 || res.DetailTable.Rows[0].Status != diagnostic.StatusWarning {
+		t.Fatalf("DetailTable=%+v, want one warning row", res.DetailTable)
+	}
+	if len(res.DetailTable.SummaryRows) != 1 || len(res.DetailTable.SummaryRows[0].Values) != 3 || res.DetailTable.SummaryRows[0].Values[2] != "1" {
+		t.Fatalf("DetailTable.SummaryRows=%+v, want data stream total row", res.DetailTable.SummaryRows)
+	}
+}
+
+func TestDataStreamHealthNoDataHidesRawMeasurementTable(t *testing.T) {
+	res := DataStreamHealth(nil)
+	if res.Status != diagnostic.StatusSkipped || !res.HideMeasurementTable || len(res.Measurements) != 1 {
+		t.Fatalf("no data stream result=%+v, want skipped with retained hidden measurement", res)
+	}
+}
+
 func TestMappingExplosion(t *testing.T) {
 	th := testThresholds()
 	t.Run("遠低於門檻", func(t *testing.T) {
@@ -67,6 +87,9 @@ func TestIngestPipelineErrors(t *testing.T) {
 		res := IngestPipelineErrors([]collector.IngestPipeline{{Pipeline: "p1", Count: 100, Failed: 1}}, th)
 		if res.Status != diagnostic.StatusPass {
 			t.Errorf("Status = %q, want pass", res.Status)
+		}
+		if res.DetailTable == nil || len(res.DetailTable.Rows) != 1 {
+			t.Fatalf("DetailTable = %+v, want one pipeline row", res.DetailTable)
 		}
 	})
 	t.Run("失敗率超過門檻", func(t *testing.T) {

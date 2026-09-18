@@ -140,6 +140,8 @@ func IndexReadWriteBlocks(blocks []collector.IndexBlock) diagnostic.Result {
 
 func CCRHealth(stats collector.CCRStats, t rules.Thresholds) diagnostic.Result {
 	res := diagnostic.Result{ID: "ccr_health", Title: "CCR follower / auto-follow 健康", Category: "replication", Source: "raw_api", Docs: []string{docCCRStats}}
+	table := newDetailTable("本次判定", fmt.Sprintf("Follower lag 警告門檻：≥%d；fatal/read exception 直接列為嚴重。", t.StaticHealth.CCRLagWarnOps), "Follower index", "Checkpoint lag", "Fatal errors", "Read errors")
+	res.DetailTable = table
 	res.Measurements = append(res.Measurements,
 		gauge("elasticsearch.ccr.follower.count", float64(len(stats.Followers)), "count", "", "", "", ""),
 		counter("elasticsearch.ccr.auto_follow.failed_indices", float64(stats.FailedFollowIndices), "count", "", "", "", ""),
@@ -147,6 +149,7 @@ func CCRHealth(stats collector.CCRStats, t rules.Thresholds) diagnostic.Result {
 		gauge("elasticsearch.ccr.auto_follow.recent_error.count", float64(len(stats.RecentAutoFollowErrors)), "count", "", "", "", ""),
 	)
 	if len(stats.Followers) == 0 && stats.FailedFollowIndices == 0 && stats.FailedRemoteStateRequests == 0 && len(stats.RecentAutoFollowErrors) == 0 {
+		res.DetailTable = nil
 		res.Status, res.Conclusion = diagnostic.StatusSkipped, diagnostic.ConclusionNormal
 		res.Summary = "未偵測到 CCR follower 或 auto-follow 活動"
 		return res
@@ -158,12 +161,21 @@ func CCRHealth(stats collector.CCRStats, t rules.Thresholds) diagnostic.Result {
 			gauge("elasticsearch.ccr.follower.fatal_error.count", float64(len(follower.FatalErrors)), "count", "index", follower.Index, follower.Index, ""),
 			gauge("elasticsearch.ccr.follower.read_error.count", float64(len(follower.ReadErrors)), "count", "index", follower.Index, follower.Index, ""),
 		)
+		status := diagnostic.StatusPass
 		if len(follower.FatalErrors) > 0 || len(follower.ReadErrors) > 0 {
+			status = diagnostic.StatusCritical
 			critical = append(critical, fmt.Sprintf("%s：fatal=%v read=%v", follower.Index, follower.FatalErrors, follower.ReadErrors))
 		}
 		if follower.GlobalCheckpointLag >= int64(t.StaticHealth.CCRLagWarnOps) {
+			if status == diagnostic.StatusPass {
+				status = diagnostic.StatusWarning
+			}
 			warning = append(warning, fmt.Sprintf("%s：global checkpoint lag=%d", follower.Index, follower.GlobalCheckpointLag))
 		}
+		addDetailRow(table, status, follower.Index, fmt.Sprintf("%d", follower.GlobalCheckpointLag), fmt.Sprintf("%d", len(follower.FatalErrors)), fmt.Sprintf("%d", len(follower.ReadErrors)))
+	}
+	if len(table.Rows) == 0 {
+		res.DetailTable = nil
 	}
 	if stats.FailedFollowIndices > 0 || stats.FailedRemoteStateRequests > 0 {
 		warning = append(warning, fmt.Sprintf("auto-follow 累積失敗：follow_indices=%d remote_cluster_state=%d", stats.FailedFollowIndices, stats.FailedRemoteStateRequests))

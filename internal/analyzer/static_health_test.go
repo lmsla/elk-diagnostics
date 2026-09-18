@@ -2,6 +2,7 @@ package analyzer
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,10 @@ var staticNow = time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
 
 func TestPendingClusterTasksThresholds(t *testing.T) {
 	th := testThresholds()
+	noTasks := PendingClusterTasks(nil, th)
+	if noTasks.DetailTable == nil || len(noTasks.DetailTable.Rows) != 1 || noTasks.DetailTable.Rows[0].Values[0] != "Pending task 數量" {
+		t.Fatalf("no pending tasks table=%+v, want one summary row", noTasks.DetailTable)
+	}
 	cases := []struct {
 		seconds int
 		want    diagnostic.Status
@@ -28,12 +33,19 @@ func TestPendingClusterTasksThresholds(t *testing.T) {
 			if got.Status != tc.want {
 				t.Fatalf("status=%s, want %s: %+v", got.Status, tc.want, got)
 			}
+			if got.DetailTable == nil || len(got.DetailTable.Rows) != 1 {
+				t.Fatalf("DetailTable=%+v, want one task row", got.DetailTable)
+			}
 		})
 	}
 }
 
 func TestLongRunningTasks(t *testing.T) {
 	th := testThresholds()
+	noTasks := LongRunningTasks(nil, th)
+	if noTasks.DetailTable == nil || len(noTasks.DetailTable.Rows) != 1 || noTasks.DetailTable.Rows[0].Values[0] != "超過門檻的 task 數量" {
+		t.Fatalf("no long tasks table=%+v, want one summary row", noTasks.DetailTable)
+	}
 	self := collector.RunningTask{ID: "n1:1", Action: "cluster:monitor/tasks/lists", RunningNanos: int64(10 * time.Minute)}
 	if got := LongRunningTasks([]collector.RunningTask{self}, th).Status; got != diagnostic.StatusPass {
 		t.Fatalf("task-list self query status=%s, want pass", got)
@@ -49,18 +61,33 @@ func TestShardSizing(t *testing.T) {
 	if got := ShardSizing([]collector.ShardSize{{Index: "logs", Primary: true, StoreBytes: 49 << 30}}, th); got.Status != diagnostic.StatusPass {
 		t.Fatalf("49 GiB status=%s, want pass", got.Status)
 	}
-	if got := ShardSizing([]collector.ShardSize{{Index: "logs", Primary: true, StoreBytes: 49 << 30}}, th); got.NumericJudgment == nil || len(got.NumericJudgment.Rows) != 1 {
-		t.Fatalf("49 GiB NumericJudgment=%+v, want one summary row", got.NumericJudgment)
+	got49 := ShardSizing([]collector.ShardSize{{Index: "logs", Primary: true, StoreBytes: 49 << 30}}, th)
+	if len(got49.NumericJudgments) != 2 || len(got49.NumericJudgments[0].Rows) != 1 || got49.NumericJudgments[0].Status != diagnostic.StatusPass {
+		t.Fatalf("49 GiB NumericJudgments=%+v, want large/small blocks with large pass", got49.NumericJudgments)
 	}
-	if got := ShardSizing([]collector.ShardSize{{Index: "logs", Primary: true, StoreBytes: 50 << 30}}, th).Status; got != diagnostic.StatusWarning {
-		t.Fatalf("50 GiB status=%s, want warning", got)
+	got50 := ShardSizing([]collector.ShardSize{{Index: "logs", Primary: true, StoreBytes: 50 << 30}}, th)
+	if got50.Status != diagnostic.StatusWarning || got50.NumericJudgments[0].Status != diagnostic.StatusWarning {
+		t.Fatalf("50 GiB result=%+v, want warning", got50)
 	}
 	small := make([]collector.ShardSize, th.StaticHealth.ShardSmallCountWarn)
 	for i := range small {
 		small[i] = collector.ShardSize{Index: fmt.Sprintf("logs-%03d", i), Primary: true, StoreBytes: 1 << 20}
 	}
-	if got := ShardSizing(small, th).Status; got != diagnostic.StatusWarning {
-		t.Fatalf("%d small shards status=%s, want warning", len(small), got)
+	gotSmall := ShardSizing(small, th)
+	if gotSmall.Status != diagnostic.StatusWarning {
+		t.Fatalf("%d small shards status=%s, want warning", len(small), gotSmall.Status)
+	}
+	if len(gotSmall.NumericJudgments) != 2 || gotSmall.NumericJudgments[1].Status != diagnostic.StatusWarning || len(gotSmall.NumericJudgments[1].Rows) != 1 {
+		t.Fatalf("small shard NumericJudgments=%+v, want aggregate warning block", gotSmall.NumericJudgments)
+	}
+	if len(gotSmall.NumericJudgments[0].Rows) != 0 {
+		t.Fatalf("small shard large rows=%+v, want no rows below 40 GiB", gotSmall.NumericJudgments[0].Rows)
+	}
+	if gotSmall.NumericJudgments[1].DetailTable == nil || len(gotSmall.NumericJudgments[1].DetailTable.Rows) != len(small) {
+		t.Fatalf("small shard detail=%+v, want %d rows", gotSmall.NumericJudgments[1].DetailTable, len(small))
+	}
+	if !strings.Contains(gotSmall.NumericJudgments[0].SnapshotNote, "小於此值不列出") || !strings.Contains(gotSmall.NumericJudgments[1].SnapshotNote, "聚合數量判定") {
+		t.Fatalf("small shard judgment notes=%+v", gotSmall.NumericJudgments)
 	}
 }
 
@@ -70,8 +97,8 @@ func TestSnapshotFreshness(t *testing.T) {
 		t.Fatalf("no SLM policy status=%s, want skipped", got)
 	}
 	policy := collector.SLMPolicy{Name: "daily", LastSuccessMillis: staticNow.Add(-47 * time.Hour).UnixMilli()}
-	if got := SnapshotFreshness([]collector.SLMPolicy{policy}, th, staticNow).Status; got != diagnostic.StatusPass {
-		t.Fatalf("47h old status=%s, want pass", got)
+	if got := SnapshotFreshness([]collector.SLMPolicy{policy}, th, staticNow); got.Status != diagnostic.StatusPass || got.DetailTable == nil || len(got.DetailTable.Rows) != 1 {
+		t.Fatalf("47h old result=%+v, want pass with one table row", got)
 	}
 	policy.LastSuccessMillis = staticNow.Add(-48 * time.Hour).UnixMilli()
 	if got := SnapshotFreshness([]collector.SLMPolicy{policy}, th, staticNow).Status; got != diagnostic.StatusWarning {
@@ -111,8 +138,12 @@ func TestNodeRuntimeConsistency(t *testing.T) {
 
 func TestTLSCertificateExpiry(t *testing.T) {
 	th := testThresholds()
-	future := collector.TLSCertificate{Subject: "CN=node", Expiry: staticNow.Add(31 * 24 * time.Hour).Format(time.RFC3339), HasPrivateKey: true}
-	if got := TLSCertificateExpiry([]collector.TLSCertificate{future}, th, staticNow); got.Status != diagnostic.StatusPass || !got.RequiresExtra || got.Summary != "本次 API 回傳的憑證皆距到期超過 30 天" {
+	noCerts := TLSCertificateExpiry(nil, th, staticNow)
+	if noCerts.Status != diagnostic.StatusSkipped || !noCerts.HideMeasurementTable || len(noCerts.Measurements) != 1 {
+		t.Fatalf("no certificate result=%+v, want skipped with retained hidden measurement", noCerts)
+	}
+	future := collector.TLSCertificate{Subject: "CN=node", Expiry: staticNow.Add(101 * 24 * time.Hour).Format(time.RFC3339), HasPrivateKey: true}
+	if got := TLSCertificateExpiry([]collector.TLSCertificate{future}, th, staticNow); got.Status != diagnostic.StatusPass || got.DetailTable == nil || len(got.DetailTable.Rows) != 1 || !got.RequiresExtra || got.Summary != "本次 API 回傳的憑證皆距到期超過 100 天" {
 		t.Fatalf("future certificate = %+v", got)
 	}
 	expiredIdentity := future
@@ -148,8 +179,8 @@ func TestLicenseHealth(t *testing.T) {
 }
 
 func TestReplicaCoverage(t *testing.T) {
-	if got := ReplicaCoverage([]collector.IndexReplica{{Index: "logs", Replicas: 1}}).Status; got != diagnostic.StatusPass {
-		t.Fatalf("replica=1 status=%s, want pass", got)
+	if got := ReplicaCoverage([]collector.IndexReplica{{Index: "logs", Replicas: 1}}); got.Status != diagnostic.StatusPass || got.DetailTable == nil || len(got.DetailTable.Rows) != 1 {
+		t.Fatalf("replica=1 result=%+v, want pass with one table row", got)
 	}
 	if got := ReplicaCoverage([]collector.IndexReplica{{Index: "logs", Replicas: 0}}); got.Status != diagnostic.StatusWarning || !got.RequiresExtra {
 		t.Fatalf("replica=0 = %+v", got)
