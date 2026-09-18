@@ -46,11 +46,32 @@ func MappingExplosion(counts []collector.IndexFieldCount, t rules.Thresholds) di
 	mappingLimit, mappingWarnFrac := t.Data.MappingLimitDefault, t.Data.MappingWarnFrac
 	res := diagnostic.Result{ID: "mapping_explosion", Title: "Mapping 欄位膨脹", Category: "data", Source: "raw_api", Docs: []string{docMapping}}
 	warnAt := mappingLimit * mappingWarnFrac / 100
+	judgment := numericJudgment(
+		"elasticsearch.index.mapping.field.count", "Mapping 欄位數", "count", mappingWarnFrac, 100,
+		"官方預設上限 + 工具預警門檻", "欄位數是單次快照；實際上限應優先以各 index 的 index.mapping.total_fields.limit 為準。",
+	)
+	judgment.EntityLabel = "Index"
+	judgment.CurrentLabel = "欄位數"
+	judgment.LimitLabel = "上限"
+	judgment.RatioLabel = "使用率"
 	var crit, warn []string
+	var numericRows []diagnostic.NumericJudgmentRow
 	maxFields := 0
+	maxIndex := ""
 	for _, c := range counts {
+		ratio := float64(0)
+		if mappingLimit > 0 {
+			ratio = float64(c.FieldCount) * 100 / float64(mappingLimit)
+		}
+		status := numericStatus(ratio, mappingWarnFrac, 100)
+		if status != diagnostic.StatusPass {
+			numericRows = append(numericRows, numericRow(
+				c.Index, float64p(float64(c.FieldCount)), float64p(float64(mappingLimit)), float64p(ratio), status,
+			))
+		}
 		if c.FieldCount > maxFields {
 			maxFields = c.FieldCount
+			maxIndex = c.Index
 		}
 		switch {
 		case c.FieldCount >= mappingLimit:
@@ -65,6 +86,15 @@ func MappingExplosion(counts []collector.IndexFieldCount, t rules.Thresholds) di
 		gauge("elasticsearch.index.mapping.scanned.count", float64(len(counts)), "count", "", "", "", ""),
 		gauge("elasticsearch.index.mapping.field.max", float64(maxFields), "count", "", "", "", ""),
 	)
+	if len(numericRows) == 0 && maxIndex != "" {
+		ratio := float64(0)
+		if mappingLimit > 0 {
+			ratio = float64(maxFields) * 100 / float64(mappingLimit)
+		}
+		numericRows = append(numericRows, numericRow(maxIndex, float64p(float64(maxFields)), float64p(float64(mappingLimit)), float64p(ratio), diagnostic.StatusPass))
+	}
+	judgment.Rows = numericRows
+	res.NumericJudgment = &judgment
 	res.Findings = append(crit, warn...)
 	switch {
 	case len(crit) > 0:

@@ -447,7 +447,7 @@ var htmlFuncs = template.FuncMap{
 		if err != nil {
 			location = time.FixedZone("UTC+08:00", 8*60*60)
 		}
-		return fmt.Sprintf("%s（Asia/Taipei，UTC+08:00）", parsed.In(location).Format("2006-01-02 15:04:05"))
+		return parsed.In(location).Format("2006-01-02 15:04:05")
 	},
 	"sourcePath": func(host string) string {
 		for _, prefix := range []string{"(bundle) ", "(from-file) "} {
@@ -721,6 +721,7 @@ type hotspotObservationRow struct {
 
 type numericJudgmentView struct {
 	MetricLabel     string
+	EntityLabel     string
 	CurrentLabel    string
 	LimitLabel      string
 	RatioLabel      string
@@ -748,6 +749,7 @@ func numericJudgment(result diagnostic.Result) *numericJudgmentView {
 	}
 	view := &numericJudgmentView{
 		MetricLabel:     judgment.MetricLabel,
+		EntityLabel:     judgment.EntityLabel,
 		CurrentLabel:    judgment.CurrentLabel,
 		LimitLabel:      judgment.LimitLabel,
 		RatioLabel:      judgment.RatioLabel,
@@ -757,8 +759,12 @@ func numericJudgment(result diagnostic.Result) *numericJudgmentView {
 		SnapshotNote:    judgment.SnapshotNote,
 		Rows:            make([]numericJudgmentRowView, 0, len(judgment.Rows)),
 	}
+	if view.EntityLabel == "" {
+		view.EntityLabel = "節點"
+	}
 	var peak float64
 	var peakEntity string
+	peakUnit := judgment.RatioUnit
 	peakKnown := false
 	for _, row := range judgment.Rows {
 		view.Rows = append(view.Rows, numericJudgmentRowView{
@@ -768,12 +774,19 @@ func numericJudgment(result diagnostic.Result) *numericJudgmentView {
 			Ratio:   formatNumericPointer(row.Ratio, judgment.RatioUnit),
 			Status:  row.Status,
 		})
-		if row.Ratio != nil && (!peakKnown || *row.Ratio > peak) {
-			peak, peakEntity, peakKnown = *row.Ratio, row.Entity, true
+		peakValue := row.Ratio
+		rowUnit := judgment.RatioUnit
+		if peakValue == nil {
+			peakValue = row.Current
+			rowUnit = judgment.ValueUnit
+		}
+		if peakValue != nil && (!peakKnown || *peakValue > peak) {
+			peak, peakEntity, peakKnown = *peakValue, row.Entity, true
+			peakUnit = rowUnit
 		}
 	}
 	if peakKnown {
-		view.PeakValue = formatNumericValue(peak, judgment.RatioUnit)
+		view.PeakValue = formatNumericValue(peak, peakUnit)
 		view.PeakEntity = peakEntity
 	} else {
 		view.PeakValue = "—"
@@ -800,11 +813,15 @@ func numericThresholdText(j diagnostic.NumericJudgment) string {
 	if j.WarningAt == nil {
 		return "門檻未設定"
 	}
-	warn := formatNumericValue(*j.WarningAt, j.RatioUnit)
+	thresholdUnit := j.RatioUnit
+	if j.RatioLabel == "" {
+		thresholdUnit = j.ValueUnit
+	}
+	warn := formatNumericValue(*j.WarningAt, thresholdUnit)
 	if j.CriticalAt == nil {
 		return fmt.Sprintf("通過：< %s｜警告：≥ %s｜嚴重：未定義", warn, warn)
 	}
-	critical := formatNumericValue(*j.CriticalAt, j.RatioUnit)
+	critical := formatNumericValue(*j.CriticalAt, thresholdUnit)
 	return fmt.Sprintf("通過：< %s｜警告：%s ～ < %s｜嚴重：≥ %s", warn, warn, critical, critical)
 }
 
@@ -1169,7 +1186,7 @@ const htmlTmpl = `{{define "diagnostic-results"}}
   </summary>
   <div class="body check-body">
     {{if .Findings}}<h4>發現</h4><ul>{{range .Findings}}<li>{{.}}</li>{{end}}</ul>{{end}}
-    {{if numericJudgment .}}{{$numeric := numericJudgment .}}<h4>數值判定</h4><div class="numeric-judgment"><div class="numeric-summary"><div><span class="numeric-label">判定指標</span><b>{{$numeric.MetricLabel}}</b></div><div><span class="numeric-label">目前最高值</span><b>{{$numeric.PeakValue}}{{if $numeric.PeakEntity}}（{{$numeric.PeakEntity}}）{{end}}</b></div><div><span class="numeric-label">本次結果</span><span class="numeric-status {{cls $numeric.OverallStatus}}">{{numericStatusText $numeric.OverallStatus}}</span></div></div><p class="numeric-thresholds">{{$numeric.Thresholds}}</p><div class="measurement-wrap"><table class="measurement-table numeric-table"><thead><tr><th>節點</th><th>{{$numeric.CurrentLabel}}</th><th>{{$numeric.LimitLabel}}</th><th>{{$numeric.RatioLabel}}</th><th>判定</th></tr></thead><tbody>{{range $numeric.Rows}}<tr><td>{{.Entity}}</td><td class="measurement-number">{{.Current}}</td><td class="measurement-number">{{.Limit}}</td><td class="measurement-number">{{.Ratio}}</td><td><span class="numeric-status {{cls .Status}}">{{numericStatusText .Status}}</span></td></tr>{{end}}</tbody></table></div><p class="measurement-note">判定依據：{{$numeric.ThresholdSource}}{{if $numeric.SnapshotNote}}；{{$numeric.SnapshotNote}}{{end}}</p></div>{{end}}
+    {{if numericJudgment .}}{{$numeric := numericJudgment .}}<h4>數值判定</h4><div class="numeric-judgment"><div class="numeric-summary"><div><span class="numeric-label">判定指標</span><b>{{$numeric.MetricLabel}}</b></div><div><span class="numeric-label">目前最高值</span><b>{{$numeric.PeakValue}}{{if $numeric.PeakEntity}}（{{$numeric.PeakEntity}}）{{end}}</b></div><div><span class="numeric-label">本次結果</span><span class="numeric-status {{cls $numeric.OverallStatus}}">{{numericStatusText $numeric.OverallStatus}}</span></div></div><p class="numeric-thresholds">{{$numeric.Thresholds}}</p>{{if $numeric.Rows}}<div class="measurement-wrap"><table class="measurement-table numeric-table"><thead><tr><th>{{$numeric.EntityLabel}}</th><th>{{$numeric.CurrentLabel}}</th><th>{{$numeric.LimitLabel}}</th>{{if $numeric.RatioLabel}}<th>{{$numeric.RatioLabel}}</th>{{end}}<th>判定</th></tr></thead><tbody>{{range $numeric.Rows}}<tr><td>{{.Entity}}</td><td class="measurement-number">{{.Current}}</td><td class="measurement-number">{{.Limit}}</td>{{if $numeric.RatioLabel}}<td class="measurement-number">{{.Ratio}}</td>{{end}}<td><span class="numeric-status {{cls .Status}}">{{numericStatusText .Status}}</span></td></tr>{{end}}</tbody></table></div>{{end}}<p class="measurement-note">判定依據：{{$numeric.ThresholdSource}}{{if $numeric.SnapshotNote}}；{{$numeric.SnapshotNote}}{{end}}</p></div>{{end}}
     {{if hasHotspotMeasurements .ID .Measurements}}
     <h4>本次比較基準</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>比較群組</th><th>同類節點中位數</th></tr></thead><tbody>{{range hotspotBaselines .Measurements}}<tr><td>{{.Label}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Value}}</td></tr>{{end}}</tbody></table></div>
     <h4>節點觀測值</h4><div class="measurement-wrap"><table class="measurement-table hotspot-table"><thead><tr><th>指標</th><th>節點</th><th>比較群組</th><th>當下值</th><th>同類節點中位數</th><th>差距（百分點）</th><th>資料屬性</th></tr></thead><tbody>{{range hotspotRows .Measurements}}<tr><td>{{.Label}}</td><td>{{.Node}}</td><td>{{.PeerGroup}}</td><td class="measurement-number">{{.Current}}</td><td class="measurement-number">{{if .Median}}{{.Median}}{{else}}—{{end}}</td><td class="measurement-number">{{if .Difference}}{{.Difference}}{{else}}—{{end}}</td><td>{{.Nature}}</td></tr>{{end}}</tbody></table></div><p class="measurement-note">中位數是本次同類節點的比較基準；差距以百分點表示。單次快照不能單獨判定 hot spotting。</p>

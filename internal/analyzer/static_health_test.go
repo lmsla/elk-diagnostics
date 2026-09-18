@@ -46,8 +46,11 @@ func TestLongRunningTasks(t *testing.T) {
 
 func TestShardSizing(t *testing.T) {
 	th := testThresholds()
-	if got := ShardSizing([]collector.ShardSize{{Index: "logs", Primary: true, StoreBytes: 49 << 30}}, th).Status; got != diagnostic.StatusPass {
-		t.Fatalf("49 GiB status=%s, want pass", got)
+	if got := ShardSizing([]collector.ShardSize{{Index: "logs", Primary: true, StoreBytes: 49 << 30}}, th); got.Status != diagnostic.StatusPass {
+		t.Fatalf("49 GiB status=%s, want pass", got.Status)
+	}
+	if got := ShardSizing([]collector.ShardSize{{Index: "logs", Primary: true, StoreBytes: 49 << 30}}, th); got.NumericJudgment == nil || len(got.NumericJudgment.Rows) != 1 {
+		t.Fatalf("49 GiB NumericJudgment=%+v, want one summary row", got.NumericJudgment)
 	}
 	if got := ShardSizing([]collector.ShardSize{{Index: "logs", Primary: true, StoreBytes: 50 << 30}}, th).Status; got != diagnostic.StatusWarning {
 		t.Fatalf("50 GiB status=%s, want warning", got)

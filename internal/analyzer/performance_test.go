@@ -44,9 +44,6 @@ func TestJVMPressure(t *testing.T) {
 		if res.Status != diagnostic.StatusPass {
 			t.Errorf("Status = %q, want pass", res.Status)
 		}
-		if res.NumericJudgment == nil || len(res.NumericJudgment.Rows) != 1 || res.NumericJudgment.Rows[0].Status != diagnostic.StatusPass {
-			t.Fatalf("NumericJudgment = %+v, want one pass row", res.NumericJudgment)
-		}
 	})
 	t.Run("達 warn 未達 crit", func(t *testing.T) {
 		res := JVMPressure([]collector.NodeJVM{{Name: "n1", PressurePct: 90}}, th)
@@ -93,6 +90,9 @@ func TestHighCPU(t *testing.T) {
 		if res.Status != diagnostic.StatusPass {
 			t.Errorf("Status = %q, want pass", res.Status)
 		}
+		if res.NumericJudgment == nil || len(res.NumericJudgment.Rows) != 1 || res.NumericJudgment.Rows[0].Status != diagnostic.StatusPass {
+			t.Fatalf("NumericJudgment = %+v, want one pass row", res.NumericJudgment)
+		}
 	})
 	t.Run("超過門檻", func(t *testing.T) {
 		res := HighCPU([]collector.NodeCPU{{Name: "n1", CPU: 90}}, th)
@@ -111,6 +111,9 @@ func TestTaskBacklog(t *testing.T) {
 		res := TaskBacklog([]collector.ThreadPoolRow{{Node: "n1", Name: "write", Queue: 0}}, th)
 		if res.Status != diagnostic.StatusPass {
 			t.Errorf("Status = %q, want pass", res.Status)
+		}
+		if res.NumericJudgment == nil || len(res.NumericJudgment.Rows) != 1 || res.NumericJudgment.Rows[0].Status != diagnostic.StatusPass {
+			t.Fatalf("NumericJudgment = %+v, want one aggregate pass row", res.NumericJudgment)
 		}
 	})
 	t.Run("積壓超過門檻", func(t *testing.T) {

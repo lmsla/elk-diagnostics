@@ -16,8 +16,11 @@ func TestIndexingPressure(t *testing.T) {
 	}
 	base := &collector.IndexingPressureSnapshot{Coverage: completeCoverage(1)}
 	base.Nodes = []collector.IndexingPressureNode{pressureNode(799, 0)}
-	if got := IndexingPressure(base, th).Status; got != diagnostic.StatusPass {
-		t.Fatalf("79.9%% status=%s, want pass", got)
+	if got := IndexingPressure(base, th); got.Status != diagnostic.StatusPass {
+		t.Fatalf("79.9%% status=%s, want pass", got.Status)
+	}
+	if got := IndexingPressure(base, th); got.NumericJudgment == nil || len(got.NumericJudgment.Rows) != 2 {
+		t.Fatalf("79.9%% NumericJudgment=%+v, want two stage rows", got.NumericJudgment)
 	}
 	base.Nodes = []collector.IndexingPressureNode{pressureNode(800, 0)}
 	if got := IndexingPressure(base, th); got.Status != diagnostic.StatusWarning || !got.RequiresExtra {

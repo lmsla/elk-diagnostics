@@ -22,6 +22,12 @@ const (
 
 func IndexingPressure(snapshot *collector.IndexingPressureSnapshot, t rules.Thresholds) diagnostic.Result {
 	res := diagnostic.Result{ID: "indexing_pressure", Title: "Indexing pressure 當下使用量", Category: "performance", Source: "raw_api", Docs: []string{docIndexingPressure}}
+	judgment := numericJudgment(
+		"elasticsearch.node.indexing_pressure", "Indexing pressure", "bytes", t.StaticHealth.IndexingPressureWarnPct, t.StaticHealth.IndexingPressureCritPct,
+		"官方機制 + 工具預警門檻", "Coordinating + primary 與 replica 使用量分開計算；單次快照不能證明持續背壓。",
+	)
+	judgment.EntityLabel = "節點／階段"
+	res.NumericJudgment = &judgment
 	if snapshot == nil || len(snapshot.Nodes) == 0 {
 		return unknownStatic(res, "Indexing pressure 資料不可用", nil)
 	}
@@ -42,12 +48,23 @@ func IndexingPressure(snapshot *collector.IndexingPressureSnapshot, t rules.Thre
 			name = node.ID
 		}
 		if node.LimitBytes == nil || *node.LimitBytes <= 0 || node.CombinedCoordinatingPrimary == nil || node.ReplicaBytes == nil {
+			judgment.Rows = append(judgment.Rows,
+				numericRow(name+" / Coordinating + primary", nil, nil, nil, diagnostic.StatusUnknown),
+				numericRow(name+" / Replica", nil, nil, nil, diagnostic.StatusUnknown),
+			)
 			missing = append(missing, name+"：combined/replica/limit 欄位不完整")
 			continue
 		}
 		combinedPct := int(100 * float64(*node.CombinedCoordinatingPrimary) / float64(*node.LimitBytes))
 		// Elastic 的 replica rejection 上限是 coordinating+primary limit 的 1.5 倍。
 		replicaPct := int(100 * float64(*node.ReplicaBytes) / (1.5 * float64(*node.LimitBytes)))
+		combinedStatus := numericStatus(float64(combinedPct), t.StaticHealth.IndexingPressureWarnPct, t.StaticHealth.IndexingPressureCritPct)
+		replicaLimit := 1.5 * float64(*node.LimitBytes)
+		replicaStatus := numericStatus(float64(replicaPct), t.StaticHealth.IndexingPressureWarnPct, t.StaticHealth.IndexingPressureCritPct)
+		judgment.Rows = append(judgment.Rows,
+			numericRow(name+" / Coordinating + primary", float64p(float64(*node.CombinedCoordinatingPrimary)), float64p(float64(*node.LimitBytes)), float64p(float64(combinedPct)), combinedStatus),
+			numericRow(name+" / Replica", float64p(float64(*node.ReplicaBytes)), float64p(replicaLimit), float64p(float64(replicaPct)), replicaStatus),
+		)
 		res.Measurements = append(res.Measurements,
 			gauge("elasticsearch.node.indexing_pressure.combined", float64(*node.CombinedCoordinatingPrimary), "bytes", "node", node.ID, name, ""),
 			gauge("elasticsearch.node.indexing_pressure.replica", float64(*node.ReplicaBytes), "bytes", "node", node.ID, name, ""),

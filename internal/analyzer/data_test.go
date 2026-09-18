@@ -40,6 +40,9 @@ func TestMappingExplosion(t *testing.T) {
 		if res.Status != diagnostic.StatusPass {
 			t.Errorf("Status = %q, want pass", res.Status)
 		}
+		if res.NumericJudgment == nil || len(res.NumericJudgment.Rows) != 1 || res.NumericJudgment.Rows[0].Status != diagnostic.StatusPass {
+			t.Fatalf("NumericJudgment = %+v, want one pass row", res.NumericJudgment)
+		}
 	})
 	t.Run("逼近上限", func(t *testing.T) {
 		res := MappingExplosion([]collector.IndexFieldCount{{Index: "idx1", FieldCount: 850}}, th)

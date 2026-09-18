@@ -138,8 +138,17 @@ func CircuitBreaker(nodes []collector.NodeBreaker) diagnostic.Result {
 func HighCPU(nodes []collector.NodeCPU, t rules.Thresholds) diagnostic.Result {
 	cpuWarnPct := t.Performance.CPUWarnPct
 	res := diagnostic.Result{ID: "high_cpu", Title: "CPU 使用率", Category: "performance", Source: "raw_api", Docs: []string{docCPU}}
+	judgment := numericJudgment(
+		"elasticsearch.node.cpu", "CPU 使用率", "percent", cpuWarnPct, 0,
+		"官方建議 + 工具預警門檻", "CPU 是瞬時快照；持續性需以時間序列或 hot threads 佐證。",
+	)
+	judgment.CurrentLabel = "CPU"
+	judgment.LimitLabel = "警告門檻"
+	judgment.RatioLabel = ""
 	var hits []string
 	for _, n := range nodes {
+		status := numericStatus(float64(n.CPU), cpuWarnPct, 0)
+		judgment.Rows = append(judgment.Rows, numericRow(n.Name, float64p(float64(n.CPU)), float64p(float64(cpuWarnPct)), nil, status))
 		res.Measurements = append(res.Measurements,
 			gauge("elasticsearch.node.cpu", float64(n.CPU), "percent", "node", n.Name, n.Name, ""),
 			gauge("elasticsearch.node.allocated_processors", float64(n.AllocatedProcessors), "count", "node", n.Name, n.Name, ""),
@@ -148,6 +157,7 @@ func HighCPU(nodes []collector.NodeCPU, t rules.Thresholds) diagnostic.Result {
 			hits = append(hits, fmt.Sprintf("%s（%s）：cpu=%d%% load_1m=%s allocated_processors=%d", n.Name, n.Role, n.CPU, n.Load1m, n.AllocatedProcessors))
 		}
 	}
+	res.NumericJudgment = &judgment
 	if len(hits) == 0 {
 		return pass(res, fmt.Sprintf("各節點 CPU <%d%%", cpuWarnPct))
 	}
@@ -163,10 +173,22 @@ func HighCPU(nodes []collector.NodeCPU, t rules.Thresholds) diagnostic.Result {
 func TaskBacklog(rows []collector.ThreadPoolRow, t rules.Thresholds) diagnostic.Result {
 	queueBacklog := t.Performance.QueueBacklog
 	res := diagnostic.Result{ID: "task_backlog", Title: "Thread pool 佇列積壓", Category: "performance", Source: "raw_api", Docs: []string{docTaskBacklog}}
+	judgment := numericJudgment(
+		"elasticsearch.node.thread_pool.queue", "Thread pool 佇列", "count", queueBacklog, 0,
+		"工具 heuristic", "queue 是瞬時值；持續積壓需間隔觀察。",
+	)
+	judgment.EntityLabel = "節點／pool"
+	judgment.CurrentLabel = "佇列"
+	judgment.LimitLabel = "警告門檻"
+	judgment.RatioLabel = ""
 	var hits []string
 	maxQueue := 0
 	maxActive := 0
 	for _, r := range rows {
+		if r.Queue > 0 {
+			status := numericStatus(float64(r.Queue), queueBacklog, 0)
+			judgment.Rows = append(judgment.Rows, numericRow(r.Node+" / "+r.Name, float64p(float64(r.Queue)), float64p(float64(queueBacklog)), nil, status))
+		}
 		if r.Queue > maxQueue {
 			maxQueue = r.Queue
 		}
@@ -184,6 +206,10 @@ func TaskBacklog(rows []collector.ThreadPoolRow, t rules.Thresholds) diagnostic.
 		gauge("elasticsearch.thread_pool.queue.max", float64(maxQueue), "count", "", "", "", ""),
 		gauge("elasticsearch.thread_pool.active.max", float64(maxActive), "count", "", "", "", ""),
 	)
+	if len(judgment.Rows) == 0 && len(rows) > 0 {
+		judgment.Rows = append(judgment.Rows, numericRow("全體 thread pool", float64p(float64(maxQueue)), float64p(float64(queueBacklog)), nil, diagnostic.StatusPass))
+	}
+	res.NumericJudgment = &judgment
 	if len(hits) == 0 {
 		return pass(res, fmt.Sprintf("各 thread pool queue <%d", queueBacklog))
 	}

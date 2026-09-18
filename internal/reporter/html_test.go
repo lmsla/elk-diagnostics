@@ -48,6 +48,25 @@ func TestHTML_ClientLogoRejectsUnsupportedFormat(t *testing.T) {
 	}
 }
 
+func TestHTML_LocalTimeOmitsTimezoneSuffix(t *testing.T) {
+	r := sampleReport()
+	r.Meta.CollectedAt = "2026-09-15T07:10:50Z"
+	r.Meta.GeneratedAt = "2026-09-16T09:50:40Z"
+	out, err := HTML(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(out)
+	for _, want := range []string{"2026-09-15 15:10:50", "2026-09-16 17:50:40"} {
+		if !strings.Contains(s, want) {
+			t.Errorf("HTML 缺少台灣時間 %q", want)
+		}
+	}
+	if strings.Contains(s, "Asia/Taipei") || strings.Contains(s, "UTC+08:00") {
+		t.Error("HTML 不應顯示時區括號說明")
+	}
+}
+
 func TestHTML_NodeContext(t *testing.T) {
 	r := sampleReport()
 	used, total, fdOpen, fdMax := int64(512), int64(1024), int64(8), int64(100)

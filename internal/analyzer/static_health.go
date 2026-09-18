@@ -101,7 +101,16 @@ func ShardSizing(shards []collector.ShardSize, t rules.Thresholds) diagnostic.Re
 	largeBytes := int64(t.StaticHealth.ShardLargeWarnGB) * 1024 * 1024 * 1024
 	smallBytes := int64(t.StaticHealth.ShardSmallMaxMB) * 1024 * 1024
 	res := diagnostic.Result{ID: "shard_sizing", Title: "Shard 大小規劃", Category: "capacity", Source: "raw_api", Docs: []string{docShardSizing}}
+	judgment := numericJudgment(
+		"elasticsearch.shard.primary.store", "Primary shard 大小", "bytes", 100, 0,
+		"官方 sizing 建議 + 工具 heuristic", "大型：達大型門檻；小型：低於小 shard 門檻且數量達預警值。單次快照需配合 workload 與 recovery 目標解讀。",
+	)
+	judgment.EntityLabel = "Index／shard"
+	judgment.CurrentLabel = "大小"
+	judgment.LimitLabel = "大型門檻"
+	judgment.RatioLabel = "大型門檻比例"
 	var large, small []string
+	var largeShards, smallShards []collector.ShardSize
 	primaryCount := 0
 	var maxStoreBytes int64
 	for _, shard := range shards {
@@ -115,9 +124,38 @@ func ShardSizing(shards []collector.ShardSize, t rules.Thresholds) diagnostic.Re
 		switch {
 		case shard.StoreBytes >= largeBytes:
 			large = append(large, fmt.Sprintf("%s shard=%d store=%s docs=%d node=%s", shard.Index, shard.Shard, formatBytes(shard.StoreBytes), shard.Docs, shard.Node))
+			largeShards = append(largeShards, shard)
 		case shard.StoreBytes <= smallBytes:
 			small = append(small, fmt.Sprintf("%s shard=%d store=%s docs=%d", shard.Index, shard.Shard, formatBytes(shard.StoreBytes), shard.Docs))
+			smallShards = append(smallShards, shard)
 		}
+	}
+	appendJudgmentRow := func(shard collector.ShardSize, status diagnostic.Status) {
+		ratio := float64(0)
+		if largeBytes > 0 {
+			ratio = float64(shard.StoreBytes) * 100 / float64(largeBytes)
+		}
+		judgment.Rows = append(judgment.Rows, numericRow(
+			fmt.Sprintf("%s / shard %d", shard.Index, shard.Shard),
+			float64p(float64(shard.StoreBytes)), float64p(float64(largeBytes)), float64p(ratio), status,
+		))
+	}
+	for _, shard := range largeShards {
+		if len(judgment.Rows) >= 20 {
+			break
+		}
+		appendJudgmentRow(shard, diagnostic.StatusWarning)
+	}
+	if len(small) >= t.StaticHealth.ShardSmallCountWarn {
+		for _, shard := range smallShards {
+			if len(judgment.Rows) >= 20 {
+				break
+			}
+			appendJudgmentRow(shard, diagnostic.StatusWarning)
+		}
+	}
+	if len(judgment.Rows) == 0 && maxStoreBytes > 0 {
+		appendJudgmentRow(collector.ShardSize{Index: "最大 primary shard", Shard: 0, StoreBytes: maxStoreBytes}, diagnostic.StatusPass)
 	}
 	res.Measurements = append(res.Measurements,
 		gauge("elasticsearch.shard.primary.count", float64(primaryCount), "count", "", "", "", ""),
@@ -125,6 +163,8 @@ func ShardSizing(shards []collector.ShardSize, t rules.Thresholds) diagnostic.Re
 		gauge("elasticsearch.shard.primary.large.count", float64(len(large)), "count", "", "", "", ""),
 		gauge("elasticsearch.shard.primary.small.count", float64(len(small)), "count", "", "", "", ""),
 	)
+	judgment.SnapshotNote = fmt.Sprintf("大型門檻 %s；小型門檻 ≤%d MiB 且數量 ≥%d（本次 %d）", formatBytes(largeBytes), t.StaticHealth.ShardSmallMaxMB, t.StaticHealth.ShardSmallCountWarn, len(small))
+	res.NumericJudgment = &judgment
 	if len(large) == 0 && len(small) < t.StaticHealth.ShardSmallCountWarn {
 		return pass(res, fmt.Sprintf("無 primary shard ≥%d GiB，且小 shard 數量低於 %d", t.StaticHealth.ShardLargeWarnGB, t.StaticHealth.ShardSmallCountWarn))
 	}

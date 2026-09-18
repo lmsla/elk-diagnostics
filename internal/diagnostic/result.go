@@ -59,6 +59,7 @@ type Measurement struct {
 type NumericJudgment struct {
 	Metric          string               `json:"metric"`
 	MetricLabel     string               `json:"metric_label"`
+	EntityLabel     string               `json:"entity_label,omitempty"`
 	CurrentLabel    string               `json:"current_label"`
 	LimitLabel      string               `json:"limit_label"`
 	RatioLabel      string               `json:"ratio_label"`
