@@ -1,0 +1,41 @@
+# collect.sh 非秘密設定範本
+#
+# 使用方式：
+#   cp collect.conf.example collect.conf
+#   編輯本檔的現場 URL、清單與服務選擇後，直接執行 ./collect.sh
+#
+# 不要在本檔寫入密碼或 API key。Basic Auth 未提供密碼檔時，腳本會在互動式
+# Terminal 安全詢問；API key 請用 ES_API_KEY 或核准的秘密管理系統注入。
+# 相對路徑以本檔所在目錄為基準；命令列參數會覆寫本檔設定。
+
+# 採集對象：es、host、kibana、logstash，可用逗號分隔。
+services=es
+
+# Elasticsearch
+es_url=https://es.example.local:9200
+es_user=elastic
+# 自簽／私有 CA 才填路徑；公有 CA 留空。
+ca_cert=
+expected_es_nodes_file=expected-es-nodes.txt
+
+# 只有 services 包含 kibana／logstash 時才需要對應 URL 或清單。
+# 多個 instance 建議使用清單，每行 label|URL；請先複製並編輯：
+#   kibana-instances.conf.example -> kibana-instances.conf
+#   logstash-instances.conf.example -> logstash-instances.conf
+kibana_list=kibana-instances.conf
+logstash_list=logstash-instances.conf
+
+# 選配服務只有一個 instance 時，可改用下列單一 URL（並移除對應 *_list）。
+# kibana_url=https://kibana.example.local:5601
+# logstash_url=http://logstash.example.local:9600
+
+# Host OS：services 包含 host 時，預設採集本機；遠端主機可改填清單。
+# host_id=local
+# ssh_hosts_file=collectors/ssh-hosts.conf
+
+logstash_sample_interval=5
+redact_index_names=false
+insecure=false
+
+# 不設定 output 時，腳本會在目前目錄產生帶時間戳的 bundle 目錄。
+# output=artifacts/bundles

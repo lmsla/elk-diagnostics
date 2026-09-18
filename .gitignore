@@ -33,3 +33,8 @@ config.yaml
 
 # 每個叢集不同的預期節點清單（只交付 .example 範本）
 /expected-es-nodes.txt
+
+# 每個環境不同的採集設定與服務端點（只交付 .example 範本）
+/collect.conf
+/kibana-instances.conf
+/logstash-instances.conf

@@ -50,6 +50,7 @@ dist:
 	cp docs/交付/Bundle-採集操作手冊.md $(DIST_DIR)/Bundle-採集操作手冊.md
 	cp docs/交付/路線B-直連操作手冊.md $(DIST_DIR)/路線B-直連操作手冊.md
 	cp expected-es-nodes.txt.example $(DIST_DIR)/expected-es-nodes.txt.example
+	cp collect.conf.example $(DIST_DIR)/collect.conf.example
 	cp kibana-instances.conf.example $(DIST_DIR)/kibana-instances.conf.example
 	cp logstash-instances.conf.example $(DIST_DIR)/logstash-instances.conf.example
 	(cd $(DIST_DIR) && shasum -a 256 collect.sh > checksums/collect.sh.sha256)
@@ -64,6 +65,7 @@ dist:
 	(cd $(DIST_DIR) && shasum -a 256 Bundle-採集操作手冊.md > checksums/Bundle-採集操作手冊.md.sha256)
 	(cd $(DIST_DIR) && shasum -a 256 路線B-直連操作手冊.md > checksums/路線B-直連操作手冊.md.sha256)
 	(cd $(DIST_DIR) && shasum -a 256 expected-es-nodes.txt.example > checksums/expected-es-nodes.txt.example.sha256)
+	(cd $(DIST_DIR) && shasum -a 256 collect.conf.example > checksums/collect.conf.example.sha256)
 	(cd $(DIST_DIR) && shasum -a 256 kibana-instances.conf.example > checksums/kibana-instances.conf.example.sha256)
 	(cd $(DIST_DIR) && shasum -a 256 logstash-instances.conf.example > checksums/logstash-instances.conf.example.sha256)
 	@# SBOM（CycloneDX）：導入審查清單最後一個缺口。module 層級即可，記錄本工具
@@ -78,6 +80,7 @@ dist:
 	@echo "  $(DIST_DIR)/Bundle-採集操作手冊.md（使用者端 Shell 採集）"
 	@echo "  $(DIST_DIR)/路線B-直連操作手冊.md（分析機 Live 直連）"
 	@echo "  $(DIST_DIR)/expected-es-nodes.txt.example（預期節點清單範本）"
+	@echo "  $(DIST_DIR)/collect.conf.example（collect.sh 非秘密設定範本）"
 	@echo "  $(DIST_DIR)/kibana-instances.conf.example（多 Kibana 目標清單範本）"
 	@echo "  $(DIST_DIR)/logstash-instances.conf.example（多 Logstash 目標清單範本）"
 	@echo "  $(DIST_DIR)/collectors/（選配 Host／Kibana／Logstash 子採集器）"

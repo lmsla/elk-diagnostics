@@ -135,6 +135,143 @@ func TestCollectScriptDefinesTTYColorPolicy(t *testing.T) {
 	if strings.Contains(s, "| wc -L") {
 		t.Error("表格欄寬不應依賴平台差異較大的 wc -L")
 	}
+	for _, want := range []string{
+		"load_config()",
+		"collect.conf",
+		"--config FILE",
+		"命令列參數優先",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("產生的採集腳本缺少設定檔支援 %q", want)
+		}
+	}
+	for _, forbidden := range []string{"source ", ". ./", "eval ", "eval\t"} {
+		if strings.Contains(s, forbidden) {
+			t.Errorf("collect.conf 不應被當成 shell 程式執行: %q", forbidden)
+		}
+	}
+}
+
+func TestCollectScriptLoadsAdjacentConfigAndAllowsCLIOutputOverride(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("本機未安裝 sh")
+	}
+	tmp := t.TempDir()
+	script := filepath.Join(tmp, "collect.sh")
+	s, err := renderCollectScript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte(s), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "expected-es-nodes.txt"), []byte("node-a|10.99.1.11\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "kibana-instances.conf"), []byte("kb-01|https://kibana.example.local:5601\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(tmp, "logstash-instances.conf"), []byte("ls-01|http://logstash.example.local:9600\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := `services=es,kibana,logstash
+es_url=https://10.99.1.123:9200
+output=bundle-from-config
+expected_es_nodes_file=expected-es-nodes.txt
+kibana_list=kibana-instances.conf
+logstash_list=logstash-instances.conf
+logstash_sample_interval=0
+redact_index_names=false
+`
+	if err := os.WriteFile(filepath.Join(tmp, "collect.conf"), []byte(config), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(tmp, "bin")
+	if err := os.Mkdir(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeCurl := filepath.Join(bin, "curl")
+	fake := `#!/bin/sh
+out=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -o) out="$2"; shift 2 ;;
+    -w|-K|--max-time) shift 2 ;;
+    -q|-sS) shift ;;
+    *) shift ;;
+  esac
+done
+printf '{"cluster_name":"config-test","version":{"number":"8.14.3"}}' > "$out"
+printf '200'
+`
+	if err := os.WriteFile(fakeCurl, []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	workDir := filepath.Join(tmp, "work")
+	if err := os.Mkdir(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := append(withoutEnv(os.Environ(), "COLLECT_CONFIG"),
+		"PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"),
+		"COLLECT_MODULE_DIR="+collectorModuleDir(t),
+	)
+
+	cmd := exec.Command(sh, script)
+	cmd.Dir = workDir
+	cmd.Env = env
+	log, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("自動載入同目錄 collect.conf 失敗: %v\n%s", err, log)
+	}
+	configOut := filepath.Join(tmp, "bundle-from-config")
+	if _, err := os.Stat(filepath.Join(configOut, "_manifest.json")); err != nil {
+		t.Fatalf("設定檔的相對 output 未生效: %v\n%s", err, log)
+	}
+	if _, err := os.Stat(filepath.Join(configOut, "_expected_es_nodes.txt")); err != nil {
+		t.Fatalf("設定檔的相對 expected node 路徑未生效: %v", err)
+	}
+	for _, dir := range []string{"kibana/kb-01", "logstash/ls-01"} {
+		if info, err := os.Stat(filepath.Join(configOut, dir)); err != nil || !info.IsDir() {
+			t.Fatalf("設定檔的相對 instance 清單未生效（%s）: %v", dir, err)
+		}
+	}
+
+	overrideOut := filepath.Join(tmp, "bundle-from-cli")
+	cmd = exec.Command(sh, script, "--output", overrideOut)
+	cmd.Dir = workDir
+	cmd.Env = env
+	log, err = cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("命令列 output 覆寫設定檔失敗: %v\n%s", err, log)
+	}
+	if _, err := os.Stat(filepath.Join(overrideOut, "_manifest.json")); err != nil {
+		t.Fatalf("命令列 output 未覆寫設定檔: %v\n%s", err, log)
+	}
+}
+
+func TestCollectScriptRejectsUnknownConfigKey(t *testing.T) {
+	sh, err := exec.LookPath("sh")
+	if err != nil {
+		t.Skip("本機未安裝 sh")
+	}
+	tmp := t.TempDir()
+	script := filepath.Join(tmp, "collect.sh")
+	s, err := renderCollectScript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(script, []byte(s), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	config := filepath.Join(tmp, "bad.conf")
+	if err := os.WriteFile(config, []byte("not_a_supported_key=value\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	log, err := exec.Command(sh, script, "--config", config).CombinedOutput()
+	if err == nil || !strings.Contains(string(log), "不支援的 key") {
+		t.Fatalf("未知設定 key 應被拒絕: err=%v output=%s", err, log)
+	}
 }
 
 func terminalDisplayWidth(s string) int {

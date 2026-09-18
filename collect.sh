@@ -7,6 +7,7 @@
 # 預設只對 Elasticsearch 送出 43 個唯讀 GET 請求；透過 --services 可選擇
 # Host OS、Kibana、Logstash 子採集器。腳本保存 API 證據，並在壓縮前依選項遮蔽；
 # 不做健康判斷、不修改環境。
+# 若腳本同目錄存在 collect.conf，會自動載入非秘密設定；命令列參數優先覆寫。
 #
 # 產出的目錄（bundle）可帶到別台機器離線分析，使用者環境不需要安裝或執行本工具：
 #     elk-diagnostics check --from-bundle <目錄>
@@ -19,6 +20,7 @@
 #       --kibana-url https://kibana:5601 --logstash-url http://logstash:9600
 #     ./collect.sh --services es,kibana,logstash -h https://es:9200 \
 #       --kibana-list kibana-instances.conf --logstash-list logstash-instances.conf
+#     ./collect.sh                         # 自動讀取同目錄 collect.conf
 #
 # 認證（擇一；互動式 Terminal 可安全輸入，非互動執行請用密碼檔或 API key，
 # 避免密碼出現在 ps 輸出、環境變數與 shell 歷史）：
@@ -169,11 +171,21 @@ LOGSTASH_SAMPLE_INTERVAL_VALUE="${LOGSTASH_SAMPLE_INTERVAL:-5}"
 REDACT_INDEX_NAMES=0
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 MODULE_DIR="${COLLECT_MODULE_DIR:-$SCRIPT_DIR/collectors}"
+CONFIG_EXPLICIT=0
+if [ -n "${COLLECT_CONFIG:-}" ]; then
+    CONFIG_FILE="$COLLECT_CONFIG"
+    CONFIG_EXPLICIT=1
+else
+    CONFIG_FILE="$SCRIPT_DIR/collect.conf"
+fi
+CONFIG_LOADED=0
+CONFIG_DIR=""
 
 usage() {
     cat >&2 <<'USAGE'
-用法: ./collect.sh [--services es,host,kibana,logstash] [各服務連線參數] [-o 輸出目錄]
+用法: ./collect.sh [--config FILE] [--services es,host,kibana,logstash] [各服務連線參數] [-o 輸出目錄]
 
+  --config FILE    設定檔；預設自動讀取腳本同目錄的 collect.conf（存在時）
   -h, --host      ES base URL；services 包含 es 時必填
   -o, --output    輸出目錄（預設 artifacts/bundles/elk-bundle-<時間戳>）
   -u, --username  basic auth 帳號（密碼取自 ES_PASSWORD_FILE／ES_PASSWORD，未設則互動詢問）
@@ -197,16 +209,126 @@ usage() {
   ES_PASSWORD_FILE / ES_PASSWORD / ES_API_KEY
   KIBANA_USERNAME / KIBANA_PASSWORD_FILE / KIBANA_API_KEY / KIBANA_CA_CERT
   LOGSTASH_USERNAME / LOGSTASH_PASSWORD_FILE / LOGSTASH_API_KEY / LOGSTASH_CA_CERT
-  COLLECT_MODULE_DIR / SSH_CONNECT_TIMEOUT
+  COLLECT_CONFIG / COLLECT_MODULE_DIR / SSH_CONNECT_TIMEOUT
   NO_COLOR=1（停用終端機顏色；非互動輸出也會自動停用）
 
 互動式 Terminal：KIBANA／LOGSTASH 設定 username 且未提供 password file 時會不回顯詢問密碼。
 非互動執行：請提供 password file 或 API key，避免程序停在 prompt。
+
+collect.conf（僅非秘密設定；命令列參數優先）：
+  services=es
+  es_url=https://es.example.local:9200
+  es_user=elastic
+  ca_cert=ca.crt
+  expected_es_nodes_file=expected-es-nodes.txt
+  kibana_list=kibana-instances.conf
+  logstash_list=logstash-instances.conf
 USAGE
 }
 
+# 不使用 source/eval：collect.conf 是嚴格的 key=value 清單，避免設定檔內容
+# 被當成 shell 程式執行。相對路徑以設定檔所在目錄為基準。
+resolve_config_path() {
+    case "$1" in
+        /*) printf '%s\n' "$1" ;;
+        *) printf '%s/%s\n' "$CONFIG_DIR" "$1" ;;
+    esac
+}
+
+load_config() {
+    config_path="$1"
+    if [ ! -r "$config_path" ]; then
+        if [ "$CONFIG_EXPLICIT" -eq 1 ] || [ -e "$config_path" ]; then
+            echo "設定檔不可讀：$config_path" >&2
+            exit 2
+        fi
+        return 0
+    fi
+    CONFIG_DIR=$(CDPATH= cd -- "$(dirname -- "$config_path")" && pwd) || {
+        echo "設定檔目錄不可讀：$config_path" >&2
+        exit 2
+    }
+    CONFIG_LOADED=1
+    config_line_no=0
+    while IFS= read -r config_line || [ -n "$config_line" ]; do
+        config_line_no=$((config_line_no + 1))
+        case "$config_line" in
+            ''|'#'*) continue ;;
+            *=*) ;;
+            *) echo "設定檔第 $config_line_no 行格式錯誤（需 key=value）：$config_line" >&2; exit 2 ;;
+        esac
+        config_key=${config_line%%=*}
+        config_value=${config_line#*=}
+        case "$config_key" in
+            ''|*[!a-z_]* )
+                echo "設定檔第 $config_line_no 行 key 不合法：$config_key" >&2
+                exit 2
+                ;;
+        esac
+        case "$config_key" in
+            services) SERVICES="$config_value" ;;
+            es_url) HOST="$config_value" ;;
+            es_user) USERNAME="$config_value" ;;
+            output) [ -n "$config_value" ] && OUT="$(resolve_config_path "$config_value")" ;;
+            ca_cert) [ -n "$config_value" ] && CA_CERT="$(resolve_config_path "$config_value")" ;;
+            expected_es_nodes_file) [ -n "$config_value" ] && EXPECTED_ES_NODES_FILE="$(resolve_config_path "$config_value")" ;;
+            kibana_url) KIBANA_URL_VALUE="$config_value" ;;
+            logstash_url) LOGSTASH_URL_VALUE="$config_value" ;;
+            kibana_id) KIBANA_ID="$config_value" ;;
+            logstash_id) LOGSTASH_ID="$config_value" ;;
+            kibana_list) [ -n "$config_value" ] && KIBANA_LIST_FILE="$(resolve_config_path "$config_value")" ;;
+            logstash_list) [ -n "$config_value" ] && LOGSTASH_LIST_FILE="$(resolve_config_path "$config_value")" ;;
+            host_id) HOST_ID="$config_value" ;;
+            ssh_hosts_file) [ -n "$config_value" ] && SSH_HOSTS_FILE="$(resolve_config_path "$config_value")" ;;
+            logstash_sample_interval) LOGSTASH_SAMPLE_INTERVAL_VALUE="$config_value" ;;
+            redact_index_names)
+                case "$config_value" in
+                    true|yes|1) REDACT_INDEX_NAMES=1 ;;
+                    false|no|0) REDACT_INDEX_NAMES=0 ;;
+                    *) echo "設定檔第 $config_line_no 行 redact_index_names 必須是 true 或 false" >&2; exit 2 ;;
+                esac
+                ;;
+            insecure)
+                case "$config_value" in
+                    true|yes|1) INSECURE=1 ;;
+                    false|no|0) INSECURE="" ;;
+                    *) echo "設定檔第 $config_line_no 行 insecure 必須是 true 或 false" >&2; exit 2 ;;
+                esac
+                ;;
+            *) echo "設定檔第 $config_line_no 行不支援的 key：$config_key" >&2; exit 2 ;;
+        esac
+    done < "$config_path"
+}
+
+# 先找出 --config，讓它能在完整參數解析前決定設定檔；不把參數字串重新
+# 組合，保留含空白路徑的正確邊界。
+CONFIG_SCAN_NEXT=0
+HELP_REQUESTED=0
+for config_arg in "$@"; do
+    if [ "$CONFIG_SCAN_NEXT" -eq 1 ]; then
+        CONFIG_FILE="$config_arg"
+        CONFIG_EXPLICIT=1
+        CONFIG_SCAN_NEXT=0
+        continue
+    fi
+    case "$config_arg" in
+        --config) CONFIG_SCAN_NEXT=1 ;;
+        --config=*) CONFIG_FILE="${config_arg#--config=}"; CONFIG_EXPLICIT=1 ;;
+        --help) HELP_REQUESTED=1 ;;
+    esac
+done
+if [ "$CONFIG_SCAN_NEXT" -eq 1 ]; then
+    echo "--config 需要設定檔路徑" >&2
+    exit 2
+fi
+if [ "$HELP_REQUESTED" -eq 0 ]; then
+    load_config "$CONFIG_FILE"
+fi
+
 while [ $# -gt 0 ]; do
     case "$1" in
+        --config)     [ "$#" -ge 2 ] || { echo "--config 需要設定檔路徑" >&2; exit 2; }; shift 2 ;;
+        --config=*)   shift ;;
         -h|--host)     HOST="${2:-}"; shift 2 ;;
         -o|--output)   OUT="${2:-}"; shift 2 ;;
         -u|--username) USERNAME="${2:-}"; shift 2 ;;
@@ -419,6 +541,7 @@ fetch() {
 }
 
 echo "採集模組：$SERVICES"
+[ "$CONFIG_LOADED" -eq 1 ] && echo "設定檔：$CONFIG_FILE"
 [ -n "$HOST" ] && echo "ES 採集目標：$HOST"
 echo "輸出目錄：$OUT"
 if [ -n "$EXPECTED_ES_NODES_FILE" ]; then

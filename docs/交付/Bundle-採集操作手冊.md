@@ -23,6 +23,7 @@ cd webcomm-elk-diagnostics-<git-short-commit>-v1.0.1/
 ```text
 collect.sh
 collectors/
+collect.conf.example
 expected-es-nodes.txt.example
 kibana-instances.conf.example
 logstash-instances.conf.example
@@ -44,7 +45,7 @@ else
 fi
 ```
 
-每個檔案都顯示 `OK` 才可繼續。此驗證只涵蓋交付包原始檔；使用者自行建立的 `expected-es-nodes.txt`、instance 清單與採集結果不在其中。
+每個檔案都顯示 `OK` 才可繼續。此驗證只涵蓋交付包原始檔；使用者自行建立的 `collect.conf`、`expected-es-nodes.txt`、instance 清單與採集結果不在其中。
 
 前置檢查：
 
@@ -58,20 +59,26 @@ echo '採集前置檢查：OK'
 
 ## 2. 填寫本次採集參數
 
-| 參數 | 是否必填 | 要改成什麼 |
-|---|---|---|
-| `/交付包實際路徑` | 是 | 解壓後、直接包含 `collect.sh` 的目錄。 |
-| `ES_URL` | 是 | 實際 ES HTTPS URL，例如 `https://es.example.local:9200`。 |
-| `ES_USER` | Basic Auth 必填 | 有必要唯讀權限的 ES 帳號；API key 路徑不要設定。 |
-| `CA_CERT` | 自簽／私有 CA 必填 | CA 憑證檔實際路徑；公有 CA 環境依第 4.2 節操作。 |
-| `API_KEY_FILE` | API key 路徑必填其一 | 權限為 `600` 的 API key 檔案；也可改由核准的秘密管理系統注入 `ES_API_KEY`。Basic Auth 路徑不要設定。 |
-| `expected-es-nodes.txt` | 建議必做 | 每行 `node.name|IP`；IP 是主要比對值，node.name 用於顯示。 |
-| `kibana-instances.conf` | 多 Kibana 時使用 | 每行 `instance-label|Kibana URL`；label 是自訂且不可重複的目錄／報告名稱。 |
-| `logstash-instances.conf` | 多 Logstash 時使用 | 每行 `instance-label|Logstash Node API URL`；label 是自訂且不可重複的目錄／報告名稱。 |
-| `BUNDLE_ROOT` | 指令已自動產生 | 每次採集都會用時間建立新目錄，不要改成舊採集包。 |
-| `--redact-index-names` | 選配 | 在採集端遮蔽 index、data stream、backing index；IPv4 前兩段不論是否指定都會遮蔽。 |
+建議先建立同目錄的 `collect.conf`；腳本會自動載入，前線後續只需執行 `./collect.sh`。設定檔只放非秘密值，密碼與 API key 仍依第 4 節由密碼檔、環境變數或互動輸入提供：
 
-第 4 節會分別列出 Basic Auth 與 API key；兩者只能選一條。Basic Auth 密碼不在表格或指令中設定，腳本會在執行時互動詢問，輸入不回顯。
+```bash
+cp collect.conf.example collect.conf
+```
+
+編輯 `collect.conf`，至少修改 `es_url`；若要採集 Kibana／Logstash，將 `services` 改為 `es,kibana,logstash`，並填好對應的 instance 清單：
+
+| `collect.conf` 設定 | 是否必填 | 要改成什麼 |
+|---|---|---|
+| `services` | 是 | `es` 或 `es,kibana,logstash`；只採集 ES 時維持 `es`。 |
+| `es_url` | services 包含 `es` 時必填 | 實際 ES HTTPS URL，例如 `https://es.example.local:9200`。 |
+| `es_user` | Basic Auth 必填 | 有必要唯讀權限的 ES 帳號；不要填密碼。 |
+| `ca_cert` | 自簽／私有 CA 必填 | CA 憑證檔路徑；公有 CA 可留空。相對路徑以 `collect.conf` 所在目錄為準。 |
+| `expected_es_nodes_file` | 建議必做 | `expected-es-nodes.txt`；每行 `node.name|IP`，IP 是主要比對值。 |
+| `kibana_list` | services 包含 `kibana` 時必填（多 instance） | `kibana-instances.conf`；每行 `instance-label|Kibana URL`。 |
+| `logstash_list` | services 包含 `logstash` 時必填（多 instance） | `logstash-instances.conf`；每行 `instance-label|Logstash Node API URL`。 |
+| `redact_index_names` | 選配 | `true` 時遮蔽 index、data stream、backing index；IPv4 前兩段一律遮蔽。 |
+
+設定檔完成後，Basic Auth 密碼不需要寫入任何檔案，腳本會在互動式 Terminal 中不回顯詢問；API key 請依第 4.3 節提供。`--config FILE` 可指定其他設定檔，命令列參數會覆寫設定檔。
 
 ## 3. 建立預期 ES 節點清單
 
@@ -101,6 +108,14 @@ echo '預期 ES 節點清單：OK'
 同一份清單只適用一個叢集，不得沿用到另一個叢集。
 
 ## 4. 執行採集
+
+若已依第 2 節建立 `collect.conf`，完成預期節點清單、憑證與 instance 清單後，直接執行：
+
+```bash
+./collect.sh
+```
+
+腳本會列出實際採集模組與輸出目錄；下列 4.1～4.3 是需要命令列覆寫或使用 API key 時的完整範例。
 
 ### 4.1 Basic Auth：自簽或私有 CA（標準做法）
 
